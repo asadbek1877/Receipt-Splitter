@@ -1,6 +1,8 @@
 import React, { useEffect, useMemo } from 'react';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { YStack, XStack, Text, ScrollView, Button } from 'tamagui';
+import { ChevronLeft, Calendar, Users as UsersIcon } from '@tamagui/lucide-icons';
+import { Pressable } from 'react-native';
 
 import UserAvatar from '@/shared/ui/UserAvatar';
 import { useSessionsHistoryStore } from '@/features/sessions/model/history.store';
@@ -112,8 +114,6 @@ export default function HistoryDetailsScreen() {
   const participants = useMemo(() => buildParticipantsView(bill), [bill]);
   const currency =
     bill?.currency ||
-    bill?.totals?.currency ||
-    bill?.payload?.totals?.currency ||
     DEFAULT_CURRENCY;
 
   if (!bill && loading) {
@@ -139,70 +139,140 @@ export default function HistoryDetailsScreen() {
   }
 
   return (
-    <YStack f={1} bg="$background" px="$4" pt="$4" pb="$4">
-      <ScrollView
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ alignItems: 'center', paddingBottom: 32, gap: 16 }}
-      >
-        <YStack w={358} gap="$3">
-          <Text fontSize={24} fontWeight="700">{bill.sessionName || 'Hisob'}</Text>
-          <Button unstyled alignSelf="flex-start" onPress={() => router.back()}>
-            <Text color="#2ECC71">{'< Ortga'}</Text>
-          </Button>
-          <Text fontSize={14} color="$gray10">
-            {`${formatSessionDate(bill.finalizedAt || bill.createdAt)} ${BULLET} ${(bill.participants ?? []).length} ishtirokchi`}
+    <YStack f={1} bg="$background">
+      {/* Header */}
+      <YStack bg="$background" px="$4" py="$3" borderBottomWidth={1} borderBottomColor="$gray5">
+        <XStack ai="center" gap="$2" mb="$3">
+          <Pressable onPress={() => router.back()}>
+            <ChevronLeft size={24} color="#2C3D4F" />
+          </Pressable>
+          <Text fontSize={18} fontWeight="700" flex={1}>
+            {bill.sessionName || 'Receipt'}
           </Text>
-          <Text fontSize={16} fontWeight="700" color="#2ECC71">
-            {fmtCurrency(bill.grandTotal ?? 0, currency)}
-          </Text>
+        </XStack>
+        
+        <YStack gap="$2">
+          <XStack ai="center" gap="$2">
+            <Calendar size={14} color="$gray10" />
+            <Text fontSize={12} color="$gray10">
+              {formatSessionDate(bill.finalizedAt || bill.createdAt)}
+            </Text>
+          </XStack>
+          
+          <XStack ai="center" gap="$2">
+            <UsersIcon size={14} color="$gray10" />
+            <Text fontSize={12} color="$gray10">
+              {(bill.participants ?? []).length} participant{(bill.participants ?? []).length !== 1 ? 's' : ''}
+            </Text>
+          </XStack>
+          
+          <XStack ai="center" gap="$2" mt="$2">
+            <Text fontSize={14} color="$gray10">Total:</Text>
+            <Text fontSize={18} fontWeight="700" color="#2ECC71">
+              {fmtCurrency(bill.grandTotal ?? 0, currency)}
+            </Text>
+          </XStack>
         </YStack>
+      </YStack>
 
-        {participants.map(({ participant, avatarUrl, amount, items }) => (
-          <YStack
-            key={participant.uniqueId}
-            w={358}
-            borderWidth={1}
-            borderColor="#2ECC71"
-            br={12}
-            bg="white"
-            px={16}
-            py={12}
-            gap="$3"
-          >
-            <XStack jc="space-between" ai="center">
-              <XStack ai="center" gap="$2">
-                <UserAvatar
-                  uri={avatarUrl ?? undefined}
-                  label={(participant.username || 'U').slice(0, 1).toUpperCase()}
-                  size={40}
-                  textSize={16}
-                  backgroundColor="$gray5"
-                />
-                <Text fontSize={16} fontWeight="600">{participant.username}</Text>
-              </XStack>
-              <Text fontSize={16} fontWeight="700" color="#2ECC71">
-                {fmtCurrency(amount, currency)}
+      {/* Content */}
+      <ScrollView
+        f={1}
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={{ paddingHorizontal: '$4', paddingVertical: '$4', paddingBottom: 24 }}
+      >
+        <YStack gap="$3">
+          {participants.length > 0 ? (
+            participants.map(({ participant, avatarUrl, amount, items }) => (
+              <YStack
+                key={participant.uniqueId}
+                borderWidth={1}
+                borderColor="#2ECC7140"
+                br={12}
+                bg="$color1"
+                px="$4"
+                py="$3"
+                gap="$3"
+              >
+                {/* Participant Header */}
+                <XStack jc="space-between" ai="center">
+                  <XStack ai="center" gap="$2" flex={1}>
+                    <XStack
+                      w={36}
+                      h={36}
+                      br={10}
+                      bg="#2ECC7120"
+                      ai="center"
+                      jc="center"
+                    >
+                      <Text fontSize={14} fontWeight="700" color="#2ECC71">
+                        {(participant.username || 'U').slice(0, 1).toUpperCase()}
+                      </Text>
+                    </XStack>
+                    <YStack flex={1}>
+                      <Text fontSize={14} fontWeight="600">{participant.username}</Text>
+                      <Text fontSize={11} color="$gray10">
+                        {items.length} item{items.length !== 1 ? 's' : ''}
+                      </Text>
+                    </YStack>
+                  </XStack>
+                  <YStack ai="flex-end">
+                    <Text fontSize={14} fontWeight="700" color="#2ECC71">
+                      {fmtCurrency(amount, currency)}
+                    </Text>
+                  </YStack>
+                </XStack>
+
+                {/* Items List */}
+                {items.length > 0 && (
+                  <YStack gap="$2" borderTopWidth={1} borderTopColor="$gray5" pt="$2">
+                    {items.map((item) => (
+                      <XStack key={item.id} jc="space-between" ai="center" px="$1">
+                        <Text fontSize={13} color="$gray11" flex={1}>
+                          {item.title}
+                        </Text>
+                        <Text fontSize={13} fontWeight="600" color="$gray11">
+                          {fmtCurrency(item.price, currency)}
+                        </Text>
+                      </XStack>
+                    ))}
+                  </YStack>
+                )}
+              </YStack>
+            ))
+          ) : (
+            <YStack ai="center" py="$8" gap="$2">
+              <Text fontSize={14} color="$gray10">No participant data</Text>
+            </YStack>
+          )}
+
+          {/* Summary Section */}
+          {bill.totals?.byItem && bill.totals.byItem.length > 0 && (
+            <YStack mt="$3" gap="$2">
+              <Text fontSize={12} fontWeight="600" color="$gray10" px="$0">
+                ITEMS SUMMARY
               </Text>
-            </XStack>
-
-            <YStack gap={8}>
-              {items.length ? (
-                items.map(item => (
-                  <XStack key={item.id} jc="space-between" ai="center">
-                    <Text fontSize={14}>{item.title}</Text>
-                    <Text fontSize={14} fontWeight="600" color="#2ECC71">
-                      {item.price.toLocaleString()}
+              <YStack gap="$2">
+                {bill.totals.byItem.map((item: any) => (
+                  <XStack
+                    key={item.itemId}
+                    px="$3"
+                    py="$2"
+                    bg="$backgroundColor"
+                    br={8}
+                    jc="space-between"
+                    ai="center"
+                  >
+                    <Text fontSize={13} fontWeight="500">{item.name}</Text>
+                    <Text fontSize={13} fontWeight="600">
+                      {fmtCurrency(item.total, currency)}
                     </Text>
                   </XStack>
-                ))
-              ) : (
-                <Text fontSize={12} color="$gray9">
-                  Hech qanday element biriktirilmagan
-                </Text>
-              )}
+                ))}
+              </YStack>
             </YStack>
-          </YStack>
-        ))}
+          )}
+        </YStack>
       </ScrollView>
     </YStack>
   );

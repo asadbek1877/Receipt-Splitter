@@ -1,12 +1,74 @@
 import axios, { AxiosError } from 'axios';
+import { Platform } from 'react-native';
+import Constants from 'expo-constants';
 import { getToken } from '@/shared/lib/utils/token-storage';
 import { emitUnauthorized } from '@/shared/api/auth-events';
-const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000';
+
+const DEFAULT_API_PORT = '3001';
+
+const resolveApiUrl = (): string => {
+  // 1. Try Expo hostUri first (auto-detects dev machine IP reliably)
+  const hostUri =
+    (Constants.expoConfig as any)?.hostUri ||
+    (Constants.manifest2 as any)?.extra?.expoClient?.hostUri ||
+    (Constants.manifest as any)?.hostUri;
+
+  const hostIp = hostUri ? String(hostUri).split(':')[0] : '';
+
+  // 2. If env variable is set, use it
+  const envUrl = (process.env.EXPO_PUBLIC_API_URL || '').trim();
+  if (envUrl) return envUrl;
+
+  // 3. Auto-detect from Expo dev server
+  if (hostIp) return `http://${hostIp}:${DEFAULT_API_PORT}`;
+
+  // 4. Platform-specific fallbacks
+  if (Platform.OS === 'android') {
+    return `http://10.0.2.2:${DEFAULT_API_PORT}`;
+  }
+
+  return `http://localhost:${DEFAULT_API_PORT}`;
+};
+
+const API_URL = resolveApiUrl();
+console.log('[API] Base URL:', API_URL);
 
 export const apiClient = axios.create({
   baseURL: API_URL,
-  timeout: 500000,
+  timeout: 30000,
   headers: { 'Content-Type': 'application/json' },
+});
+
+// Simple retry wrapper for network errors
+const MAX_RETRIES = 1;
+const RETRY_DELAY = 800;
+const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
+
+// Custom error class to mark errors that have already been formatted
+class ApiError extends Error {
+  /** Already formatted by the interceptor — do not wrap again */
+  __processed = true;
+  constructor(message: string) {
+    super(message);
+    this.name = 'ApiError';
+  }
+}
+
+apiClient.interceptors.response.use(undefined, async (error: AxiosError) => {
+  // If the error was already processed by the formatting interceptor, pass through
+  if ((error as any).__processed) return Promise.reject(error);
+
+  const config = error.config as any;
+  if (!config) return Promise.reject(error);
+  config.__retryCount = config.__retryCount || 0;
+  // Only retry on actual network errors (no response at all), NOT on 500s
+  const isNetworkError = !error.response && (String(error.message).toLowerCase().includes('network') || error.code === 'ECONNABORTED');
+  if (isNetworkError && config.__retryCount < MAX_RETRIES) {
+    config.__retryCount += 1;
+    await sleep(RETRY_DELAY * config.__retryCount);
+    return apiClient(config);
+  }
+  return Promise.reject(error);
 });
 
 apiClient.interceptors.request.use(async (config) => {
@@ -29,34 +91,15 @@ apiClient.interceptors.request.use(async (config) => {
     // If token retrieval fails we keep going; request will likely return 401.
   }
 
-  if (__DEV__) {
-    const method = (config.method || 'GET').toUpperCase();
-    const url = `${config.baseURL}${config.url}`;
-    console.log(`[API] ${method} ${url}`);
-    if (config.params) console.log('[API] Params:', config.params);
-    if (config.data) console.log('[API] Request data:', config.data);
-  }
-
   return config;
 });
 
 apiClient.interceptors.response.use(
-  (response) => {
-    if (__DEV__) {
-      console.log('[API] Response:', response.data);
-      console.log('[API] Status:', response.status);
-    }
-    return response;
-  },
+  (response) => response,
   (error: AxiosError<any>) => {
-    if (__DEV__) {
-      console.error('[API] Error details:', {
-        message: error.message,
-        code: (error as any).code,
-        response: error.response?.data,
-        status: error.response?.status,
-        headers: error.response?.headers,
-      });
+    // If error was already formatted (e.g. from a retry), pass through without re-wrapping
+    if ((error as any).__processed) {
+      return Promise.reject(error);
     }
 
     if (error.response) {
@@ -66,24 +109,34 @@ apiClient.interceptors.response.use(
         typeof data === 'string' ? data : data?.message || data?.error;
 
       switch (status) {
+        case 400:
+          throw new ApiError(serverMsg || 'Invalid request. Please check your input.');
         case 401:
           emitUnauthorized();
-          throw new Error(serverMsg || 'Authorization failed');
+          throw new ApiError(serverMsg || 'Authorization failed');
+        case 409:
+          throw new ApiError(serverMsg || 'This resource already exists.');
+        case 415:
+          throw new ApiError(serverMsg || 'Invalid content type.');
         case 422:
-          throw new Error(serverMsg || 'Validation error');
+          throw new ApiError(serverMsg || 'Validation error');
         case 500:
-          throw new Error(serverMsg || 'Server error. Please try again later.');
+          throw new ApiError(serverMsg || 'Server error. Please try again later.');
         default:
-          throw new Error(serverMsg || `Request failed (${status})`);
+          throw new ApiError(serverMsg || `Request failed (${status})`);
       }
     } else if (error.request) {
-      if (String(error.message).toLowerCase().includes('network')) {
-        throw new Error('Network error. Please check your connection.');
+      const msg = String(error.message).toLowerCase();
+      if (msg.includes('network') || msg.includes('err_connection')) {
+        throw new ApiError('Network error. Please check your connection.');
       }
-      throw new Error('No response received. Possible CORS issue.');
+      if (error.code === 'ECONNABORTED') {
+        throw new ApiError('Request timed out. Please try again.');
+      }
+      throw new ApiError('Server is not responding. Please check your connection and try again.');
     }
 
-    throw new Error('Unexpected error while performing the request.');
+    throw new ApiError(error.message || 'Unexpected error');
   }
 );
 export interface LoginRequest {
@@ -132,44 +185,22 @@ export async function register(payload: RegisterRequest): Promise<AuthResponse> 
 
 /**
  * GET /auth/me
- * Параметр token не обязателен — интерсептор и так подставит.
- * Оставлен для обратной совместимости: если передан, мы явно проставим header.
+ * If token is provided it is used directly; otherwise the request
+ * interceptor injects the stored token automatically.
  */
 export async function getCurrentUser(token?: string): Promise<User> {
-  const { data } = await apiClient.get<User>('/auth/me', {
-    headers: token
-      ? (h => {
-          // тот же трюк с AxiosHeaders
-          if (typeof (h as any).set === 'function') {
-            (h as any).set('Authorization', `Bearer ${token}`);
-            return h;
-          }
-          return { ...(h || {}), Authorization: `Bearer ${token}` };
-        })((apiClient.defaults.headers.common as any) ?? {})
-      : undefined,
-  });
+  const { data } = await apiClient.get<User>('/auth/me', token
+    ? { headers: { Authorization: `Bearer ${token}` } }
+    : undefined,
+  );
   return data;
 }
 
-/**
- * POST /auth/logout (если у бэка нет — можно удалять этот метод)
- * Параметр token не обязателен — интерсептор и так подставит.
- */
+/** POST /auth/logout */
 export async function logout(token?: string): Promise<void> {
-  await apiClient.post(
-    '/auth/logout',
-    {},
-    {
-      headers: token
-        ? (h => {
-            if (typeof (h as any).set === 'function') {
-              (h as any).set('Authorization', `Bearer ${token}`);
-              return h;
-            }
-            return { ...(h || {}), Authorization: `Bearer ${token}` };
-          })((apiClient.defaults.headers.common as any) ?? {})
-        : undefined,
-    }
+  await apiClient.post('/auth/logout', {}, token
+    ? { headers: { Authorization: `Bearer ${token}` } }
+    : undefined,
   );
 }
 /**
@@ -248,6 +279,87 @@ export interface ChangePasswordPayload {
  */
 export async function changePassword(payload: ChangePasswordPayload): Promise<void> {
   await apiClient.patch('/user/password', payload);
+}
+
+export interface ForgotPasswordRequest {
+  email: string;
+}
+
+export interface ForgotPasswordResponse {
+  success: boolean;
+  message: string;
+  debugCode?: string;
+}
+
+/** POST /auth/forgot-password */
+export async function forgotPassword(payload: ForgotPasswordRequest): Promise<ForgotPasswordResponse> {
+  const { data } = await apiClient.post<ForgotPasswordResponse>('/auth/forgot-password', payload);
+  return data;
+}
+
+// --- Registration with email verification ---
+
+export interface SendVerificationCodeRequest {
+  email: string;
+  password: string;
+  username: string;
+}
+
+export interface SendVerificationCodeResponse {
+  success: boolean;
+  message: string;
+  debugCode?: string;
+}
+
+/** POST /auth/register/send-code — Step 1: send verification code */
+export async function sendRegistrationCode(payload: SendVerificationCodeRequest): Promise<SendVerificationCodeResponse> {
+  const { data } = await apiClient.post<SendVerificationCodeResponse>('/auth/register/send-code', payload);
+  return data;
+}
+
+export interface VerifyRegistrationCodeRequest {
+  email: string;
+  code: string;
+}
+
+/** POST /auth/register/verify — Step 2: verify code and complete registration */
+export async function verifyRegistrationCode(payload: VerifyRegistrationCodeRequest): Promise<AuthResponse> {
+  const { data } = await apiClient.post<AuthResponse>('/auth/register/verify', payload);
+  return data;
+}
+
+// --- Password reset with code ---
+
+export interface VerifyResetCodeRequest {
+  email: string;
+  code: string;
+}
+
+export interface VerifyResetCodeResponse {
+  success: boolean;
+  resetToken: string;
+}
+
+/** POST /auth/verify-reset-code — Verify reset code */
+export async function verifyResetCode(payload: VerifyResetCodeRequest): Promise<VerifyResetCodeResponse> {
+  const { data } = await apiClient.post<VerifyResetCodeResponse>('/auth/verify-reset-code', payload);
+  return data;
+}
+
+export interface ResetPasswordRequest {
+  resetToken: string;
+  newPassword: string;
+}
+
+export interface ResetPasswordResponse {
+  success: boolean;
+  message: string;
+}
+
+/** POST /auth/reset-password — Reset password with token */
+export async function resetPassword(payload: ResetPasswordRequest): Promise<ResetPasswordResponse> {
+  const { data } = await apiClient.post<ResetPasswordResponse>('/auth/reset-password', payload);
+  return data;
 }
 
 /**

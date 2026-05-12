@@ -11,12 +11,14 @@ import {
 } from 'tamagui';
 import { useRouter } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
-import { Plus, Check, X as IconX, Crown } from '@tamagui/lucide-icons';
+import { Plus, Check, X as IconX, Crown, Flower2 } from '@tamagui/lucide-icons';
 import { useTranslation } from 'react-i18next';
+import Animated, { FadeIn, FadeInDown } from 'react-native-reanimated';
 
 import { useGroupsStore } from '@/features/groups/model/groups.store';
-import { useFriendsStore } from '@/features/friends/model/friends.store';
+import { useFriendsStore, type Friend } from '@/features/friends/model/friends.store';
 import UserAvatar from '@/shared/ui/UserAvatar';
+import { useThemeColors } from '@/shared/lib/stores/theme-store';
 
 function useAutoNotice() {
   const [text, setText] = useState<string | undefined>();
@@ -69,6 +71,7 @@ export default function GroupCreateScreen() {
   const router = useRouter();
   const notice = useAutoNotice();
   const { t } = useTranslation();
+  const colors = useThemeColors();
 
   const { createGroup, openGroup, addMember, removeMember, current, loading, clearCurrent } = useGroupsStore();
   const { friends, fetchAll: fetchFriends } = useFriendsStore();
@@ -114,12 +117,13 @@ export default function GroupCreateScreen() {
   }, [current?.group?.name]);
 
   const rows = useMemo(() => {
-    const list = (friends ?? []).map((friend: any) => {
+    const list = (friends ?? []).map((friend: Friend) => {
       const uid = pickUniqueId(friend);
       const label = pickTitle(friend);
       const subtitle = pickSubtitle(friend);
       const role = uid ? memberRole.get(uid.toUpperCase()) : undefined;
-      return { uid, label, subtitle, role };
+      const avatarUrl = friend.avatarUrl;
+      return { uid, label, subtitle, role, avatarUrl };
     });
     if (!filter) return list;
     const q = filter.toLowerCase();
@@ -173,16 +177,31 @@ export default function GroupCreateScreen() {
   }
 
   return (
-    <YStack f={1} p="$4" gap="$3" bg="$background">
+    <YStack f={1} p="$4" gap="$3" backgroundColor={colors.background}>
       <XStack>
-        <Button onPress={() => router.replace('/tabs/groups' as never)} size="$2" w={124} h={22} br={6}>
+        <Button 
+          onPress={() => router.replace('/tabs/groups' as never)} 
+          size="$2" 
+          w={124} 
+          h={22} 
+          br={6}
+          backgroundColor={colors.glass}
+          color={colors.primary}
+          borderWidth={1}
+          borderColor={colors.glassBorder}
+        >
           {t('groups.create.back', 'Back to Groups')}
         </Button>
       </XStack>
 
-      <Paragraph fow="700" fos="$7">
-        {t('groups.create.title', 'Create group')}
-      </Paragraph>
+      <Animated.View entering={FadeIn.duration(400)}>
+        <XStack ai="center" gap="$2">
+          <Flower2 size={24} color={colors.primary} />
+          <Paragraph fontWeight="700" fontSize={24} color={colors.text}>
+            {t('groups.create.title', 'Create group')}
+          </Paragraph>
+        </XStack>
+      </Animated.View>
       {notice.node}
 
       <XStack gap="$2" ai="center">
@@ -194,23 +213,34 @@ export default function GroupCreateScreen() {
           editable={!groupId}
           returnKeyType="done"
           onSubmitEditing={onCreate}
+          backgroundColor={colors.glass}
+          borderColor={colors.glassBorder}
+          borderWidth={1.5}
+          borderRadius={12}
+          color={colors.text}
         />
-        <Button onPress={onCreate} disabled={!!groupId || creating}>
+        <Button 
+          onPress={onCreate} 
+          disabled={!!groupId || creating}
+          backgroundColor={colors.primary}
+          color="white"
+          borderRadius={12}
+        >
           {creating ? '...' : t('groups.create.action', 'Create')}
         </Button>
       </XStack>
 
-      <Separator />
+      <Separator backgroundColor={colors.glassBorder} />
 
       {!groupId ? (
-        <Paragraph col="$gray10">
+        <Paragraph color={colors.textSecondary}>
           {t('groups.create.emptyState', 'Create a group to add members.')}
         </Paragraph>
       ) : loading && !current ? (
-        <Spinner />
+        <Spinner color={colors.primary} />
       ) : (
         <>
-          <Paragraph fow="700" fos="$6">
+          <Paragraph fontWeight="700" fontSize={18} color={colors.text}>
             {t('groups.create.manageMembers', 'Add or remove members')}
           </Paragraph>
           <Input
@@ -218,14 +248,25 @@ export default function GroupCreateScreen() {
             onChangeText={setFilter}
             placeholder={t('groups.create.searchPlaceholder', 'Search friends…')}
             returnKeyType="search"
+            backgroundColor={colors.glass}
+            borderColor={colors.glassBorder}
+            borderWidth={1.5}
+            borderRadius={12}
+            color={colors.text}
           />
 
           {(rows ?? []).length === 0 ? (
-            <Paragraph col="$gray10">
+            <Paragraph color={colors.textSecondary}>
               {t('groups.create.noFriends', 'No friends to display')}
             </Paragraph>
           ) : (
-            <YStack borderWidth={1} borderColor="$gray5" borderRadius={8} overflow="hidden">
+            <YStack 
+              borderWidth={1.5} 
+              borderColor={colors.glassBorder} 
+              borderRadius={16} 
+              overflow="hidden"
+              backgroundColor={colors.glass}
+            >
               {rows.map((row, index) => {
                 const isOwner = row.role === 'owner';
                 const isMember = !!row.role;
@@ -233,13 +274,16 @@ export default function GroupCreateScreen() {
                 const avatarLabel = (row.label || 'U').slice(0, 1).toUpperCase();
 
                 return (
-                  <React.Fragment key={row.uid ?? row.label ?? index}>
+                  <Animated.View 
+                    key={row.uid ?? row.label ?? index}
+                    entering={FadeInDown.delay(index * 50).springify()}
+                  >
                     <XStack
                       h={60}
                       ai="center"
                       jc="space-between"
                       px="$4"
-                      bg="$background"
+                      backgroundColor={colors.glass}
                     >
                       <XStack ai="center" gap="$3">
                         <UserAvatar
@@ -247,14 +291,14 @@ export default function GroupCreateScreen() {
                           label={avatarLabel}
                           size={36}
                           textSize={14}
-                          backgroundColor="$gray5"
+                          backgroundColor={colors.iconBg}
                         />
                         <YStack>
-                          <Text fontSize={17} fontWeight="600">
+                          <Text fontSize={17} fontWeight="600" color={colors.text}>
                             {row.label}
                           </Text>
                           {!!row.subtitle && (
-                            <Paragraph fontSize={14} color="$gray10">
+                            <Paragraph fontSize={14} color={colors.textSecondary}>
                               {row.subtitle}
                             </Paragraph>
                           )}
@@ -263,18 +307,18 @@ export default function GroupCreateScreen() {
 
                       <XStack ai="center" gap="$2">
                         {isOwner ? (
-                          <Crown size={18} color="$yellow10" />
+                          <Crown size={18} color="#FFD700" />
                         ) : isMember ? (
                           <>
-                            <Check size={18} color="$green10" />
+                            <Check size={18} color="#4CAF50" />
                             <Button
                               size="$2"
                               chromeless
                               circular
-                              icon={<IconX size={18} color="$red10" />}
+                              icon={<IconX size={18} color="#EF4444" />}
                               onPress={() => row.uid && onRemove(row.uid)}
                               disabled={!row.uid || busy}
-                              pressStyle={{ bg: '$red3' }}
+                              pressStyle={{ backgroundColor: 'rgba(239,68,68,0.1)' }}
                               aria-label={t('groups.create.removeMember', 'Remove member')}
                             />
                           </>
@@ -283,17 +327,17 @@ export default function GroupCreateScreen() {
                             size="$2"
                             chromeless
                             circular
-                            icon={<Plus size={18} color="$blue10" />}
+                            icon={<Plus size={18} color={colors.primary} />}
                             onPress={() => row.uid && onAdd(row.uid)}
                             disabled={!row.uid || busy}
-                            pressStyle={{ bg: '$blue3' }}
+                            pressStyle={{ backgroundColor: colors.iconBg }}
                             aria-label={t('groups.create.addMember', 'Add member')}
                           />
                         )}
                       </XStack>
                     </XStack>
-                    {index < rows.length - 1 && <Separator />}
-                  </React.Fragment>
+                    {index < rows.length - 1 && <Separator backgroundColor={colors.glassBorder} />}
+                  </Animated.View>
                 );
               })}
             </YStack>

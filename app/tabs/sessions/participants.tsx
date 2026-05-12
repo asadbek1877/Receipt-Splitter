@@ -1,10 +1,11 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import {
-  YStack, XStack, Button, Spinner, Text, Input, ScrollView
+  YStack, XStack, Button, Spinner, Text, Input, ScrollView, Dialog, Adapt, Sheet
 } from 'tamagui';
-import { Users as UsersIcon, Check } from '@tamagui/lucide-icons';
+import { Users as UsersIcon, Check, Plus, ChevronLeft, Search, Trash2 } from '@tamagui/lucide-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Pressable, StyleSheet } from 'react-native';
 import { useFriendsStore } from '@/features/friends/model/friends.store';
 import UserAvatar from '@/shared/ui/UserAvatar';
 import { useAppStore } from '@/shared/lib/stores/app-store';
@@ -37,6 +38,33 @@ export default function SessionParticipantsScreen() {
   const [autoFromGroup, setAutoFromGroup] = useState<Record<string, number | undefined>>({});
   const autoRef = useRef(autoFromGroup);
   useEffect(() => { autoRef.current = autoFromGroup; }, [autoFromGroup]);
+
+  // New participant creation modal
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [newParticipantName, setNewParticipantName] = useState('');
+  const [customParticipants, setCustomParticipants] = useState<LiteUser[]>([]);
+
+  const addCustomParticipant = () => {
+    if (!newParticipantName.trim()) return;
+    const newId = `custom#${Date.now()}`;
+    const newUser: LiteUser = {
+      uniqueId: newId,
+      username: newParticipantName.trim(),
+    };
+    setCustomParticipants(prev => [...prev, newUser]);
+    setSelected(prev => ({ ...prev, [newId]: true }));
+    setNewParticipantName('');
+    setShowAddModal(false);
+  };
+
+  const removeCustomParticipant = (uid: string) => {
+    setCustomParticipants(prev => prev.filter(p => p.uniqueId !== uid));
+    setSelected(prev => {
+      const next = { ...prev };
+      delete next[uid];
+      return next;
+    });
+  };
 
   // -------- boot --------
   useEffect(() => { fetchFriends(); }, [fetchFriends]);
@@ -78,6 +106,12 @@ export default function SessionParticipantsScreen() {
     });
     return res;
   }, [friends, meUid, meName]);
+
+  // Combine all sources: me + friends + group members + custom
+  const allSources = useMemo(() => {
+    const currentGroupMembers = activeGroupId ? (groupMembers?.[activeGroupId] || []) : [];
+    return dedupByUniqueId([...basePeople, ...currentGroupMembers, ...customParticipants]);
+  }, [basePeople, activeGroupId, groupMembers, customParticipants]);
 
   // cache group members
   async function loadGroupMembers(gid: number): Promise<LiteUser[]> {
@@ -180,11 +214,11 @@ export default function SessionParticipantsScreen() {
     });
   }
 
-  // candidates = Me + Friends + active group members (if any)
+  // candidates = Me + Friends + active group members (if any) + custom
   const unionPeople: LiteUser[] = useMemo(() => {
     const fromGroup = activeGroupId ? (groupMembers[activeGroupId] || []) : [];
-    return dedupByUniqueId([...basePeople, ...fromGroup]);
-  }, [basePeople, activeGroupId, groupMembers]);
+    return dedupByUniqueId([...basePeople, ...fromGroup, ...customParticipants]);
+  }, [basePeople, activeGroupId, groupMembers, customParticipants]);
 
   const filtered = useMemo(() => {
     if (!q) return unionPeople;
@@ -208,7 +242,7 @@ export default function SessionParticipantsScreen() {
   };
 
   const selectedList = Object.keys(selected).filter(k => selected[k]);
-  const canNext = selectedList.length >= 2;
+  const canNext = selectedList.length >= 1;
 
   const fmtUid = (uid: string) => `@${uid.toLowerCase().replace('user#', 'user')}`;
   const goNext = () => {
@@ -291,77 +325,243 @@ export default function SessionParticipantsScreen() {
   const bottomPad = (insets?.bottom ?? 0) + 72;
 
   return (
-    <YStack f={1} bg="$background" p="$4" position="relative">
+    <YStack f={1} bg="$background">
 
-      {/* Groups */}
-      {(groups ?? []).length > 0 && (
-        <XStack flexWrap="wrap" gap="$2" mb="$2">
-          {(groups ?? []).map((g: any) => (
-            <GroupChip
-              key={g.id}
-              id={g.id}
-              name={g.name ?? `Group #${g.id}`}
-              count={groupCount(g.id)}
-              active={activeGroupId === g.id}
-              loading={!!groupLoading[g.id]}
-              onPress={() => activateGroup(g.id)}
-            />
-          ))}
+      {/* Header */}
+      <YStack bg="$background" px="$4" py="$3" borderBottomWidth={1} borderBottomColor="$gray5">
+        <XStack ai="center" jc="space-between" mb="$2">
+          <XStack ai="center" gap="$2" flex={1}>
+            <Pressable onPress={() => router.back()}>
+              <ChevronLeft size={24} color="#2C3D4F" />
+            </Pressable>
+            <Text fontSize={18} fontWeight="700">
+              Add Participants
+            </Text>
+          </XStack>
+          <Button
+            unstyled
+            onPress={() => setShowAddModal(true)}
+            width={36}
+            height={36}
+            borderRadius={12}
+            backgroundColor="#2ECC7120"
+            ai="center"
+            jc="center"
+          >
+            <Plus size={18} color="#2ECC71" />
+          </Button>
         </XStack>
-      )}
+        <Text fontSize={12} color="$gray10">
+          {selectedList.length > 0 ? `${selectedList.length} selected` : 'Select at least 1 person'}
+        </Text>
+      </YStack>
 
-      {/* Search */}
-      <Input
-        placeholder="Search…"
-        value={q}
-        onChangeText={setQ}
-        h={41}
-        px={16}
-        borderRadius={10}
-        bg="$backgroundPress"
-        borderWidth={0}
-        mb="$3"
-      />
-
-      {/* List */}
+      {/* Content */}
       <ScrollView
         f={1}
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingBottom: bottomPad }}
+        contentContainerStyle={{ paddingBottom: bottomPad, paddingHorizontal: '$4' }}
       >
-        <YStack borderWidth={1} borderColor="$gray5" borderRadius={8} overflow="hidden">
-          {(friendsLoading && basePeople.length === 0) && (
-            <XStack h={56} ai="center" jc="center"><Spinner /></XStack>
-          )}
-
-          {!!friendsError && (
-            <XStack h={56} ai="center" jc="center">
-              <Text color="$red10">{String(friendsError)}</Text>
+        {/* Groups */}
+        {(groups ?? []).length > 0 && (
+          <YStack mt="$4" mb="$3">
+            <Text fontSize={12} fontWeight="600" color="$gray10" mb="$2" px="$0">
+              GROUPS
+            </Text>
+            <XStack flexWrap="wrap" gap="$2">
+              {(groups ?? []).map((g: any) => (
+                <GroupChip
+                  key={g.id}
+                  id={g.id}
+                  name={g.name ?? `Group #${g.id}`}
+                  count={groupCount(g.id)}
+                  active={activeGroupId === g.id}
+                  loading={!!groupLoading[g.id]}
+                  onPress={() => activateGroup(g.id)}
+                />
+              ))}
             </XStack>
-          )}
+          </YStack>
+        )}
 
-          {dedupByUniqueId(filtered).map((p, idx) => {
-            const on = !!selected[p.uniqueId];
-            const avatarUrl = p.avatarUrl ?? null;
-            return (
-              <React.Fragment key={p.uniqueId}>
-                <XStack h={56} ai="center" jc="space-between" px="$4" bg="$color1">
-                  <XStack ai="center" gap="$3">
-                    <UserAvatar uri={avatarUrl ?? undefined} label={(p.username || "U").slice(0, 1).toUpperCase()} size={32} textSize={12} backgroundColor="$gray5" />
-                    <YStack>
-                      <Text fontSize={16} fontWeight="600">{p.username}</Text>
-                      <Text fontSize={12} color="$gray10">
-                        @{p.uniqueId.toLowerCase().replace('user#', 'user')}
-                      </Text>
-                    </YStack>
-                  </XStack>
-                  <SelectPill on={on} onPress={() => toggleUser(p.uniqueId)} />
-                </XStack>
-                {idx < filtered.length - 1 && <XStack h={1} bg="$gray5" />}
-              </React.Fragment>
-            );
-          })}
+        {/* Search */}
+        <YStack mt="$4" mb="$3">
+          <XStack
+            h={44}
+            px="$4"
+            borderRadius={10}
+            bg="$backgroundPress"
+            borderWidth={1}
+            borderColor="$gray5"
+            ai="center"
+            gap="$2"
+          >
+            <Search size={16} color="$gray10" />
+            <Input
+              flex={1}
+              placeholder="Search by name…"
+              value={q}
+              onChangeText={setQ}
+              fontSize={14}
+              bg="transparent"
+              borderWidth={0}
+              padding={0}
+            />
+          </XStack>
         </YStack>
+
+        {/* Custom Participants */}
+        {customParticipants.length > 0 && (
+          <YStack mb="$3">
+            <Text fontSize={12} fontWeight="600" color="$gray10" mb="$2" px="$0">
+              CUSTOM PARTICIPANTS
+            </Text>
+            <YStack gap="$2">
+              {customParticipants.map((p) => {
+                const on = !!selected[p.uniqueId];
+                return (
+                  <XStack
+                    key={p.uniqueId}
+                    h={48}
+                    px="$3"
+                    py="$2"
+                    borderRadius={10}
+                    bg={on ? '#2ECC7115' : '$color1'}
+                    borderWidth={1}
+                    borderColor={on ? '#2ECC71' : '$gray5'}
+                    ai="center"
+                    jc="space-between"
+                  >
+                    <XStack ai="center" gap="$2" flex={1}>
+                      <XStack
+                        w={32}
+                        h={32}
+                        borderRadius={10}
+                        bg="#F59E0B30"
+                        ai="center"
+                        jc="center"
+                      >
+                        <Text fontSize={14} fontWeight="700" color="#F59E0B">
+                          {p.username?.[0]?.toUpperCase() || '?'}
+                        </Text>
+                      </XStack>
+                      <YStack flex={1}>
+                        <Text fontSize={14} fontWeight="600">{p.username}</Text>
+                        <Text fontSize={11} color="$gray10">Custom</Text>
+                      </YStack>
+                    </XStack>
+                    <XStack ai="center" gap="$2">
+                      <Pressable
+                        onPress={() => toggleUser(p.uniqueId)}
+                        style={[s.selectBtn, on && s.selectBtnActive]}
+                      >
+                        <Text fontSize={12} fontWeight="600" color={on ? 'white' : '#2C3D4FCC'}>
+                          {on ? 'Selected' : 'Select'}
+                        </Text>
+                      </Pressable>
+                      <Pressable onPress={() => removeCustomParticipant(p.uniqueId)}>
+                        <Trash2 size={16} color="#EF4444" />
+                      </Pressable>
+                    </XStack>
+                  </XStack>
+                );
+              })}
+            </YStack>
+          </YStack>
+        )}
+
+        {/* Friends + Group Members */}
+        {filtered.length > 0 && (
+          <YStack mt={customParticipants.length > 0 ? '$3' : '$0'} mb="$3">
+            {(basePeople.length > 0 || customParticipants.length > 0) && (
+              <Text fontSize={12} fontWeight="600" color="$gray10" mb="$2" px="$0">
+                {activeGroupId ? 'GROUP MEMBERS' : 'FRIENDS & CONTACTS'}
+              </Text>
+            )}
+            <YStack gap="$2">
+              {dedupByUniqueId(filtered).map((p) => {
+                const on = !!selected[p.uniqueId];
+                const isCustom = p.uniqueId.startsWith('custom#');
+                const avatarUrl = p.avatarUrl ?? null;
+                return (
+                  <XStack
+                    key={p.uniqueId}
+                    h={48}
+                    px="$3"
+                    py="$2"
+                    borderRadius={10}
+                    bg={on ? '#2ECC7115' : '$color1'}
+                    borderWidth={1}
+                    borderColor={on ? '#2ECC71' : '$gray5'}
+                    ai="center"
+                    jc="space-between"
+                  >
+                    <XStack ai="center" gap="$2" flex={1}>
+                      {avatarUrl ? (
+                        <YStack
+                          w={32}
+                          h={32}
+                          borderRadius={10}
+                          bg="$gray5"
+                          ai="center"
+                          jc="center"
+                        />
+                      ) : (
+                        <XStack
+                          w={32}
+                          h={32}
+                          borderRadius={10}
+                          bg={p.uniqueId === meUid ? '#3B82F630' : '$gray5'}
+                          ai="center"
+                          jc="center"
+                        >
+                          <Text fontSize={14} fontWeight="700" color={p.uniqueId === meUid ? '#3B82F6' : '$gray10'}>
+                            {p.username?.[0]?.toUpperCase() || '?'}
+                          </Text>
+                        </XStack>
+                      )}
+                      <YStack flex={1}>
+                        <Text fontSize={14} fontWeight="600">
+                          {p.username} {p.uniqueId === meUid ? '(You)' : ''}
+                        </Text>
+                        <Text fontSize={11} color="$gray10">
+                          @{p.uniqueId.toLowerCase().replace('user#', 'user').replace('custom#', '')}
+                        </Text>
+                      </YStack>
+                    </XStack>
+                    <Pressable
+                      onPress={() => toggleUser(p.uniqueId)}
+                      style={[s.selectBtn, on && s.selectBtnActive]}
+                    >
+                      <Text fontSize={12} fontWeight="600" color={on ? 'white' : '#2C3D4FCC'}>
+                        {on ? 'Selected' : 'Select'}
+                      </Text>
+                    </Pressable>
+                  </XStack>
+                );
+              })}
+            </YStack>
+          </YStack>
+        )}
+
+        {/* Empty State */}
+        {!friendsLoading && filtered.length === 0 && (
+          <YStack mt="$8" ai="center" gap="$2">
+            <Text fontSize={14} color="$gray10" textAlign="center">
+              No friends found
+            </Text>
+            <Text fontSize={12} color="$gray10" textAlign="center">
+              Tap the + button to add custom participants
+            </Text>
+          </YStack>
+        )}
+
+        {/* Loading */}
+        {friendsLoading && (
+          <YStack mt="$8" ai="center">
+            <Spinner />
+          </YStack>
+        )}
       </ScrollView>
 
       {/* Fixed Next button */}
@@ -378,18 +578,92 @@ export default function SessionParticipantsScreen() {
           onPress={goNext}
           disabled={!canNext}
           width={358}
-          height={41}
-          borderRadius={10}
+          height={48}
+          borderRadius={12}
           backgroundColor="#2ECC71"
           ai="center"
           jc="center"
           opacity={canNext ? 1 : 0.5}
         >
-          <Text fontSize={16} fontWeight="500" color="#FFFFFF" style={{ lineHeight: 25 }}>
-            Next
-          </Text>
+          <XStack ai="center" gap="$2">
+            <Check size={20} color="white" />
+            <Text fontSize={16} fontWeight="600" color="white">
+              Continue
+            </Text>
+          </XStack>
         </Button>
       </YStack>
+
+      {/* Add Participant Modal */}
+      <Dialog open={showAddModal} onOpenChange={setShowAddModal}>
+        <Dialog.Portal>
+          <Dialog.Overlay />
+          <Dialog.Content
+            p="$4"
+            borderRadius={16}
+            w="90%"
+            maxWidth={380}
+            gap="$4"
+          >
+            <Dialog.Title fontSize={18} fontWeight="700" mb="$2">
+              Add Participant
+            </Dialog.Title>
+            <YStack gap="$3">
+              <Input
+                placeholder="Enter name…"
+                value={newParticipantName}
+                onChangeText={setNewParticipantName}
+                h={44}
+                px="$4"
+                borderRadius={10}
+                bg="$backgroundPress"
+                borderWidth={1}
+                borderColor="$gray5"
+                fontSize={14}
+              />
+              <XStack gap="$2">
+                <Button
+                  flex={1}
+                  h={44}
+                  borderRadius={10}
+                  bg="$backgroundPress"
+                  onPress={() => {
+                    setShowAddModal(false);
+                    setNewParticipantName('');
+                  }}
+                >
+                  <Text fontWeight="600">Cancel</Text>
+                </Button>
+                <Button
+                  flex={1}
+                  h={44}
+                  borderRadius={10}
+                  bg="#2ECC71"
+                  onPress={addCustomParticipant}
+                  disabled={!newParticipantName.trim()}
+                  opacity={newParticipantName.trim() ? 1 : 0.5}
+                >
+                  <Text fontWeight="600" color="white">Add</Text>
+                </Button>
+              </XStack>
+            </YStack>
+          </Dialog.Content>
+        </Dialog.Portal>
+      </Dialog>
     </YStack>
   );
 }
+
+const s = StyleSheet.create({
+  selectBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#D9D9D9',
+  },
+  selectBtnActive: {
+    backgroundColor: '#2ECC71',
+    borderColor: '#2ECC71',
+  },
+});

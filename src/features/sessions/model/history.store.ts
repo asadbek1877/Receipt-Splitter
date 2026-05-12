@@ -61,7 +61,10 @@ const normalizeEntry = (raw: SessionHistoryEntryRaw): SessionHistoryEntry => {
     finalizedAt,
     createdAt,
     grandTotal,
-    participantUniqueIds: raw.participantUniqueIds ?? [],
+    currency: raw.currency || 'UNKNOWN',
+    participantUniqueIds: (raw.participantUniqueIds && typeof raw.participantUniqueIds === 'string') 
+      ? raw.participantUniqueIds 
+      : (Array.isArray(raw.participantUniqueIds) ? raw.participantUniqueIds.join(',') : ''),
     totals: p?.totals,
     allocations: p?.allocations ?? [],
     participants,
@@ -114,7 +117,8 @@ export const useSessionsHistoryStore = create<State & Actions>((set, get) => ({
         loading: false,
       });
 
-      console.error('Failed to fetch history:', error);
+      // Suppress console errors
+      // console.error('Failed to fetch history:', error);
       return undefined;
     }
   },

@@ -83,20 +83,27 @@ export default function ScanInviteScreen() {
         response = await GroupsApi.joinByToken(parsed.token);
       }
 
-      // Извлекаем данные пользователя из ответа API
-      // Адаптируйте под структуру вашего API
+      // Extract user data from API response
       if (response?.data) {
         setUserData({
-          avatar: response.data.avatar || response.data.photo,
-          name: response.data.name || response.data.fullName,
-          username: response.data.username || `@${response.data.login}`,
-          bio: response.data.bio || `${response.data.name} endi sizning do'stingiz!`
+          avatar: response.data.avatar,
+          name: response.data.name || 'Friend',
+          username: response.data.username || '@user',
+          bio: response.data.bio || `Added successfully!`
+        });
+      } else {
+        // Fallback if no data returned
+        setUserData({
+          name: 'Friend Added',
+          username: '',
+          bio: 'You are now friends!'
         });
       }
 
       setStatus('ok');
-      setTimeout(goBack, 3000); // 3 секунды показываем успех
-    } catch {
+      setTimeout(goBack, 3000);
+    } catch (err: any) {
+      console.error('Scan redeem error:', err);
       setStatus('error');
       setTimeout(() => {
         setStatus('idle');

@@ -5,17 +5,21 @@ import { Tabs, useRouter } from 'expo-router';
 import { Pressable } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { YStack, XStack, Text, View } from 'tamagui';
-import { Home, Settings, Bell, ChevronLeft } from '@tamagui/lucide-icons';
+import { Home, Settings, Bell, ChevronLeft, Flower2 } from '@tamagui/lucide-icons';
 import { useTranslation } from 'react-i18next';
 import { AppState } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
+import { LinearGradient } from 'expo-linear-gradient';
+import Animated, { FadeIn } from 'react-native-reanimated';
 
 import { useAppStore } from '@/shared/lib/stores/app-store';
 import UserAvatar from '@/shared/ui/UserAvatar';
 import { useFriendsStore } from '@/features/friends/model/friends.store';
+import { borderRadius } from '@/shared/ui/JapaneseTheme';
+import { useThemeColors } from '@/shared/lib/stores/theme-store';
 
 // --- Reusable Badge Component ---
-function DotBadge({ value }: { value?: number }) {
+function DotBadge({ value, colors }: { value?: number; colors: ReturnType<typeof useThemeColors> }) {
   if (!value || value <= 0) return null;
   return (
     <View
@@ -24,7 +28,7 @@ function DotBadge({ value }: { value?: number }) {
       w={20} h={20}
       br={999}
       ai="center" jc="center"
-      backgroundColor="#2ECC71"
+      backgroundColor={colors.primary}
     >
       <Text color="white" fontSize={10} fontWeight="700">
         {value}
@@ -33,11 +37,13 @@ function DotBadge({ value }: { value?: number }) {
   );
 }
 
-// --- Global Header for all Tabs ---
+// --- Global Header for all Tabs with Japanese Style ---
 function GlobalTabsHeader(props: any) {
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { user } = useAppStore();
+  const { user, theme } = useAppStore();
+  const isDark = theme === 'dark';
+  const colors = useThemeColors();
   const fetchAll = useFriendsStore((s) => s.fetchAll);
   const { t } = useTranslation();
   const routeName = props?.route?.name ?? '';
@@ -74,38 +80,61 @@ function GlobalTabsHeader(props: any) {
   }, [router]);
 
   return (
-    <YStack bg="$background" pt={insets.top}>
-      <XStack h={50} ai="center" jc="space-between" px="$4">
-        <XStack ai="center" gap="$2">
-          {showHomeShortcut && (
-            <Pressable onPress={onBackToHome} hitSlop={10}>
-              <XStack ai="center" gap="$1">
-                <ChevronLeft size={20} color="$gray11" />
-                <Text fontSize={14} color="$gray11">
-                  {t('navigation.mainMenu', 'Main menu')}
+    <Animated.View entering={FadeIn.duration(300)}>
+      <YStack 
+        backgroundColor={colors.bgGradientEnd} 
+        pt={insets.top}
+        borderBottomWidth={1}
+        borderBottomColor={colors.glassBorder}
+      >
+        <XStack h={56} ai="center" jc="space-between" px="$4">
+          <XStack ai="center" gap="$2">
+            {showHomeShortcut ? (
+              <Pressable onPress={onBackToHome} hitSlop={10}>
+                <XStack ai="center" gap="$1">
+                  <ChevronLeft size={20} color={colors.primary} />
+                  <Text fontSize={14} color={colors.primary} fontWeight="500">
+                    {t('navigation.mainMenu', 'Home')}
+                  </Text>
+                </XStack>
+              </Pressable>
+            ) : (
+              <XStack ai="center" gap="$2">
+                <Flower2 size={20} color={colors.primary} />
+                <Text fontSize={18} fontWeight="700" color={colors.text}>
+                  {props.options.title}
                 </Text>
               </XStack>
+            )}
+          </XStack>
+
+          <XStack ai="center" gap="$4">
+            <Pressable onPress={() => router.push('/tabs/friends/requests')}>
+              <View>
+                <Bell size={22} color={colors.textSecondary} />
+                <DotBadge value={requestsCount} colors={colors} />
+              </View>
             </Pressable>
-          )}
-          <Text fontSize={18} fontWeight="600" numberOfLines={1} miw={150}>
-            {props.options.title}
-          </Text>
-        </XStack>
 
-        <XStack ai="center" gap="$3">
-          <Pressable onPress={() => router.push('/tabs/friends/requests')}>
-            <View>
-              <Bell size={22} color="$gray11" />
-              <DotBadge value={requestsCount} />
-            </View>
-          </Pressable>
-
-          <Pressable onPress={handleOpenProfile} hitSlop={10}>
-            <UserAvatar uri={user?.avatarUrl ?? undefined} label={userInitial} size={36} textSize={14} />
-          </Pressable>
+            <Pressable onPress={handleOpenProfile} hitSlop={10}>
+              <View
+                borderWidth={2}
+                borderColor={colors.primary}
+                borderRadius={999}
+                padding={2}
+              >
+                <UserAvatar 
+                  uri={user?.avatarUrl ?? undefined} 
+                  label={userInitial} 
+                  size={32} 
+                  textSize={13} 
+                />
+              </View>
+            </Pressable>
+          </XStack>
         </XStack>
-      </XStack>
-    </YStack>
+      </YStack>
+    </Animated.View>
   );
 }
 
@@ -186,6 +215,14 @@ export default function TabLayout() {
       <Tabs.Screen name="sessions/finish" options={{ href: null, title: finishTitle }} />
       <Tabs.Screen name="sessions/history/index" options={{ href: null, title: historyTitle }} />
       <Tabs.Screen name="sessions/history/[historyId]" options={{ href: null, title: historyDetailsTitle }} />
+
+      <Tabs.Screen name="analytics/index" options={{ href: null, title: t('analytics.title', 'Analytics') }} />
+
+      {/* Quick Split */}
+      <Tabs.Screen name="quick-split" options={{ href: null, title: t('quickSplit.title', 'Quick Split') }} />
+
+      {/* Debt Tracker */}
+      <Tabs.Screen name="debts" options={{ href: null, title: t('debts.title', 'Debt Tracker') }} />
 
     </Tabs>
   );

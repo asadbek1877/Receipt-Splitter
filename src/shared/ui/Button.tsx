@@ -1,5 +1,8 @@
 import React from 'react'
 import { Button as TamaguiButton, Text } from 'tamagui'
+import { StyleProp, ViewStyle } from 'react-native'
+import { borderRadius, shadows } from './JapaneseTheme'
+import { useThemeColors } from '@/shared/lib/stores/theme-store'
 
 interface CustomButtonProps {
   title: string
@@ -7,6 +10,7 @@ interface CustomButtonProps {
   size?: 'small' | 'medium' | 'large'
   disabled?: boolean
   onPress?: () => void
+  style?: StyleProp<ViewStyle>
 }
 
 export const Button: React.FC<CustomButtonProps> = ({ 
@@ -15,33 +19,40 @@ export const Button: React.FC<CustomButtonProps> = ({
   size = 'medium',
   disabled = false,
   onPress,
+  style,
 }) => {
+  const colors = useThemeColors()
+
   const getStyles = () => {
     const baseStyles = {
-      borderRadius: '$4',
-      pressStyle: { scale: 0.97 },
+      borderRadius: borderRadius.md,
+      pressStyle: { scale: 0.98, opacity: 0.85 },
     }
 
     const sizeStyles = {
-      small: { height: '$3', paddingHorizontal: '$4' },
-      medium: { height: '$4', paddingHorizontal: '$6' },
-      large: { height: '$5', paddingHorizontal: '$8' },
+      small: { height: 36, paddingHorizontal: 16 },
+      medium: { height: 48, paddingHorizontal: 24 },
+      large: { height: 56, paddingHorizontal: 32 },
     }
 
     const variantStyles = {
       primary: {
-        backgroundColor: disabled ? '$gray8' : '#2ECC71',
+        backgroundColor: disabled ? colors.textMuted : colors.primary,
         color: '#FFFFFF',
+        ...shadows.small,
       },
       secondary: {
-        backgroundColor: '$gray4',
-        color: '$gray12',
+        backgroundColor: colors.cardHover,
+        color: colors.text,
+        borderWidth: 1,
+        borderColor: colors.cardBorder,
+        ...shadows.small,
       },
       outline: {
         backgroundColor: 'transparent',
-        borderWidth: 1,
-        borderColor: disabled ? '$gray8' : '$green10',
-        color: disabled ? '$gray8' : '$green10',
+        borderWidth: 1.5,
+        borderColor: disabled ? colors.textMuted : colors.primary,
+        color: disabled ? colors.textMuted : colors.primary,
       }
     }
 
@@ -59,10 +70,11 @@ export const Button: React.FC<CustomButtonProps> = ({
       {...styles}
       disabled={disabled}
       onPress={onPress}
+      style={style}
     >
       <Text 
         color={styles.color}
-        fontWeight="600"
+        fontWeight="500"
         fontSize="$4"
       >
         {title}

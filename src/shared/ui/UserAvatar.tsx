@@ -1,5 +1,5 @@
-import React from 'react';
-import { Image, StyleSheet } from 'react-native';
+import React, { useState } from 'react';
+import { Image, StyleSheet, ActivityIndicator } from 'react-native';
 import { View, Text } from 'tamagui';
 
 interface UserAvatarProps {
@@ -25,6 +25,18 @@ export function UserAvatar({
   backgroundColor = '$gray5',
 }: UserAvatarProps) {
   const radius = size / 2;
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(false);
+
+  // Check if URI is valid
+  const validUri = uri && uri.trim() !== '' && !error;
+
+  const handleLoadStart = () => setLoading(true);
+  const handleLoadEnd = () => setLoading(false);
+  const handleError = () => {
+    setError(true);
+    setLoading(false);
+  };
 
   return (
     <View
@@ -36,8 +48,22 @@ export function UserAvatar({
       jc="center"
       backgroundColor={backgroundColor}
     >
-      {uri ? (
-        <Image source={{ uri }} style={styles.image} resizeMode="cover" />
+      {validUri ? (
+        <>
+          <Image
+            source={{ uri, cache: 'reload' }}
+            style={styles.image}
+            resizeMode="cover"
+            onLoadStart={handleLoadStart}
+            onLoadEnd={handleLoadEnd}
+            onError={handleError}
+          />
+          {loading && (
+            <View position="absolute" ai="center" jc="center" w="100%" h="100%">
+              <ActivityIndicator size="small" color="#E91E63" />
+            </View>
+          )}
+        </>
       ) : (
         <Text fontSize={textSize ?? Math.round(size / 2.5)} fontWeight="700">
           {label}

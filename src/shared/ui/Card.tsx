@@ -1,28 +1,28 @@
 // src/shared/ui/Card.tsx
 import React from 'react'
 import { YStack } from 'tamagui'
+import { borderRadius, shadows } from './JapaneseTheme'
+import { useThemeColors } from '@/shared/lib/stores/theme-store'
 
 interface CardProps {
   children: React.ReactNode
-  padding?: string
+  padding?: string | number
 }
 
 export const Card: React.FC<CardProps> = ({
   children,
-  padding = '$4'
+  padding = 16
 }) => {
+  const colors = useThemeColors()
+
   return (
     <YStack
-      backgroundColor="$white1"
-      borderRadius="$6"
+      backgroundColor={colors.card}
+      borderRadius={borderRadius.md}
       borderWidth={1}
-      borderColor="$gray5"
+      borderColor={colors.cardBorder}
       padding={padding}
-      shadowColor="$shadowColor"
-      shadowOffset={{ width: 0, height: 2 }}
-      shadowOpacity={0.1}
-      shadowRadius={8}
-      elevation={3}
+      {...shadows.small}
     >
       {children}
     </YStack>

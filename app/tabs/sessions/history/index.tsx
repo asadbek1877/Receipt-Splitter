@@ -2,10 +2,14 @@ import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import { useRouter } from 'expo-router';
 import { Pressable, RefreshControl } from 'react-native';
 import { YStack, XStack, Text, ScrollView, View } from 'tamagui';
+import Animated, { FadeInDown, FadeIn } from 'react-native-reanimated';
+import { Flower2 } from '@tamagui/lucide-icons';
 
 import UserAvatar from '@/shared/ui/UserAvatar';
 import { useSessionsHistoryStore } from '@/features/sessions/model/history.store';
 import type { SessionHistoryEntry, SessionHistoryParticipantLight } from '@/features/sessions/api/history.api';
+import { useAppStore } from '@/shared/lib/stores/app-store';
+import { getJapaneseColors } from '@/shared/ui/JapaneseTheme';
 
 const BULLET = '\u2022';
 const HISTORY_LIMIT = 50;
@@ -63,46 +67,76 @@ function HistoryCard({
   summary,
   amountLabel,
   participants,
+  status,
+  isCreator,
   onPress,
+  colors,
+  index,
 }: {
   title: string;
   summary: string;
   amountLabel: string;
   participants: SessionHistoryParticipantLight[];
+  status?: string;
+  isCreator?: boolean;
   onPress: () => void;
+  colors: ReturnType<typeof getJapaneseColors>;
+  index: number;
 }) {
   return (
-    <Pressable
-      onPress={onPress}
-      style={({ pressed }) => ({ width: 358, opacity: pressed ? 0.9 : 1 })}
-    >
-      <YStack
-        h={110}
-        br={12}
-        borderWidth={1}
-        borderColor="#E4E7EB"
-        p="$3"
-        backgroundColor="white"
+    <Animated.View entering={FadeInDown.delay(index * 80).springify()}>
+      <Pressable
+        onPress={onPress}
+        style={({ pressed }) => ({ width: 358, opacity: pressed ? 0.9 : 1 })}
       >
-        <XStack jc="space-between" ai="center">
-          <YStack>
-            <Text fontSize={16} fontWeight="600" lineHeight={19}>
-              {title}
-            </Text>
-            <Text mt="$1" fontSize={12} lineHeight={12} color="$gray10">
-              {summary}
-            </Text>
-          </YStack>
-          <Text fontSize={14} lineHeight={22} fontWeight="700" color="#2ECC71">
-            {amountLabel}
-          </Text>
-        </XStack>
+        <YStack
+          h={125}
+          br={16}
+          borderWidth={1.5}
+          borderColor={colors.glassBorder}
+          p="$3"
+          backgroundColor={colors.glass}
+          style={{
+            shadowColor: colors.primary,
+            shadowOffset: { width: 0, height: 4 },
+            shadowOpacity: 0.1,
+            shadowRadius: 8,
+          }}
+        >
+          <XStack jc="space-between" ai="center">
+            <YStack f={1} mr="$2">
+              <Text fontSize={16} fontWeight="600" lineHeight={19} color={colors.text}>
+                {title}
+              </Text>
+              <Text mt="$1" fontSize={12} lineHeight={14} color={colors.textSecondary}>
+                {summary}
+              </Text>
+            </YStack>
+            <YStack ai="flex-end">
+              <Text fontSize={14} lineHeight={22} fontWeight="700" color={colors.primary}>
+                {amountLabel}
+              </Text>
+              {status && (
+                <View mt={4} px={8} py={2} br={8} backgroundColor={status === 'finalized' ? '#2ECC7120' : '#F59E0B20'}>
+                  <Text fontSize={10} color={status === 'finalized' ? '#2ECC71' : '#F59E0B'} fontWeight="600">
+                    {status === 'finalized' ? 'Yakunlangan' : 'Jarayonda'}
+                  </Text>
+                </View>
+              )}
+            </YStack>
+          </XStack>
 
-        <XStack mt="auto" ai="center">
-          <AvatarGroup participants={participants} />
-        </XStack>
-      </YStack>
-    </Pressable>
+          <XStack mt="auto" ai="center" jc="space-between">
+            <AvatarGroup participants={participants} />
+            {isCreator && (
+              <View px={8} py={2} br={8} backgroundColor="#E8F4FD" borderColor="#CEDDFC" borderWidth={1}>
+                <Text fontSize={10} color="#2B5A9B" fontWeight="600">Siz tuzgansiz</Text>
+              </View>
+            )}
+          </XStack>
+        </YStack>
+      </Pressable>
+    </Animated.View>
   );
 }
 
@@ -115,6 +149,10 @@ export default function SessionsHistoryScreen() {
   const error = useSessionsHistoryStore(state => state.error);
   const fetchHistory = useSessionsHistoryStore(state => state.fetchHistory);
   const refreshIfStale = useSessionsHistoryStore(state => state.refreshIfStale);
+  
+  const { theme } = useAppStore();
+  const isDark = theme === 'dark';
+  const colors = getJapaneseColors(isDark);
 
   const [refreshing, setRefreshing] = useState(false);
 
@@ -140,41 +178,57 @@ export default function SessionsHistoryScreen() {
   const history = useMemo<SessionHistoryEntry[]>(() => sessions, [sessions]);
 
   return (
-    <YStack f={1} bg="$background" px="$4" pt="$4">
+    <YStack f={1} backgroundColor={colors.background} px="$4" pt="$4">
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ alignItems: 'center', paddingBottom: 32, gap: 16 }}
         refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />
         }
       >
-        <YStack w={358} gap="$1" mb="$2">
-          <Text fontSize={24} fontWeight="700">Oxirgi hisoblar</Text>
-          <Text fontSize={12} color="$gray10">Bosh sahifa</Text>
-        </YStack>
+        <Animated.View entering={FadeIn.duration(400)}>
+          <YStack w={358} gap="$1" mb="$2">
+            <XStack ai="center" gap="$2">
+              <Flower2 size={24} color={colors.primary} />
+              <Text fontSize={24} fontWeight="700" color={colors.text}>Oxirgi hisoblar</Text>
+            </XStack>
+            <Text fontSize={12} color={colors.textSecondary}>Bosh sahifa</Text>
+          </YStack>
+        </Animated.View>
 
         {loading && (
-          <Text color="$gray10" fontSize={14}>
+          <Text color={colors.textSecondary} fontSize={14}>
             Yuklanmoqda...
           </Text>
         )}
         {error && (
-          <Text color="$red10" fontSize={14}>
+          <Text color="#EF4444" fontSize={14}>
             {error}
           </Text>
         )}
         {!loading && !error && !history.length && (
-          <Text color="$gray10" fontSize={14}>
-            Hali tarix mavjud emas
-          </Text>
+          <YStack 
+            ai="center" 
+            py="$6" 
+            px="$4"
+            backgroundColor={colors.glass}
+            borderRadius={16}
+            borderWidth={1}
+            borderColor={colors.glassBorder}
+          >
+            <Flower2 size={40} color={colors.textSecondary} style={{ marginBottom: 12 }} />
+            <Text color={colors.textSecondary} fontSize={14}>
+              Hali tarix mavjud emas
+            </Text>
+          </YStack>
         )}
 
-        {history.map((bill) => {
+        {history.map((bill, index) => {
           const participants = bill.participants ?? [];
           const dateForSummary = bill.finalizedAt || bill.createdAt;
           const summary = `${formatSessionDate(dateForSummary)} ${BULLET} ${participants.length} ishtirokchi`;
           const totalAmount = bill.grandTotal ?? 0;
-          const currency = bill.currency || bill.totals?.currency || bill.payload?.totals?.currency || DEFAULT_CURRENCY;
+          const currency = bill.currency || DEFAULT_CURRENCY;
           const amountLabel = `${currency} ${totalAmount.toLocaleString()}`;
           return (
             <HistoryCard
@@ -183,6 +237,10 @@ export default function SessionsHistoryScreen() {
               summary={summary}
               amountLabel={amountLabel}
               participants={participants}
+                status={bill.payload?.status}
+                isCreator={bill.isCreator}
+                colors={colors}
+              index={index}
               onPress={() =>
                 router.push({
                   pathname: '/tabs/sessions/history/[historyId]',
@@ -196,3 +254,4 @@ export default function SessionsHistoryScreen() {
     </YStack>
   );
 }
+

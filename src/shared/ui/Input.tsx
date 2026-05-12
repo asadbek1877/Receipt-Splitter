@@ -1,6 +1,8 @@
 import React, { ReactNode } from 'react';
 import { TextInputProps } from 'react-native';
-import { YStack, XStack, Text, Input as TInput } from 'tamagui';
+import { YStack, XStack, Text, Input as TInput, useTheme } from 'tamagui';
+import { useThemeColors } from '@/shared/lib/stores/theme-store';
+import { borderRadius } from './JapaneseTheme';
 
 export type CustomInputProps = {
   label?: string;
@@ -33,34 +35,41 @@ export function Input({
   rightAdornment,
   textInputProps,
 }: CustomInputProps) {
+  const colors = useThemeColors();
+  
   return (
     <YStack space="$2" w="100%">
       {!!label && (
-        <Text fontSize="$3" fontWeight="600" color="$gray11">
+        <Text fontSize="$3" fontWeight="500" color={colors.textSecondary}>
           {label}
-          {required && <Text color="$red10"> *</Text>}
+          {required && <Text color={colors.error}> *</Text>}
         </Text>
       )}
 
       <XStack position="relative" w="100%">
         <TInput
-          w="100%"      // >>> всегда на полную ширину строки
-          f={1}         // >>> растягивается внутри строки
+          w="100%"
+          f={1}
           value={value}
           onChangeText={onChangeText}
           placeholder={placeholder}
+          placeholderTextColor={colors.textMuted}
           keyboardType={keyboardType}
           autoCapitalize={autoCapitalize}
           secureTextEntry={secureTextEntry}
-          // запас под адорнмент справа
           paddingRight={rightAdornment ? 44 : undefined}
-          borderRadius="$4"
+          borderRadius={borderRadius.md}
           borderWidth={1}
-          borderColor={error ? '$red8' : '$gray7'}
-          backgroundColor="$white1"
-          height="$4"
+          borderColor={error ? colors.error : colors.cardBorder}
+          backgroundColor={colors.card}
+          color={colors.text}
+          height={48}
           fontSize="$4"
-          focusStyle={{ borderColor: error ? '$red8' : '$green9' }}
+          paddingHorizontal={16}
+          focusStyle={{ 
+            borderColor: error ? colors.error : colors.primary,
+            borderWidth: 1.5,
+          }}
           {...textInputProps}
         />
 
@@ -80,7 +89,7 @@ export function Input({
       </XStack>
 
       {!!error && (
-        <Text fontSize="$3" color="$red10">
+        <Text fontSize="$3" color={colors.error} fontWeight="500">
           {error}
         </Text>
       )}

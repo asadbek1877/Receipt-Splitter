@@ -5,6 +5,8 @@ import { XStack, YStack, Paragraph, Button, Text } from 'tamagui';
 import { Trash2 } from '@tamagui/lucide-icons';
 import { useFriendsStore } from '../model/friends.store';
 import UserAvatar from '@/shared/ui/UserAvatar';
+import Animated, { FadeInLeft } from 'react-native-reanimated';
+
 
 function pickTitle(f: any) {
   return (
@@ -69,8 +71,10 @@ export const FriendListItem = memo(function FriendListItem({ friend }: { friend:
     );
   };
 
+const AnimatedXStack = Animated.createAnimatedComponent(XStack);
+
   return (
-    <XStack h={60} ai="center" jc="space-between" px="$4" bg="$background">
+    <AnimatedXStack h={60} ai="center" jc="space-between" px="$4"  bg="$background"   entering={FadeInLeft.springify().damping(12)}>
       <XStack ai="center" gap="$3">
         <UserAvatar
           uri={avatarUrl ?? undefined}
@@ -93,6 +97,6 @@ export const FriendListItem = memo(function FriendListItem({ friend }: { friend:
         pressStyle={{ bg: '$red3' }}
         disabled={!uniqueId}
       />
-    </XStack>
+    </AnimatedXStack>
   );
 });

@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
 import { Pressable } from 'react-native';
-import { XStack } from 'tamagui';
+import { XStack, useTheme } from 'tamagui';
 import { Eye, EyeOff } from '@tamagui/lucide-icons';
 import { Input } from '@/shared/ui/Input';
+import { useThemeColors } from '@/shared/lib/stores/theme-store';
 
 type Props = {
   label?: string;
@@ -12,7 +13,7 @@ type Props = {
   error?: string;
   required?: boolean;
   autoCapitalize?: 'none' | 'sentences' | 'words' | 'characters';
-  textInputProps?: any; // дополнительные пропсы TextInput при необходимости
+  textInputProps?: any;
 };
 
 export default function PasswordInput({
@@ -26,6 +27,7 @@ export default function PasswordInput({
   textInputProps,
 }: Props) {
   const [show, setShow] = useState(false);
+  const colors = useThemeColors();
 
   const eye = (
     <Pressable
@@ -36,7 +38,11 @@ export default function PasswordInput({
       accessibilityRole="button"
       accessibilityLabel={show ? 'Hide password' : 'Show password'}
     >
-      {show ? <EyeOff size={18} color="rgba(0,0,0,0.7)" /> : <Eye size={18} color="rgba(0,0,0,0.7)" />}
+      {show ? (
+        <EyeOff size={18} color={colors.textMuted} /> 
+      ) : (
+        <Eye size={18} color={colors.textMuted} />
+      )}
     </Pressable>
   );
 
@@ -52,11 +58,10 @@ export default function PasswordInput({
         error={error}
         required={required}
         rightAdornment={eye}
-        // по умолчанию глушим подсказки автозаполнения, можно переопределить через textInputProps
         textInputProps={{
-          autoComplete: 'off',         // Android/iOS
-          textContentType: 'none',     // iOS
-          importantForAutofill: 'no',  // Android
+          autoComplete: 'off',
+          textContentType: 'none',
+          importantForAutofill: 'no',
           ...textInputProps,
         }}
       />

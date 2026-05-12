@@ -52,7 +52,8 @@ export interface SessionHistoryEntryRaw {
   sessionName: string;
   finalizedAt: string;
   grandTotal: number;
-  participantUniqueIds: string[];
+  currency: string;
+  participantUniqueIds: string;
   isCreator: boolean;
   payload: SessionHistoryPayload;
 }
@@ -71,8 +72,9 @@ export interface SessionHistoryEntry {
   finalizedAt?: string;
   createdAt?: string;
   grandTotal: number;
+  currency: string;
 
-  participantUniqueIds: string[];
+  participantUniqueIds: string;
 
   totals?: SessionHistoryPayload['totals'];
   allocations?: SessionHistoryAllocation[];

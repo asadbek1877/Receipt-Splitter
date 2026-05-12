@@ -1,21 +1,26 @@
 // src/shared/ui/ScreenContainer.tsx
 import React from 'react'
 import { YStack } from 'tamagui'
+import { useThemeColors } from '@/shared/lib/stores/theme-store'
 
 interface ScreenContainerProps {
   children: React.ReactNode
+  noPadding?: boolean
 }
 
 export const ScreenContainer: React.FC<ScreenContainerProps> = ({
-  children
+  children,
+  noPadding = false,
 }) => {
+  const colors = useThemeColors()
+
   return (
     <YStack
       flex={1}
-      backgroundColor="$background"
-      paddingHorizontal="$4"
-      paddingTop="$6"
-      paddingBottom="$4"
+      backgroundColor={colors.background}
+      paddingHorizontal={noPadding ? 0 : 16}
+      paddingTop={noPadding ? 0 : 16}
+      paddingBottom={12}
     >
       {children}
     </YStack>

@@ -30,6 +30,14 @@
     "username": "Foydalanuvchi nomi",
     "usernamePlaceholder": "Foydalanuvchi nomini kiriting",
     "forgotPassword": "Parolni unutdingizmi?",
+    "resetPassword": "Parolni tiklash",
+    "resetPasswordDesc": "Email manzilingizni kiriting va biz sizga parolni tiklash havolasini yuboramiz.",
+    "sendResetLink": "Tiklash havolasini yuborish",
+    "checkEmail": "Emailingizni tekshiring",
+    "resetEmailSent": "Agar ushbu email bilan hisob mavjud bo'lsa, parolni tiklash havolasi yuborildi.",
+    "backToLogin": "Kirishga qaytish",
+    "rememberPassword": "Parolingizni eslaysizmi?",
+    "forgotPasswordError": "Tiklash emailini yuborib bo'lmadi. Qayta urinib ko'ring.",
     "noAccount": "Hisobingiz yo'qmi?",
     "haveAccount": "Hisobingiz bormi?"
   },
@@ -42,6 +50,27 @@
     "confirm": "Tasdiqlash",
     "continue": "Davom etish",
     "back": "Orqaga"
+  },
+  "analytics": {
+    "title": "Analitika",
+    "subtitle": "Xarajatlaringizni kuzating",
+    "loading": "Analitika yuklanmoqda...",
+    "noData": "Ma'lumot yo'q",
+    "totalSpent": "Jami sarflangan",
+    "totalSessions": "Jami sessiyalar",
+    "averagePerSession": "Sessiya o'rtacha",
+    "monthlySpending": "Oylik sarflar",
+    "topParticipants": "Top ishtirokchilar",
+    "sessions": "sessiyalar",
+    "categoryBreakdown": "Kategoriya bo'yicha sarflar",
+    "aiPowered": "✨ AI yordamida kategoriyalash",
+    "export": "Hisobotni eksport qilish",
+    "exportDesc": "Ma'lumotlarni ulashing yoki yuklab oling",
+    "exportTitle": "Analitika Hisoboti",
+    "exportSuccess": "Hisobot muvaffaqiyatli eksport qilindi",
+    "exportError": "Hisobotni eksport qilishda xato",
+    "share": "Ulashish",
+    "autoCalculated": "(avtomatik hisoblanadi)"
   },
   "home": {
     "header": {
@@ -168,6 +197,8 @@
     "historyDetails": "Hisob tafsilotlari"
   },
   "settings": {
+    "title": "Sozlamalar",
+    "subtitle": "Ilova tajribasini sozlang",
     "language": {
       "title": "Til",
       "description": "Ilovada ishlatiladigan tilni tanlang.",
@@ -176,6 +207,142 @@
         "ja": "Yapon tili",
         "uz": "O'zbek tili"
       }
+    },
+    "theme": {
+      "title": "Mavzu",
+      "description": "Yorug' yoki qorong'i rejimni tanlang",
+      "light": "Yorug'",
+      "dark": "Qorong'i"
+    },
+    "currency": {
+      "title": "Valyuta",
+      "description": "Hisoblarni bo'lish uchun asosiy valyuta.",
+      "source": "Manba",
+      "updated": "Yangilangan"
     }
+  },
+  "quickSplit": {
+    "title": "Tez bo'lish",
+    "subtitle": "Hisoblarni bir zumda bo'ling",
+    "totalAmount": "Umumiy summa",
+    "splitMode": "Bo'lish usuli",
+    "equal": "Teng",
+    "percentage": "Foiz",
+    "custom": "Maxsus",
+    "howManyPeople": "Necha kishi?",
+    "eachPays": "Har bir kishi to'laydi",
+    "participants": "Ishtirokchilar",
+    "calculate": "Hisoblash",
+    "result": "Bo'lish natijasi",
+    "total": "Jami",
+    "subtotal": "Jami summa",
+    "share": "Ulashish",
+    "shareResult": "Natijani ulashish",
+    "shareMessage": "Tez kunda!",
+    "person": "Kishi",
+    "copy": "nusxa",
+    "chooseColor": "Rang tanlang",
+    "chooseEmoji": "Avatar tanlang",
+    "tip": "Choy puli",
+    "tipDescription": "Hisobga choy puli qo'shing",
+    "tipAmount": "Choy puli",
+    "grandTotal": "Umumiy jami",
+    "minAlert": {
+      "title": "Kamida 2 kishi",
+      "message": "Bo'lish uchun kamida 2 kishi kerak!"
+    },
+    "percentageWarning": "Jami",
+    "customWarning": "Jami",
+    "shouldBe": "bo'lishi kerak"
+  },
+  "friends": {
+    "title": "Do'stlar",
+    "count": "do'stlar",
+    "requests": "So'rovlar",
+    "scanQr": "QR skanerlash",
+    "searchPlaceholder": "Do'stlarni qidirish...",
+    "remove": "O'chirish",
+    "empty": {
+      "title": "Hali do'stlar yo'q",
+      "description": "Hisoblarni birga bo'lish uchun do'stlarni qo'shing!"
+    },
+    "search": {
+      "noResults": "Do'st topilmadi",
+      "tryAgain": "Boshqa qidiruv qilib ko'ring"
+    },
+    "add": {
+      "title": "Do'st qo'shish",
+      "description": "Do'stingiz ismini kiriting.",
+      "namePlaceholder": "Do'st ismi",
+      "button": "Qo'shish",
+      "error": "Xato",
+      "nameRequired": "Iltimos, ism kiriting"
+    },
+    "edit": {
+      "title": "Do'stni tahrirlash",
+      "description": "Do'stingiz ismini yangilang."
+    },
+    "removeConfirm": "Haqiqatan ham {{name}}ni o'chirmoqchimisiz?"
+  },
+  "debts": {
+    "title": "Qarz Hisobi",
+    "subtitle": "Kim kimga qarzini kuzating",
+    "youOwe": "Siz qarzsiz",
+    "owesYou": "Sizga qarz",
+    "paid": "To'langan",
+    "markPaid": "To'landi",
+    "markUnpaid": "Bekor qilish",
+    "ownedToYou": "Sizga qarz",
+    "youOweTotal": "Siz qarzsiz",
+    "netBalance": "Sof balans",
+    "inProfit": "Siz foydasiz!",
+    "inDebt": "Siz qarzdasiz",
+    "iOwe": "Men qarzdorman",
+    "owedMe": "Menga qarz",
+    "add": {
+      "title": "Qarz qo'shish"
+    },
+    "edit": {
+      "title": "Qarzni tahrirlash"
+    },
+    "delete": {
+      "title": "Qarzni o'chirish",
+      "confirm": "Haqiqatan ham bu qarzni o'chirmoqchimisiz?"
+    },
+    "filters": {
+      "active": "Faol",
+      "iOwe": "Men qarzdorman",
+      "owedMe": "Menga qarz",
+      "paid": "To'langan"
+    },
+    "form": {
+      "namePlaceholder": "Ism",
+      "amountPlaceholder": "Summa",
+      "descriptionPlaceholder": "Izoh (ixtiyoriy)"
+    },
+    "errors": {
+      "nameRequired": "Iltimos, ism kiriting",
+      "invalidAmount": "Iltimos, to'g'ri summa kiriting"
+    },
+    "empty": {
+      "title": "Hali qarzlar yo'q",
+      "description": "Qarzlarni kuzatishni boshlang"
+    }
+  },
+  "receiptReview": {
+    "title": "Chekdagi mahsulotlarni tasdiqlash",
+    "manualAdd": "Qo'shish",
+    "productName": "Mahsulot nomi",
+    "price": "Narxi",
+    "qty": "Miqdori",
+    "lineTotal": "Jami",
+    "totalItems": "Jami ({{count}} ta mahsulot)",
+    "confirmContinue": "Tasdiqlash va davom etish",
+    "noProductsTitle": "Chekdan mahsulotlar topilmadi.",
+    "noProductsDesc": "Qo'shish tugmasi orqali kiriting.",
+    "errNameReq": "Mahsulot nomi kiritilishi shart",
+    "errPriceReq": "Narx 0 dan katta bo'lishi kerak",
+    "errQtyReq": "Miqdor 0 dan katta bo'lishi kerak",
+    "errReceiptEmpty": "Chekda kamida bitta mahsulot bo'lishi kerak"
   }
 }

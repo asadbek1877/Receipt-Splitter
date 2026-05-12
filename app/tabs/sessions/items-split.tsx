@@ -27,60 +27,6 @@ type Item = {
   totalPrice?: number;
 };
 
-// ===== Mock Data =====
-const MOCK_ITEMS: Item[] = [
-  {
-    id: '1',
-    name: 'Pizza Margherita',
-    price: 89000,
-    quantity: 2,
-    assignedTo: [],
-    perPersonCount: {},
-    splitMode: 'count',
-    totalPrice: 178000
-  },
-  {
-    id: '2',
-    name: 'Caesar Salad',
-    price: 45000,
-    quantity: 1,
-    assignedTo: [],
-    perPersonCount: {},
-    splitMode: 'equal',
-    totalPrice: 45000
-  },
-  {
-    id: '3',
-    name: 'Cola',
-    price: 10000,
-    quantity: 5,
-    assignedTo: [],
-    perPersonCount: {},
-    splitMode: 'count',
-    totalPrice: 50000
-  },
-  {
-    id: '4',
-    name: 'Tiramisu',
-    price: 32000,
-    quantity: 1,
-    assignedTo: [],
-    perPersonCount: {},
-    splitMode: 'equal',
-    totalPrice: 32000
-  },
-  {
-    id: '5',
-    name: 'Soup of the day',
-    price: 28000,
-    quantity: 1,
-    assignedTo: [],
-    perPersonCount: {},
-    splitMode: 'equal',
-    totalPrice: 28000
-  },
-];
-
 const cloneItems = (source: Item[]): Item[] =>
   source.map((item) => ({
     ...item,
@@ -301,24 +247,19 @@ export default function ItemsSplitScreen() {
     return sorted;
   }, [storeParticipants, participantsFromParams, me?.uniqueId, me?.username]);
 
-  const isMockSession = receiptId === 'mock-001';
   const sessionReceiptId = receiptId ?? (session ? String(session.sessionId) : undefined);
 
   const loadItemsFromSource = useCallback(() => {
     const hasStoreItems = Array.isArray(storeItems) && storeItems.length > 0;
     if (hasStoreItems) {
       setLocalItems(toLocalItems(storeItems));
-    } else if (isMockSession) {
-      const fallback = cloneItems(MOCK_ITEMS);
-      setLocalItems(fallback);
-      setStoreItems(toStoreItems(fallback));
     } else {
       setLocalItems([]);
     }
     setEditing(null);
     setSaving(false);
     setShowSuccess(false);
-  }, [storeItems, isMockSession, setStoreItems]);
+  }, [storeItems, setStoreItems]);
 
   const resetState = useCallback(() => {
     loadItemsFromSource();
@@ -380,7 +321,7 @@ export default function ItemsSplitScreen() {
   );
 
   const totalItems = items.length;
-  const canContinue = assignedCount === totalItems && totalItems > 0;
+  const canContinue = assignedCount > 0; // Allow continuing if at least one item is assigned
 
   useEffect(() => {
     if (!canContinue && submitError) {
@@ -623,7 +564,7 @@ export default function ItemsSplitScreen() {
 
       const effectiveSessionId =
       session?.sessionId ??
-      (sessionReceiptId && !isMockSession ? parseInt(sessionReceiptId, 10) : undefined);
+      (sessionReceiptId ? parseInt(sessionReceiptId, 10) : undefined);
 
     if (!effectiveSessionId) {
       throw new Error('Session ID is required');
@@ -672,7 +613,7 @@ export default function ItemsSplitScreen() {
       const finishPayload: FinishPayload = {
   sessionId: result.sessionId,
   sessionName: result.sessionName,
-  receiptId: sessionReceiptId ?? (isMockSession ? 'mock-001' : undefined),
+  receiptId: sessionReceiptId,
   participants,
   totalsByParticipant: effectiveByParticipant,
   totalsByItem,
@@ -716,7 +657,6 @@ export default function ItemsSplitScreen() {
     items,
     session,
     sessionReceiptId,
-    isMockSession,
     participants,
     storeCurrency,
     setStoreItems,
@@ -782,7 +722,7 @@ export default function ItemsSplitScreen() {
               Orders
             </Text>
             <Text fontSize={12} color="$gray10">
-              {sessionReceiptId ?? (isMockSession ? 'mock-001' : 'N/A')}
+              {sessionReceiptId ?? 'N/A'}
             </Text>
           </YStack>
         </XStack>
@@ -940,45 +880,58 @@ export default function ItemsSplitScreen() {
         bottom={(insets?.bottom ?? 0) + 8}
         px="$4"
       >
-        {!canContinue ? (
-          <YStack p="$3" borderWidth={1} borderColor="$gray5" borderRadius={12} bg="$color1">
-            <XStack w="100%" ai="center" jc="space-between" mb="$2">
-              <Text color="$gray10" fontSize={13}>
-                Assignment progress
+        <YStack>
+          <Button
+            unstyled
+            onPress={onContinue}
+            height={41}
+            borderRadius={10}
+            bg="#2ECC71"
+            ai="center"
+            jc="center"
+            pressStyle={finalizing ? undefined : { opacity: 0.9 }}
+            disabled={!canContinue || finalizing}
+            opacity={!canContinue || finalizing ? 0.6 : 1}
+          >
+            <Text fontSize={16} fontWeight="600" color="white">
+              {finalizing ? 'Saving...' : assignedCount < totalItems ? `Continue (${assignedCount} items)` : 'Continue'}
+            </Text>
+          </Button>
+          {assignedCount < totalItems && assignedCount > 0 && (
+            <YStack mt="$2" p="$2" borderRadius={8} bg="rgba(251,191,36,0.1)" borderWidth={1} borderColor="rgba(251,191,36,0.3)">
+              <Text color="rgba(217,119,6,1)" fontSize={11} textAlign="center">
+                {totalItems - assignedCount} item{totalItems - assignedCount !== 1 ? 's' : ''} unassigned - they won't be included in the split
               </Text>
-              <Text fontSize={13} fontWeight="700">
-                {assignedCount}/{totalItems}
+            </YStack>
+          )}
+          {assignedCount === 0 && (
+            <YStack mt="$2" p="$2" borderRadius={8} bg="rgba(239,68,68,0.1)" borderWidth={1} borderColor="rgba(239,68,68,0.3)">
+              <Text color="#ef4444" fontSize={11} textAlign="center">
+                Please assign at least one item to continue
               </Text>
-            </XStack>
-            <ProgressBar
-              value={Math.round((assignedCount / Math.max(1, totalItems)) * 100)}
-            />
-          </YStack>
-        ) : (
-          <YStack>
-            <Button
-              unstyled
-              onPress={onContinue}
-              height={41}
-              borderRadius={10}
-              bg="#2ECC71"
-              ai="center"
-              jc="center"
-              pressStyle={finalizing ? undefined : { opacity: 0.9 }}
-              disabled={finalizing}
-              opacity={finalizing ? 0.6 : 1}
-            >
-              <Text fontSize={16} fontWeight="600" color="white">
-                {finalizing ? 'Saving...' : 'Continue'}
-              </Text>
-            </Button>
-            {submitError && (
-              <Text mt="$2" color="$red10" fontSize={13} textAlign="center">
-                {submitError}
-              </Text>
-            )}
-          </YStack>
-        )}
+            </YStack>
+          )}
+          {assignedCount > 0 && assignedCount < totalItems && (
+            <YStack mt="$2" p="$2" borderWidth={1} borderColor="$gray5" borderRadius={8} bg="$color1">
+              <XStack w="100%" ai="center" jc="space-between">
+                <Text color="$gray10" fontSize={12}>
+                  Progress
+                </Text>
+                <Text fontSize={12} fontWeight="600">
+                  {assignedCount}/{totalItems}
+                </Text>
+              </XStack>
+              <ProgressBar
+                value={Math.round((assignedCount / Math.max(1, totalItems)) * 100)}
+              />
+            </YStack>
+          )}
+          {submitError && (
+            <Text mt="$2" color="$red10" fontSize={13} textAlign="center">
+              {submitError}
+            </Text>
+          )}
+        </YStack>
       </YStack>
 
       {/* Assign Modal */}

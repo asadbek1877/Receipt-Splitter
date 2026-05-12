@@ -106,7 +106,16 @@ export const useReceiptSessionStore = create<ReceiptSessionStore>((set, get) => 
 
   setSessionName: (sessionName) => {
     set((state) => {
-      if (!state.session) return {};
+      if (!state.session) {
+        // Create a placeholder session meta so the name is persisted before parsing
+        return {
+          session: {
+            sessionId: 0,
+            sessionName,
+            language: 'uz-UZ',
+          } as ReceiptSessionMeta,
+        };
+      }
       return { session: { ...state.session, sessionName } };
     });
   },

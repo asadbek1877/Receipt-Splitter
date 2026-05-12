@@ -24,7 +24,7 @@ export interface ParsedReceiptItem {
 
 export interface ReceiptSummary {
   grandTotal: number;
-  currency?: string; // ✅ Валюта в summary
+  currency?: string;
   [key: string]: unknown;
 }
 
@@ -34,6 +34,7 @@ export interface ParseReceiptResponse {
   language: string;
   items: ParsedReceiptItem[];
   summary?: ReceiptSummary;
+  source?: string;
 }
 
 export type ReceiptParticipant = {
@@ -89,7 +90,7 @@ export interface FinalizeReceiptResponse {
   createdAt: string;
   totals: {
     grandTotal: number;
-    currency?: string; // ✅ Добавьте валюту в ответ
+    currency?: string;
     byParticipant?: FinalizeTotalsByParticipant[];
     byItem?: FinalizeTotalsByItem[];
   };
@@ -97,38 +98,92 @@ export interface FinalizeReceiptResponse {
 }
 
 const normalizeError = (error: unknown): Error => {
-  if (error instanceof Error) return error;
-  return new Error('Unexpected error');
+  if (error instanceof Error) {
+    const msg = error.message || '';
+    
+    // Network connectivity issues
+    if (msg.includes('ECONNREFUSED') || msg.includes('Network request failed')) {
+      return new Error('Cannot connect to server. Make sure backend is running.');
+    }
+    if (msg.includes('ETIMEDOUT') || msg.includes('timeout')) {
+      return new Error('Connection timeout. Server taking too long. Please try again.');
+    }
+    if (msg.includes('ENOTFOUND') || msg.includes('Network')) {
+      return new Error('Network unavailable. Check your internet connection.');
+    }
+    
+    // API validation/client errors
+    if (msg.includes('400') || msg.includes('Invalid request')) {
+      return new Error('Invalid request format. Check image and session data.');
+    }
+    if (msg.includes('413') || msg.includes('too large')) {
+      return new Error('Image too large. Please use a smaller image or clearer photo (max 5MB).');
+    }
+    if (msg.includes('401') || msg.includes('Unauthorized')) {
+      return new Error('Session expired. Please log in again.');
+    }
+    
+    // Specific parsing errors
+    if (msg.includes('parse') || msg.includes('AI could not')) {
+      return new Error('Could not read receipt. Make sure:\n• Receipt is fully within the frame\n• Image is clear and well-lit\n• Receipt is not crumpled or damaged\n\nTry taking another photo.');
+    }
+    
+    // Server errors
+    if (msg.includes('503') || msg.includes('Service Unavailable') || msg.includes('not configured')) {
+      return new Error('AI service not configured. Using demo data.');
+    }
+    if (msg.includes('500') || msg.includes('Server error')) {
+      return new Error('Server error. Please try again.');
+    }
+    
+    return error;
+  }
+  return new Error('Unexpected error occurred');
 };
 
 export const ReceiptApi = {
   async parse(payload: ParseReceiptRequest): Promise<ParseReceiptResponse> {
     try {
-      // console.log('[API] POST /sessions/scan');
-      // console.log('[API] Request data:', JSON.stringify(payload, null, 2));
+      console.log('[ReceiptApi] Parsing receipt:', { sessionName: payload.sessionName, imageSize: payload.image.data.length, frameCropped: true });
 
       const { data } = await apiClient.post<ParseReceiptResponse>('/sessions/scan', payload);
 
-      console.log('[API] Response:', JSON.stringify(data, null, 2));
+      console.log('[ReceiptApi] Parse success:', { 
+        sessionId: data.sessionId, 
+        itemsCount: data.items?.length,
+        grandTotal: data.summary?.grandTotal,
+        source: data.source || 'backend'
+      });
       return data;
     } catch (error) {
-      console.error('[API] Error (parse):', error);
-      throw normalizeError(error);
+      const normalizedError = normalizeError(error);
+      console.error('[ReceiptApi] Parse failed:', normalizedError.message);
+      throw normalizedError;
     }
   },
 
   async finalize(payload: FinalizeReceiptRequest): Promise<FinalizeReceiptResponse> {
     try {
-      console.log('[API] POST /sessions/finalize');
-      console.log('[API] Request data:', JSON.stringify(payload, null, 2));
+      console.log('[ReceiptApi] Finalizing receipt:', { 
+        sessionId: payload.sessionId,
+        itemCount: payload.items?.length,
+        participantCount: payload.participants?.length,
+        currency: payload.currency
+      });
 
       const { data } = await apiClient.post<FinalizeReceiptResponse>('/sessions/finalize', payload);
 
-      console.log('[API] Response:', JSON.stringify(data, null, 2));
+      console.log('[ReceiptApi] Finalize success:', { 
+        sessionId: data.sessionId, 
+        grandTotal: data.totals?.grandTotal,
+        allocationsCount: data.allocations?.length,
+        participantCount: data.totals?.byParticipant?.length
+      });
       return data;
     } catch (error) {
-      console.error('[API] Error (finalize):', error);
-      throw normalizeError(error);
+      const normalizedError = normalizeError(error);
+      console.error('[ReceiptApi] Finalize failed:', normalizedError.message);
+      throw normalizedError;
     }
   },
 };

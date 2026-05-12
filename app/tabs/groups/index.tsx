@@ -1,7 +1,7 @@
 import { useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useRouter } from 'expo-router';
-import { Scan } from '@tamagui/lucide-icons';
+import { Scan, Flower2 } from '@tamagui/lucide-icons';
 import {
   YStack,
   Paragraph,
@@ -11,12 +11,16 @@ import {
   Separator,
   View,
   Button,
+  Text,
 } from 'tamagui';
+import Animated, { FadeInDown, FadeIn } from 'react-native-reanimated';
+import { LinearGradient } from 'expo-linear-gradient';
 
 import { useGroupsStore } from '@/features/groups/model/groups.store';
 import type { GroupMember } from '@/features/groups/api/groups.api';
 import UserAvatar from '@/shared/ui/UserAvatar';
 import Fab from '@/shared/ui/Fab';
+import { useThemeColors } from '@/shared/lib/stores/theme-store';
 
 function AvatarStack({
   members,
@@ -83,6 +87,7 @@ export default function GroupsListScreen() {
   const router = useRouter();
   const { t } = useTranslation();
   const { groups, counts, loading, error, fetchGroups } = useGroupsStore();
+  const colors = useThemeColors();
 
   useEffect(() => {
     fetchGroups();
@@ -92,7 +97,7 @@ export default function GroupsListScreen() {
 
   const cards = useMemo(
     () =>
-      groups.map((group) => {
+      groups.map((group, index) => {
         const members = Array.isArray(group.members) ? group.members : [];
         const storedCount = counts?.[group.id];
         const apiCount = typeof group.counts?.members === 'number' ? group.counts.members : undefined;
@@ -108,54 +113,68 @@ export default function GroupsListScreen() {
         const emptyMembersLabel = t('groups.list.members_zero', 'No members yet');
 
         return (
-          <Card
-            key={group.id}
-            pressStyle={{ scale: 0.98 }}
-            onPress={() =>
-              router.push({
-                pathname: '/tabs/groups/[groupId]',
-                params: { groupId: String(group.id) },
-              } as never)
-            }
-            h={62}
-            br={12}
-            bw={1}
-            bc="$gray5"
-            px="$4"
-            ai="center"
-            jc="center"
-          >
-            <XStack w="100%" jc="space-between" ai="center">
-              <YStack>
-                <Paragraph fow="700" fos={16}>
-                  {groupName}
-                </Paragraph>
-                <Paragraph size={12} col="$gray10">
-                  {memberCount === 0 ? emptyMembersLabel : countLabel}
-                </Paragraph>
-              </YStack>
-              <AvatarStack members={members} totalCount={memberCount} />
-            </XStack>
-          </Card>
+          <Animated.View key={group.id} entering={FadeInDown.delay(index * 100).springify()}>
+            <Card
+              pressStyle={{ scale: 0.98 }}
+              onPress={() =>
+                router.push({
+                  pathname: '/tabs/groups/[groupId]',
+                  params: { groupId: String(group.id) },
+                } as never)
+              }
+              h={72}
+              br={16}
+              bw={1.5}
+              bc={colors.glassBorder}
+              px="$4"
+              ai="center"
+              jc="center"
+              backgroundColor={colors.glass}
+              style={{
+                shadowColor: colors.primary,
+                shadowOffset: { width: 0, height: 4 },
+                shadowOpacity: 0.1,
+                shadowRadius: 8,
+              }}
+            >
+              <XStack w="100%" jc="space-between" ai="center">
+                <YStack>
+                  <Text fontWeight="700" fontSize={16} color={colors.text}>
+                    {groupName}
+                  </Text>
+                  <Text fontSize={12} color={colors.textSecondary}>
+                    {memberCount === 0 ? emptyMembersLabel : countLabel}
+                  </Text>
+                </YStack>
+                <AvatarStack members={members} totalCount={memberCount} />
+              </XStack>
+            </Card>
+          </Animated.View>
         );
       }),
-    [counts, groups, router, t]
+    [counts, groups, router, t, colors]
   );
 
   if (loading && hasNoGroups) {
     return (
-      <YStack f={1} ai="center" jc="center">
-        <Spinner />
+      <YStack f={1} ai="center" jc="center" backgroundColor={colors.background}>
+        <Spinner color={colors.primary} />
       </YStack>
     );
   }
 
   return (
-    <YStack f={1} p="$4" gap="$3" bg="$background">
-      <Paragraph fow="700" fos="$7">
-        {t('groups.title', 'Groups')}
-      </Paragraph>
-      <Separator />
+    <YStack f={1} p="$4" gap="$4" backgroundColor={colors.background}>
+      <Animated.View entering={FadeIn.duration(400)}>
+        <XStack ai="center" gap="$2">
+          <Flower2 size={24} color={colors.primary} />
+          <Text fontWeight="700" fontSize={24} color={colors.text}>
+            {t('groups.title', 'Groups')}
+          </Text>
+        </XStack>
+      </Animated.View>
+      
+      <Separator backgroundColor={colors.glassBorder} />
 
       <XStack jc="flex-end" ai="center">
         <Button
@@ -163,18 +182,36 @@ export default function GroupsListScreen() {
             router.push({ pathname: '/tabs/scan-invite', params: { from: 'groups-index' } } as never)
           }
           size="$3"
-          borderRadius="$3"
-          theme="active"
-          icon={<Scan size={18} />}
+          borderRadius={12}
+          backgroundColor={colors.primary}
+          color="white"
+          icon={<Scan size={18} color="white" />}
+          pressStyle={{ opacity: 0.8 }}
         >
           {t('groups.actions.scanInvite', 'Scan invite')}
         </Button>
       </XStack>
 
-      {error && <Paragraph col="$red10">{error}</Paragraph>}
+      {error && <Text color="#EF4444">{error}</Text>}
 
       {hasNoGroups ? (
-        <Paragraph col="$gray10">{t('groups.empty', 'No groups yet. Tap + to create.')}</Paragraph>
+        <Animated.View entering={FadeInDown.delay(200).springify()}>
+          <YStack 
+            ai="center" 
+            jc="center" 
+            py="$8" 
+            px="$4"
+            backgroundColor={colors.glass}
+            borderRadius={16}
+            borderWidth={1}
+            borderColor={colors.glassBorder}
+          >
+            <Flower2 size={48} color={colors.textSecondary} style={{ marginBottom: 12 }} />
+            <Text color={colors.textSecondary} textAlign="center">
+              {t('groups.empty', 'No groups yet. Tap + to create.')}
+            </Text>
+          </YStack>
+        </Animated.View>
       ) : (
         <YStack gap="$3">{cards}</YStack>
       )}

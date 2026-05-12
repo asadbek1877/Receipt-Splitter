@@ -96,9 +96,14 @@ export const useGroupsStore = create<State & Actions>((set, get) => ({
   },
 
   async createGroup(name) {
-    const g = await GroupsApi.create(name);
-    await get().fetchGroups();
-    return g;
+    try {
+      const g = await GroupsApi.create(name);
+      await get().fetchGroups();
+      return g;
+    } catch (e: any) {
+      set({ error: e?.message ?? 'Failed to create group' });
+      throw e;
+    }
   },
 
   async renameGroup(groupId, name) {

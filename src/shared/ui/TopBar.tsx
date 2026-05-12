@@ -8,6 +8,7 @@ import * as Clipboard from 'expo-clipboard';
 import { useAppStore } from '@/shared/lib/stores/app-store';
 import UserAvatar from '@/shared/ui/UserAvatar';
 import { useFriendsStore } from '@/features/friends/model/friends.store';
+import { useThemeColors } from '@/shared/lib/stores/theme-store';
 
 type Props = {
   title?: string;
@@ -18,6 +19,7 @@ export default function TopBar({ title, greeting = false }: Props) {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { user, logout } = useAppStore();
+  const themeColors = useThemeColors();
   const userInitial = (user?.username?.[0] ?? 'U').toUpperCase();
 
   // безопасно читаем количество заявок (без жёстких типов)
@@ -62,7 +64,7 @@ export default function TopBar({ title, greeting = false }: Props) {
   };
 
   return (
-    <SafeAreaView edges={['top']} style={{ backgroundColor: 'white', paddingTop: insets.top }}>
+    <SafeAreaView edges={['top']} style={{ backgroundColor: themeColors.background, paddingTop: insets.top }}>
       <XStack
         ai="center"
         jc="space-between"
