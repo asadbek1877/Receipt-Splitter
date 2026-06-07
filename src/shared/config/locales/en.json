@@ -1,0 +1,350 @@
+{
+  "app": {
+    "name": "Receipt Splitter",
+    "subtitle": "Split bills easily with friends"
+  },
+  "features": {
+    "scan": "Scan",
+    "scanDesc": "Take photos of your receipts",
+    "split": "Split Bills",
+    "splitDesc": "Divide costs with friends",
+    "calculate": "Calculate",
+    "calculateDesc": "Know who owes what"
+  },
+  "welcome": {
+    "message": "Welcome! Let's get started",
+    "newUser": "New to Receipt Splitter?",
+    "newUserDesc": "Create an account to start splitting bills",
+    "existingUser": "Already have an account?"
+  },
+  "auth": {
+    "signIn": "Sign In",
+    "signInDesc": "Welcome back! Please sign in to continue",
+    "createAccount": "Create Account",
+    "createAccountDesc": "Join us to start splitting bills with friends",
+    "email": "Email",
+    "emailPlaceholder": "Enter your email",
+    "password": "Password",
+    "passwordPlaceholder": "Enter your password",
+    "confirmPassword": "Confirm Password",
+    "username": "Username",
+    "usernamePlaceholder": "Enter your username",
+    "forgotPassword": "Forgot Password?",
+    "resetPassword": "Reset Password",
+    "resetPasswordDesc": "Enter your email address and we'll send you a link to reset your password.",
+    "sendResetLink": "Send Reset Link",
+    "checkEmail": "Check your email",
+    "resetEmailSent": "If an account exists with this email, a password reset link has been sent.",
+    "backToLogin": "Back to Sign In",
+    "rememberPassword": "Remember your password?",
+    "forgotPasswordError": "Failed to send reset email. Please try again.",
+    "noAccount": "Don't have an account?",
+    "haveAccount": "Already have an account?",
+    "loginError": "An error occurred during login",
+    "registerError": "An error occurred during registration"
+  },
+  "common": {
+    "welcome": "Welcome",
+    "loading": "Loading...",
+    "error": "Error",
+    "success": "Success",
+    "cancel": "Cancel",
+    "confirm": "Confirm",
+    "continue": "Continue",
+    "back": "Back"
+  },
+  "analytics": {
+    "title": "Analytics",
+    "subtitle": "Track your spending patterns",
+    "loading": "Loading analytics...",
+    "noData": "No data available",
+    "totalSpent": "Total Spent",
+    "totalSessions": "Total Sessions",
+    "averagePerSession": "Average per Session",
+    "monthlySpending": "Monthly Spending",
+    "topParticipants": "Top Participants",
+    "sessions": "sessions",
+    "categoryBreakdown": "Spending by Category",
+    "aiPowered": "✨ AI-powered categorization",
+    "export": "Export Report",
+    "exportDesc": "Share or download your data",
+    "exportTitle": "Analytics Report",
+    "exportSuccess": "Report exported successfully",
+    "exportError": "Failed to export report",
+    "share": "Share",
+    "autoCalculated": "(auto-calculated)"
+  },
+  "friends": {
+    "title": "Friends",
+    "count": "friends",
+    "requests": "Requests",
+    "scanQr": "Scan QR",
+    "searchPlaceholder": "Search friends...",
+    "remove": "Remove",
+    "empty": {
+      "title": "No friends yet",
+      "description": "Add friends to start splitting bills together!"
+    },
+    "search": {
+      "noResults": "No friends found",
+      "tryAgain": "Try a different search"
+    },
+    "add": {
+      "title": "Add Friend",
+      "description": "Enter your friend's name to add them to your list.",
+      "namePlaceholder": "Friend's name",
+      "button": "Add",
+      "error": "Error",
+      "nameRequired": "Please enter a name"
+    },
+    "edit": {
+      "title": "Edit Friend",
+      "description": "Update your friend's name."
+    },
+    "removeConfirm": "Are you sure you want to remove {{name}}?"
+  },
+  "home": {
+    "header": {
+      "greeting": "Hi, {{name}}!",
+      "friendFallback": "friend"
+    },
+    "scan": {
+      "cta": "Scan invite"
+    },
+    "actions": {
+      "friends": "Friends",
+      "groups": "Groups"
+    },
+    "recent": {
+      "title": "Recent bills",
+      "showMore": "Show more",
+      "loading": "Loading recent bills...",
+      "empty": "No bills yet",
+      "summary": "{{date}} • {{participants}}",
+      "fallbackName": "Bill",
+      "participants": "{{count}} participants",
+      "participants_one": "{{count}} participant",
+      "participants_other": "{{count}} participants",
+      "amount": "{{currency}} {{amount}}"
+    },
+    "features": {
+      "title": "What you can do"
+    }
+  },
+  "profile": {
+    "title": "Profile",
+    "status": {
+      "saved": "Saved"
+    },
+    "actions": {
+      "copy": "Copy"
+    },
+    "labels": {
+      "guest": "Guest",
+      "notAvailable": "N/A"
+    },
+    "avatar": {
+      "title": "Avatar",
+      "hint": "Uploaded avatars are delivered via our CDN and refresh instantly.",
+      "upload": "Upload from phone",
+      "uploading": "Uploading...",
+      "reset": "Reset avatar",
+      "resetting": "Resetting..."
+    },
+    "info": {
+      "title": "User information",
+      "usernameLabel": "Username",
+      "usernamePlaceholder": "Enter a new username",
+      "emailLabel": "Email",
+      "emailPlaceholder": "Enter a new email",
+      "userId": "User ID"
+    },
+    "password": {
+      "title": "Change password",
+      "currentLabel": "Current password",
+      "currentPlaceholder": "Enter current password",
+      "newLabel": "New password",
+      "newPlaceholder": "Enter new password",
+      "confirmLabel": "Confirm new password",
+      "confirmPlaceholder": "Confirm new password",
+      "requirements": "Password must be at least 8 characters and include uppercase, lowercase, number, and special symbol.",
+      "submit": "Change password",
+      "updating": "Updating..."
+    },
+    "logout": "Log out",
+    "copy": {
+      "successTitle": "Copied",
+      "successMessage": "{{field}} copied to the clipboard.",
+      "unavailableMessage": "{{field}} is not available yet."
+    },
+    "alerts": {
+      "permissionTitle": "Permission needed",
+      "permissionMessage": "Please allow access to your photo library to pick an avatar.",
+      "unavailableTitle": "Unavailable",
+      "avatarLoginRequired": "Sign in to update your avatar.",
+      "profileLoginRequired": "Sign in to update your profile.",
+      "passwordLoginRequired": "Sign in to change your password.",
+      "avatarUpdateFailed": "Could not update the avatar.",
+      "avatarResetFailed": "Could not reset the avatar.",
+      "usernameUpdateFailed": "Could not update the username.",
+      "emailUpdateFailed": "Could not update the email.",
+      "passwordChangeFailed": "Could not change the password.",
+      "logoutFailed": "Could not log out. Please try again.",
+      "imageMissing": "Image file is missing a URI.",
+      "uploadReadFailed": "Unable to read the selected file for upload."
+    },
+    "validation": {
+      "usernameRequired": "Username cannot be empty",
+      "usernameMin": "Username must be at least 2 characters",
+      "emailRequired": "Email cannot be empty",
+      "emailInvalid": "Enter a valid email address",
+      "passwordCurrent": "Enter your current password",
+      "passwordLength": "New password must be at least 8 characters",
+      "passwordComplexity": "Password must include uppercase, lowercase, number, and special character",
+      "passwordMismatch": "Passwords do not match",
+      "passwordDifferent": "Choose a different password"
+    }
+  },
+  "navigation": {
+    "mainMenu": "Main menu",
+    "tabs": {
+      "home": "Home",
+      "settings": "Settings",
+      "profile": "Profile"
+    },
+    "groups": {
+      "title": "Groups",
+      "create": "New group",
+      "details": "Group"
+    },
+    "scanInvite": "Scan Invite",
+    "friendQr": "My Friend QR",
+    "groupQr": "Group QR",
+    "scanReceipt": "Scan Receipt",
+    "participants": "Participants",
+    "itemsSplit": "Items Split",
+    "finish": "Finish",
+    "history": "Recent bills",
+    "historyDetails": "Bill details"
+  },
+  "settings": {
+    "title": "Settings",
+    "subtitle": "Customize your app experience",
+    "language": {
+      "title": "Language",
+      "description": "Choose the language used across the app.",
+      "options": {
+        "en": "English",
+        "ja": "Japanese",
+        "uz": "Uzbek"
+      }
+    },
+    "theme": {
+      "title": "Theme",
+      "description": "Choose light or dark mode",
+      "light": "Light",
+      "dark": "Dark"
+    },
+    "currency": {
+      "title": "Currency",
+      "description": "Default currency for splitting bills.",
+      "source": "Source",
+      "updated": "Updated"
+    }
+  },
+  "quickSplit": {
+    "title": "Quick Split",
+    "subtitle": "Split bills instantly",
+    "totalAmount": "Total Amount",
+    "splitMode": "Split Mode",
+    "equal": "Equal",
+    "percentage": "Percent",
+    "custom": "Custom",
+    "howManyPeople": "How many people?",
+    "eachPays": "Each person pays",
+    "participants": "Participants",
+    "calculate": "Calculate",
+    "result": "Split Result",
+    "total": "Total",
+    "subtotal": "Subtotal",
+    "share": "Share",
+    "shareResult": "Share Result",
+    "shareMessage": "Sharing coming soon!",
+    "person": "Person",
+    "copy": "copy",
+    "chooseColor": "Choose Color",
+    "chooseEmoji": "Choose Avatar",
+    "tip": "Tip",
+    "tipDescription": "Add a tip to the bill",
+    "tipAmount": "Tip amount",
+    "grandTotal": "Grand Total",
+    "minAlert": {
+      "title": "Minimum 2 people",
+      "message": "You need at least 2 people to split!"
+    },
+    "percentageWarning": "Total",
+    "customWarning": "Total",
+    "shouldBe": "should be"
+  },
+  "debts": {
+    "title": "Debt Tracker",
+    "subtitle": "Track who owes what",
+    "youOwe": "You owe",
+    "owesYou": "Owes you",
+    "paid": "Paid",
+    "markPaid": "Mark Paid",
+    "markUnpaid": "Undo",
+    "ownedToYou": "Owed to you",
+    "youOweTotal": "You owe",
+    "netBalance": "Net Balance",
+    "inProfit": "You're in profit!",
+    "inDebt": "You're in debt",
+    "iOwe": "I Owe",
+    "owedMe": "Owed Me",
+    "add": {
+      "title": "Add Debt"
+    },
+    "edit": {
+      "title": "Edit Debt"
+    },
+    "delete": {
+      "title": "Delete Debt",
+      "confirm": "Are you sure you want to delete this debt?"
+    },
+    "filters": {
+      "active": "Active",
+      "iOwe": "I Owe",
+      "owedMe": "Owed Me",
+      "paid": "Paid"
+    },
+    "form": {
+      "namePlaceholder": "Person name",
+      "amountPlaceholder": "Amount",
+      "descriptionPlaceholder": "Description (optional)"
+    },
+    "errors": {
+      "nameRequired": "Please enter a name",
+      "invalidAmount": "Please enter a valid amount"
+    },
+    "empty": {
+      "title": "No debts yet",
+      "description": "Track money you owe or are owed"
+    }
+  },
+  "receiptReview": {
+    "title": "Confirm Receipt Items",
+    "manualAdd": "Manual Add",
+    "productName": "Product name",
+    "price": "Price",
+    "qty": "Qty",
+    "lineTotal": "Line total",
+    "totalItems": "Total ({{count}} items)",
+    "confirmContinue": "Confirm and Continue",
+    "noProductsTitle": "No products detected from receipt.",
+    "noProductsDesc": "Use Manual Add to enter products.",
+    "errNameReq": "Product name is required",
+    "errPriceReq": "Price must be greater than 0",
+    "errQtyReq": "Quantity must be greater than 0",
+    "errReceiptEmpty": "Receipt must contain at least one product"
+  }
+}
