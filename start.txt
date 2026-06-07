@@ -1,0 +1,13 @@
+Terminal 1 (Backend)
+
+cd "d:\Trail\Trail - final\Work2\splitter-backend"
+npm start
+
+-----------------------------------
+
+Terminal 2 (Frontend)
+
+cd "d:\Trail\Trail - final\Work2\splitter-frontend"
+npx expo start -c
+
+-----------------------------------
