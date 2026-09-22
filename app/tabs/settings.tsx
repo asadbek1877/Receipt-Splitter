@@ -103,18 +103,18 @@ export default function SettingsScreen() {
 
   const validateUsername = (value: string) => {
     const trimmed = value.trim();
-    if (!trimmed) return 'Username cannot be empty';
-    if (trimmed.length < 2) return 'At least 2 characters';
+    if (!trimmed) return t('settings.validation.usernameRequired');
+    if (trimmed.length < 2) return t('settings.validation.usernameMin');
     return null;
   };
 
   const validatePasswordForm = () => {
-    if (!currentPassword.trim()) return 'Enter current password';
-    if (newPassword.length < 8) return 'Min 8 characters';
+    if (!currentPassword.trim()) return t('settings.validation.currentPassword');
+    if (newPassword.length < 8) return t('settings.validation.passwordMin');
     if (!/[A-Z]/.test(newPassword) || !/[a-z]/.test(newPassword) || !/\d/.test(newPassword) || !/[^A-Za-z0-9\s]/.test(newPassword))
-      return 'Need uppercase, lowercase, number, symbol';
-    if (newPassword !== confirmPassword) return 'Passwords do not match';
-    if (newPassword === currentPassword) return 'Choose different password';
+      return t('settings.validation.passwordComplexity');
+    if (newPassword !== confirmPassword) return t('settings.validation.passwordMismatch');
+    if (newPassword === currentPassword) return t('settings.validation.passwordDifferent');
     return null;
   };
 
@@ -126,7 +126,7 @@ export default function SettingsScreen() {
     setAdminTapCount((prev) => {
       const next = prev + 1;
       if (next >= 5) {
-        Alert.alert('Admin Mode', 'Admin password screen is opening');
+        Alert.alert(t('settings.alerts.adminModeTitle'), t('settings.alerts.adminModeMessage'));
         router.push('/admin-panel' as any);
         return 0;
       }
@@ -135,7 +135,7 @@ export default function SettingsScreen() {
   };
 
   const handleSaveUsername = async () => {
-    if (!isLoggedIn) { Alert.alert('Unavailable', 'Sign in first.'); return; }
+    if (!isLoggedIn) { Alert.alert(t('settings.alerts.unavailable'), t('settings.alerts.signInFirst')); return; }
     const error = validateUsername(usernameValue);
     if (error) { setUsernameError(error); return; }
     setUsernameError(null);
@@ -143,14 +143,14 @@ export default function SettingsScreen() {
       setIsUpdatingUsername(true);
       const updatedUser = await updateUsername({ username: usernameValue.trim() });
       setUser(updatedUser);
-      Alert.alert('Success', 'Username updated.');
+      Alert.alert(t('common.success'), t('settings.alerts.usernameUpdated'));
     } catch (error) {
-      Alert.alert('Error', error instanceof Error ? error.message : 'Failed');
+      Alert.alert(t('common.error'), error instanceof Error ? error.message : t('settings.alerts.genericFailed'));
     } finally { setIsUpdatingUsername(false); }
   };
 
   const handleChangePassword = async () => {
-    if (!isLoggedIn) { Alert.alert('Unavailable', 'Sign in first.'); return; }
+    if (!isLoggedIn) { Alert.alert(t('settings.alerts.unavailable'), t('settings.alerts.signInFirst')); return; }
     const error = validatePasswordForm();
     if (error) { setPasswordError(error); return; }
     setPasswordError(null);
@@ -158,9 +158,9 @@ export default function SettingsScreen() {
       setIsChangingPassword(true);
       await changePassword({ currentPassword, newPassword });
       setCurrentPassword(''); setNewPassword(''); setConfirmPassword('');
-      Alert.alert('Success', 'Password changed.');
+      Alert.alert(t('common.success'), t('settings.alerts.passwordChanged'));
     } catch (error) {
-      Alert.alert('Error', error instanceof Error ? error.message : 'Failed');
+      Alert.alert(t('common.error'), error instanceof Error ? error.message : t('settings.alerts.genericFailed'));
     } finally { setIsChangingPassword(false); }
   };
 

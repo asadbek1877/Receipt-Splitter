@@ -200,7 +200,7 @@ export default function RegisterForm() {
           console.warn('Registration profile refresh failed, using inline user:', fetchError);
         }
 
-        setAuth(res.token, profile);
+        await setAuth(res.token, profile);
         router.replace('/tabs');
       }
     } catch (error: any) {

@@ -1,10 +1,20 @@
-import React, { useMemo } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { YStack, XStack, Text, Button, Circle, ScrollView } from 'tamagui';
+import { YStack, XStack, Text, Button, ScrollView } from 'tamagui';
 import { Check } from '@tamagui/lucide-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useTranslation } from 'react-i18next';
 import type { FinalizeTotalsByItem, FinalizeTotalsByParticipant, ReceiptAllocation } from '@/features/receipt/api/receipt.api';
 import { useReceiptSessionStore, type FinishPayload } from '@/features/receipt/model/receipt-session.store';
+import { useSplitterStore } from '@/shared/store/useSplitterStore';
+import type { Debt } from '@/entities/debt';
+import { useAppStore } from '@/shared/lib/stores/app-store';
+import UserAvatar from '@/shared/ui/UserAvatar';
+import SettlementCard, {
+  type PaymentMethod,
+  type SettlementCardItem,
+  type SettlementUser,
+} from '@/features/settlements/ui/SettlementCard';
 
 type Participant = { uniqueId: string; username: string };
 
@@ -33,10 +43,15 @@ const getCurrencyParts = (n: number, currency: string) => {
 };
 
 export default function FinishScreen() {
+  const { t } = useTranslation();
   const { data } = useLocalSearchParams<{ data?: string }>();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const lastFinishPayload = useReceiptSessionStore((s) => s.lastFinishPayload);
+  const currentUser = useAppStore((s) => s.user);
+  const currentUserId = currentUser?.uniqueId ?? null;
+  const currentUserName = currentUser?.username ?? null;
+  const setSplitterState = useSplitterStore.setState;
 
   const payload = useMemo<FinishPayload | null>(() => {
     if (data) {
@@ -137,16 +152,47 @@ export default function FinishScreen() {
       return value[index] as T | undefined;
     };
 
-    const totalsEntries = Object.entries(totals ?? {}).reduce<Array<[string, number]>>(
-      (acc, [rawId, value]) => {
-        const id = normalizeId(rawId);
-        if (!id) return acc;
-        if (typeof value !== 'number' || !Number.isFinite(value)) return acc;
-        acc.push([id, value]);
-        return acc;
-      },
-      []
+    const normalizeName = (value?: string | null) =>
+      (value ?? '')
+        .trim()
+        .replace(/\s*\((you|me)\)\s*$/i, '')
+        .trim();
+
+    const currentUserAliases = new Set(
+      [currentUserId, currentUserName, 'You']
+        .map((value) => normalizeName(normalizeId(value) ?? value ?? '').toLowerCase())
+        .filter(Boolean)
     );
+
+    const isCurrentUserValue = (value?: string | null) => {
+      if (!currentUserId) return false;
+      const normalized = normalizeName(normalizeId(value) ?? value ?? '').toLowerCase();
+      return normalized.length > 0 && currentUserAliases.has(normalized);
+    };
+
+    const canonicalizeParticipantId = (value?: string | null, name?: string | null) => {
+      const id = normalizeId(value);
+      if (currentUserId && (isCurrentUserValue(id) || isCurrentUserValue(name))) {
+        return currentUserId;
+      }
+      return id;
+    };
+
+    const displayNameFor = (id: string, name?: string | null) => {
+      if (currentUserId && id === currentUserId) {
+        return currentUserName ?? t('common.you');
+      }
+      return normalizeName(name) || id;
+    };
+
+    const totalsAccumulator = new Map<string, number>();
+    Object.entries(totals ?? {}).forEach(([rawId, value]) => {
+      const id = canonicalizeParticipantId(rawId);
+      if (!id) return;
+      if (typeof value !== 'number' || !Number.isFinite(value)) return;
+      totalsAccumulator.set(id, (totalsAccumulator.get(id) ?? 0) + value);
+    });
+    const totalsEntries = Array.from(totalsAccumulator.entries());
     const totalsMap = new Map<string, number>(totalsEntries);
 
     const normalizedParticipantTotals = (totalsByParticipantList as unknown[]).reduce<
@@ -179,9 +225,6 @@ export default function FinishScreen() {
         normalizeId(candidate.user?.name) ??
         normalizeId(pickFromArray<string>(rawEntry, 0));
 
-      const rawId = candidateId;
-      if (!rawId) return acc;
-
       const username =
         candidate.username ??
         candidate.participant?.username ??
@@ -191,9 +234,13 @@ export default function FinishScreen() {
         candidate.user?.username ??
         candidate.user?.name ??
         participants.find(
-          (participant) => normalizeId(participant.uniqueId) === rawId
+          (participant) => normalizeId(participant.uniqueId) === candidateId
         )?.username ??
-        rawId;
+        candidateId ??
+        t('common.unknown');
+
+      const rawId = canonicalizeParticipantId(candidateId, username);
+      if (!rawId) return acc;
 
       const amount = pickFirstNumber(
         toMaybeNumber(candidate.amountOwed),
@@ -211,7 +258,7 @@ export default function FinishScreen() {
         toMaybeNumber(pickFromArray(rawEntry, 1))
       );
 
-      acc.push({ uniqueId: rawId, username, amountOwed: amount });
+      acc.push({ uniqueId: rawId, username: displayNameFor(rawId, username), amountOwed: amount });
       return acc;
     }, []);
 
@@ -219,9 +266,9 @@ export default function FinishScreen() {
     const nameMap = new Map<string, string>();
 
     const pushName = (value?: string, username?: string) => {
-      const id = normalizeId(value);
+      const id = canonicalizeParticipantId(value, username);
       if (!id) return;
-      const safeName = (username ?? '').trim() || id;
+      const safeName = displayNameFor(id, username);
       if (!nameMap.has(id)) {
         nameMap.set(id, safeName);
       }
@@ -232,7 +279,7 @@ export default function FinishScreen() {
     );
     normalizedParticipantTotals.forEach((entry) => {
       pushName(entry.uniqueId, entry.username);
-      totalsFromList.set(entry.uniqueId, entry.amountOwed);
+      totalsFromList.set(entry.uniqueId, (totalsFromList.get(entry.uniqueId) ?? 0) + entry.amountOwed);
     });
     totalsEntries.forEach(([id]) => {
       const candidateName =
@@ -246,7 +293,8 @@ export default function FinishScreen() {
     const participantOrder: string[] = [];
     const seenParticipants = new Set<string>();
     const pushParticipant = (value?: string) => {
-      const id = normalizeId(value);
+      const participantName = participants.find((participant) => participant.uniqueId === value)?.username;
+      const id = canonicalizeParticipantId(value, participantName);
       if (!id || seenParticipants.has(id)) return;
       seenParticipants.add(id);
       participantOrder.push(id);
@@ -263,7 +311,7 @@ export default function FinishScreen() {
     const allocationTotalsByParticipant = new Map<string, number>();
 
     const ensureName = (value: string) => {
-      const id = normalizeId(value);
+      const id = canonicalizeParticipantId(value);
       if (!id) return value;
       if (!nameMap.has(id)) {
         const fallback =
@@ -272,7 +320,7 @@ export default function FinishScreen() {
             (participant) => normalizeId(participant.uniqueId) === id
           )?.username ??
           id;
-        nameMap.set(id, fallback);
+        nameMap.set(id, displayNameFor(id, fallback));
       }
       return nameMap.get(id) ?? id;
     };
@@ -282,7 +330,7 @@ export default function FinishScreen() {
       const { participantId, itemId, shareAmount } = allocation;
       if (!participantId || !itemId || typeof shareAmount !== 'number') return;
 
-      const normalizedParticipantId = normalizeId(participantId);
+      const normalizedParticipantId = canonicalizeParticipantId(participantId);
       if (!normalizedParticipantId) return;
 
       pushParticipant(normalizedParticipantId);
@@ -314,7 +362,7 @@ export default function FinishScreen() {
     });
 
     const resolveAmount = (value: string) => {
-      const id = normalizeId(value);
+      const id = canonicalizeParticipantId(value);
       if (!id) return 0;
       if (totalsMap.has(id)) return totalsMap.get(id)!;
       if (totalsFromList.has(id)) return totalsFromList.get(id)!;
@@ -406,17 +454,154 @@ export default function FinishScreen() {
       itemSummaries: items,
       effectiveGrandTotal,
     };
-  }, [participants, totals, totalsByParticipantList, totalsByItemList, allocationsList, knownGrandTotal]);
+  }, [
+    participants,
+    totals,
+    totalsByParticipantList,
+    totalsByItemList,
+    allocationsList,
+    knownGrandTotal,
+    currentUserId,
+    currentUserName,
+    t,
+  ]);
 
   const showGrandTotal = participantSummaries.length > 0 || itemSummaries.length > 0;
   const grandTotalParts = showGrandTotal ? getCurrencyParts(effectiveGrandTotal, currency) : null;
+  const receiptKey = String(payload?.sessionId ?? payload?.receiptId ?? 'receipt');
+  const settlementReceiver = useMemo<SettlementUser>(() => {
+    const participantMatch = currentUser?.uniqueId
+      ? participantSummaries.find((summary) => summary.uniqueId === currentUser.uniqueId)
+      : undefined;
+    const fallback = participantMatch ?? participantSummaries[0];
+
+    return {
+      id: currentUser?.uniqueId ?? fallback?.uniqueId ?? 'cashier',
+      name: currentUser?.username ?? fallback?.username ?? t('billSummary.cashierFallback'),
+      avatarUrl: currentUser?.avatarUrl ?? null,
+    };
+  }, [currentUser?.avatarUrl, currentUser?.uniqueId, currentUser?.username, participantSummaries, t]);
+  const paidByName = settlementReceiver.name;
+
+  const initialSettlements = useMemo<SettlementCardItem[]>(() => {
+    return participantSummaries
+      .filter((summary) => summary.uniqueId !== settlementReceiver.id)
+      .filter((summary) => Number.isFinite(summary.amount) && summary.amount > 0.5)
+      .map((summary) => ({
+        id: `settlement-${receiptKey}-${summary.uniqueId}-${settlementReceiver.id}`,
+        payer: {
+          id: summary.uniqueId,
+          name: summary.username,
+          avatarUrl: null,
+        },
+        receiver: settlementReceiver,
+        amount: summary.amount,
+        currency,
+        method: 'cash' as PaymentMethod,
+        status: 'pending',
+      }));
+  }, [currency, participantSummaries, receiptKey, settlementReceiver]);
+
+  const settlementSignature = useMemo(
+    () =>
+      initialSettlements
+        .map((settlement) =>
+          [
+            settlement.id,
+            settlement.payer.id,
+            settlement.receiver.id,
+            Math.round(settlement.amount),
+            settlement.currency,
+          ].join(':')
+        )
+        .join('|'),
+    [initialSettlements]
+  );
+
+  const [settlements, setSettlements] = useState<SettlementCardItem[]>([]);
+
+  useEffect(() => {
+    return () => {
+      setSettlements([]);
+    };
+  }, [currentUserId, receiptKey]);
+
+  useEffect(() => {
+    setSettlements((prev) => {
+      if (initialSettlements.length === 0) {
+        return prev.length === 0 ? prev : [];
+      }
+
+      return initialSettlements.map((nextSettlement) => {
+        const existing = prev.find((settlement) => settlement.id === nextSettlement.id);
+        return existing
+          ? {
+              ...nextSettlement,
+              method: existing.method,
+              status: existing.status,
+            }
+          : nextSettlement;
+      });
+    });
+  }, [settlementSignature]);
+
+  const handleMethodChange = (id: string, method: PaymentMethod) => {
+    setSettlements((prev) =>
+      prev.map((settlement) =>
+        settlement.id === id ? { ...settlement, method } : settlement
+      )
+    );
+  };
+
+  const handleMarkPaid = (id: string) => {
+    setSettlements((prev) =>
+      prev.map((settlement) =>
+        settlement.id === id ? { ...settlement, status: 'paid' } : settlement
+      )
+    );
+  };
+
+  const completeSettlement = () => {
+    const ownerUserId = currentUserId ?? settlementReceiver.id;
+    const createdDebts: Debt[] = settlements
+      .filter((settlement) => settlement.amount > 0.5)
+      .map((settlement) => ({
+        id: settlement.id,
+        ownerUserId,
+        fromUserId: settlement.payer.id,
+        toUserId: settlement.receiver.id,
+        amount: settlement.amount,
+        receiptId: receiptKey,
+        date: new Date(),
+        status: settlement.status === 'paid' ? 'PAID' : 'ACTIVE',
+        paidAt: settlement.status === 'paid' ? new Date() : null,
+      }));
+
+    setSplitterState((state) => ({
+      debts: [
+        ...state.debts.filter((debt) => {
+          const debtOwner = debt.ownerUserId ?? ownerUserId;
+          return !(debt.receiptId === receiptKey && debtOwner === ownerUserId);
+        }),
+        ...createdDebts,
+      ],
+      analytics: {
+        ...state.analytics,
+        totalOwed: createdDebts.reduce((sum, debt) => sum + debt.amount, 0),
+        totalDebt: createdDebts.reduce((sum, debt) => sum + debt.amount, 0),
+      },
+    }));
+
+    router.replace('/tabs');
+  };
 
   const Avatar = ({ name }: { name: string }) => (
-    <Circle size={32} bg="$gray5" ai="center" jc="center">
-      <Text color="white" fontWeight="700" fontSize={14}>
-        {name?.[0]?.toUpperCase() || '?'}
-      </Text>
-    </Circle>
+    <UserAvatar
+      label={name?.[0]?.toUpperCase() || '?'}
+      size={32}
+      textSize={14}
+      backgroundColor="$gray5"
+    />
   );
 
   return (
@@ -426,11 +611,11 @@ export default function FinishScreen() {
         <XStack w="100%" ai="center" jc="flex-start" mb="$3">
           <YStack ai="flex-start">
             <Text fontSize={16} fontWeight="700">
-              Bill Summary
+              {t('billSummary.title')}
             </Text>
             {receiptId && (
               <Text fontSize={12} color="$gray10">
-                Receipt #{receiptId}
+                {t('billSummary.receiptNumber', { id: receiptId })}
               </Text>
             )}
           </YStack>
@@ -467,24 +652,27 @@ export default function FinishScreen() {
         {/* Grand Total */}
         {grandTotalParts && (
           <YStack
-            p="$3"
+            p="$4"
             borderWidth={1}
             borderColor="#2ECC71"
-            borderRadius={12}
+            borderRadius={16}
             bg="#2ECC711A"
             mb="$3"
           >
             <Text fontSize={13} color="$gray11" mb="$1">
-              Total Amount
+              {t('billSummary.totalAmount')}
             </Text>
             <XStack ai="baseline" gap="$1">
               <Text fontSize={14} color="#2ECC71">
                 {grandTotalParts.currency}
               </Text>
-              <Text fontSize={24} fontWeight="700" color="#2ECC71">
+              <Text fontSize={30} fontWeight="800" color="#2ECC71">
                 {grandTotalParts.amount}
               </Text>
             </XStack>
+            <Text fontSize={17} fontWeight="800" color="$gray12" mt="$2">
+              {t('billSummary.paidBy', { name: paidByName })}
+            </Text>
           </YStack>
         )}
       </YStack>
@@ -497,7 +685,7 @@ export default function FinishScreen() {
       >
         <YStack gap="$2">
           <Text fontSize={14} fontWeight="600" color="$gray11" mb="$1">
-            Split by participant:
+            {t('billSummary.splitByParticipant')}
           </Text>
           {participantSummaries.length > 0 ? (
             participantSummaries.map((summary) => {
@@ -535,7 +723,7 @@ export default function FinishScreen() {
             })
           ) : (
             <Text fontSize={13} color="$gray10">
-              No participant data available yet.
+              {t('billSummary.noParticipantData')}
             </Text>
           )}
         </YStack>
@@ -543,7 +731,7 @@ export default function FinishScreen() {
         {itemSummaries.length > 0 && (
           <YStack gap="$2" mt="$4">
             <Text fontSize={14} fontWeight="600" color="$gray11" mb="$1">
-              Split by item:
+              {t('billSummary.splitByItem')}
             </Text>
             {itemSummaries.map((item) => {
               const itemParts = getCurrencyParts(item.total, currency);
@@ -598,12 +786,29 @@ export default function FinishScreen() {
                     </YStack>
                   ) : (
                     <Text fontSize={12} color="$gray9">
-                      No allocation details available.
+                      {t('billSummary.noAllocationDetails')}
                     </Text>
                   )}
                 </YStack>
               );
             })}
+          </YStack>
+        )}
+
+        {settlements.length > 0 && (
+          <YStack gap="$3" mt="$4">
+            <Text fontSize={15} fontWeight="700" color="$gray11">
+              {t('billSummary.whoOwesWhom')}
+            </Text>
+            {settlements.map((settlement) => (
+              <SettlementCard
+                key={settlement.id}
+                settlement={settlement}
+                currentUserId={currentUserId}
+                onMethodChange={handleMethodChange}
+                onMarkPaid={handleMarkPaid}
+              />
+            ))}
           </YStack>
         )}
       </ScrollView>
@@ -622,11 +827,11 @@ export default function FinishScreen() {
           bg="#2ECC71"
           ai="center"
           jc="center"
-          onPress={() => router.replace('/tabs')}
+          onPress={completeSettlement}
           pressStyle={{ opacity: 0.9 }}
         >
           <Text fontSize={16} fontWeight="600" color="white">
-            Complete settlement
+            {t('billSummary.completeSettlement')}
           </Text>
         </Button>
       </YStack>

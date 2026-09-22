@@ -2,10 +2,16 @@ import { apiClient } from '@/features/auth/api';
 
 /** Totals: по товарам */
 export type SessionHistoryTotalsByItem = {
-  kind: 'item';
+  kind?: string;
   name: string;
   total: number;
   itemId: string;
+  id?: string;
+  totalAmount?: number;
+  quantity?: number;
+  unitPrice?: number;
+  price?: number;
+  splitMode?: 'equal' | 'count' | string;
 };
 
 /** Totals: по участникам */
@@ -19,8 +25,9 @@ export type SessionHistoryTotalsByParticipant = {
 /** Аллокации — доли товара по участникам */
 export type SessionHistoryAllocation = {
   itemId: string;
-  shareRatio: number;
+  shareRatio?: number;
   shareAmount: number;
+  shareUnits?: number | null;
   participantId: string; // это uniqueId участника
 };
 
@@ -42,6 +49,12 @@ export type SessionHistoryPayload = {
   createdAt: string; // ISO
   sessionId: number;
   allocations: SessionHistoryAllocation[];
+  payer?: {
+    id?: number;
+    uniqueId?: string;
+    username?: string;
+  } | null;
+  currency?: string;
   finalizedAt?: string;
   sessionName?: string;
 };
@@ -79,6 +92,7 @@ export interface SessionHistoryEntry {
   totals?: SessionHistoryPayload['totals'];
   allocations?: SessionHistoryAllocation[];
   participants?: SessionHistoryParticipantLight[];
+  payer?: SessionHistoryPayload['payer'];
 
   isCreator: boolean;
   payload: SessionHistoryPayload;

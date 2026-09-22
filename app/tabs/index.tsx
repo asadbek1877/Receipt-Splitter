@@ -240,6 +240,7 @@ const GlassMenuCard = ({
 
 // Breathing Scan Button
 const BreathingScanButton = ({ onPress, isDark }: { onPress: () => void; isDark: boolean }) => {
+  const { t } = useTranslation();
   const colors = useThemeColors();
   const breathScale = useSharedValue(1);
   const glowOpacity = useSharedValue(0.3);
@@ -290,8 +291,8 @@ const BreathingScanButton = ({ onPress, isDark }: { onPress: () => void; isDark:
             </Animated.View>
           </View>
         </View>
-        <Text style={[styles.scanLabel, { color: colors.text }]}>Scan Receipt</Text>
-        <Text style={[styles.scanSubLabel, { color: colors.textSecondary }]}>Tap to start</Text>
+        <Text style={[styles.scanLabel, { color: colors.text }]}>{t('home.scan.receipt')}</Text>
+        <Text style={[styles.scanSubLabel, { color: colors.textSecondary }]}>{t('home.scan.tapToStart')}</Text>
       </YStack>
     </Pressable>
   );

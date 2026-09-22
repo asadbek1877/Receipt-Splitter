@@ -39,7 +39,9 @@
     "rememberPassword": "Parolingizni eslaysizmi?",
     "forgotPasswordError": "Tiklash emailini yuborib bo'lmadi. Qayta urinib ko'ring.",
     "noAccount": "Hisobingiz yo'qmi?",
-    "haveAccount": "Hisobingiz bormi?"
+    "haveAccount": "Hisobingiz bormi?",
+    "loginError": "An error occurred during login",
+    "registerError": "An error occurred during registration"
   },
   "common": {
     "welcome": "Xush kelibsiz",
@@ -49,7 +51,19 @@
     "cancel": "Bekor qilish",
     "confirm": "Tasdiqlash",
     "continue": "Davom etish",
-    "back": "Orqaga"
+    "back": "Orqaga",
+    "all": "Hammasi",
+    "history": "Tarix",
+    "undo": "Bekor qilish",
+    "save": "Saqlash",
+    "saved": "Saqlandi",
+    "delete": "O'chirish",
+    "reset": "Tiklash",
+    "saving": "Saqlanmoqda...",
+    "updating": "Yangilanmoqda...",
+    "you": "Siz",
+    "unknown": "Noma'lum",
+    "openSettings": "Sozlamalarni ochish"
   },
   "analytics": {
     "title": "Analitika",
@@ -70,7 +84,26 @@
     "exportSuccess": "Hisobot muvaffaqiyatli eksport qilindi",
     "exportError": "Hisobotni eksport qilishda xato",
     "share": "Ulashish",
-    "autoCalculated": "(avtomatik hisoblanadi)"
+    "autoCalculated": "(avtomatik hisoblanadi)",
+    "expenses": "Chiqim",
+    "debts": "Qarzlar",
+    "chartSingle": "Grafik (1 tranzaksiya)",
+    "chartByPeriod": "Grafik (davr bo'yicha)",
+    "noSelectionData": "Bu tanlovda hali analitika ma'lumoti yo'q.",
+    "categoryDistribution": "Kategoriya bo'yicha taqsimot",
+    "cashflowDebt": "Kirim / chiqim / qarz",
+    "totalExpenses": "Jami chiqim",
+    "moneyOwedToMe": "Menga qarz",
+    "moneyIOwe": "Mening qarzim",
+    "chooseTransaction": "Tranzaksiya tanlang",
+    "chooseTransactionHint": "Faqat bitta tranzaksiya tanlanadi. Tanlasangiz grafik va xulosa faqat o'sha tranzaksiya bo'yicha ishlaydi.",
+    "noTransactions": "Bu davrda tranzaksiya yo'q.",
+    "periods": {
+      "day": "Kunlik",
+      "week": "Haftalik",
+      "month": "Oylik",
+      "all": "Barchasi"
+    }
   },
   "home": {
     "header": {
@@ -78,7 +111,9 @@
       "friendFallback": "do'stim"
     },
     "scan": {
-      "cta": "Taklifni skanerlang"
+      "cta": "Taklifni skanerlang",
+      "receipt": "Chekni skanerlash",
+      "tapToStart": "Boshlash uchun bosing"
     },
     "actions": {
       "friends": "Do'stlar",
@@ -118,7 +153,8 @@
       "upload": "Telefoningizdan yuklash",
       "uploading": "Yuklanmoqda...",
       "reset": "Avatarni tiklash",
-      "resetting": "Tiklanmoqda..."
+      "resetting": "Tiklanmoqda...",
+      "resetHint": "Standart avatarni ishlatish"
     },
     "info": {
       "title": "Foydalanuvchi ma'lumotlari",
@@ -138,7 +174,8 @@
       "confirmPlaceholder": "Yangi parolni qayta kiriting",
       "requirements": "Parol kamida 8 ta belgi bo'lib, katta va kichik harf, raqam va maxsus belgini o'z ichiga olishi kerak.",
       "submit": "Parolni o'zgartirish",
-      "updating": "Yangilanmoqda..."
+      "updating": "Yangilanmoqda...",
+      "min6": "Kamida 6 ta belgi"
     },
     "logout": "Chiqish",
     "copy": {
@@ -160,7 +197,10 @@
       "passwordChangeFailed": "Parolni o'zgartirib bo'lmadi.",
       "logoutFailed": "Chiqib bo'lmadi. Iltimos, yana urinib ko'ring.",
       "imageMissing": "Rasm faylining URI topilmadi.",
-      "uploadReadFailed": "Tanlangan faylni o'qib bo'lmadi."
+      "uploadReadFailed": "Tanlangan faylni o'qib bo'lmadi.",
+      "usernameUpdated": "Foydalanuvchi nomi yangilandi",
+      "emailUpdated": "Email yangilandi",
+      "passwordChanged": "Parol o'zgartirildi"
     },
     "validation": {
       "usernameRequired": "Foydalanuvchi nomini kiriting.",
@@ -171,7 +211,15 @@
       "passwordLength": "Yangi parol kamida 8 ta belgi bo'lishi kerak.",
       "passwordComplexity": "Parolda katta va kichik harf, raqam va maxsus belgi bo'lishi kerak.",
       "passwordMismatch": "Parollar mos emas.",
-      "passwordDifferent": "Boshqa parol tanlang."
+      "passwordDifferent": "Boshqa parol tanlang.",
+      "passwordMin6": "Kamida 6 ta belgi"
+    },
+    "logoutConfirm": "Ishonchingiz komilmi?",
+    "menu": {
+      "editUsername": "Foydalanuvchi nomini tahrirlash",
+      "editEmail": "Emailni tahrirlash",
+      "changePassword": "Parolni o'zgartirish",
+      "passwordHint": "Xavfsizlikni yangilang"
     }
   },
   "navigation": {
@@ -212,13 +260,50 @@
       "title": "Mavzu",
       "description": "Yorug' yoki qorong'i rejimni tanlang",
       "light": "Yorug'",
-      "dark": "Qorong'i"
+      "dark": "Qorong'i",
+      "lightDesc": "Yorqin ko'rinish",
+      "darkDesc": "Ko'zga qulay"
     },
     "currency": {
       "title": "Valyuta",
       "description": "Hisoblarni bo'lish uchun asosiy valyuta.",
       "source": "Manba",
       "updated": "Yangilangan"
+    },
+    "colors": "Ranglar",
+    "colorTheme": "Rang mavzusi",
+    "colorThemeDesc": "Uslubingizni tanlang",
+    "customColor": "Maxsus rang",
+    "username": {
+      "title": "Foydalanuvchi nomi",
+      "placeholder": "Yangi foydalanuvchi nomi",
+      "save": "Saqlash"
+    },
+    "password": {
+      "title": "Parol",
+      "currentPlaceholder": "Joriy parol",
+      "newPlaceholder": "Yangi parol",
+      "confirmPlaceholder": "Tasdiqlang",
+      "hint": "Kamida 8 belgi: katta/kichik harf, raqam va belgi",
+      "change": "Parolni o'zgartirish"
+    },
+    "alerts": {
+      "adminModeTitle": "Admin rejimi",
+      "adminModeMessage": "Admin parol oynasi ochilmoqda",
+      "unavailable": "Mavjud emas",
+      "signInFirst": "Avval tizimga kiring.",
+      "usernameUpdated": "Foydalanuvchi nomi yangilandi.",
+      "passwordChanged": "Parol o'zgartirildi.",
+      "genericFailed": "Bajarilmadi"
+    },
+    "validation": {
+      "usernameRequired": "Foydalanuvchi nomi bo'sh bo'lmasin",
+      "usernameMin": "Kamida 2 ta belgi",
+      "currentPassword": "Joriy parolni kiriting",
+      "passwordMin": "Kamida 8 ta belgi",
+      "passwordComplexity": "Katta/kichik harf, raqam va belgi kerak",
+      "passwordMismatch": "Parollar mos emas",
+      "passwordDifferent": "Boshqa parol tanlang"
     }
   },
   "quickSplit": {
@@ -282,7 +367,10 @@
       "title": "Do'stni tahrirlash",
       "description": "Do'stingiz ismini yangilang."
     },
-    "removeConfirm": "Haqiqatan ham {{name}}ni o'chirmoqchimisiz?"
+    "removeConfirm": "Haqiqatan ham {{name}}ni o'chirmoqchimisiz?",
+    "loading": "Yuklanmoqda...",
+    "error": "Yuklab bo'lmadi",
+    "send": "So'rov yuborish"
   },
   "debts": {
     "title": "Qarz Hisobi",
@@ -303,7 +391,8 @@
       "title": "Qarz qo'shish"
     },
     "edit": {
-      "title": "Qarzni tahrirlash"
+      "title": "Qarzni tahrirlash",
+      "amountHint": "Bu qarz summasini yangilang."
     },
     "delete": {
       "title": "Qarzni o'chirish",
@@ -327,7 +416,21 @@
     "empty": {
       "title": "Hali qarzlar yo'q",
       "description": "Qarzlarni kuzatishni boshlang"
-    }
+    },
+    "owedToYou": "Sizga qarz",
+    "toPerson": "Kimga: {{name}}",
+    "fromPerson": "Kimdan: {{name}}",
+    "totalDebts": "Qarz balansi",
+    "owe": "Men qarzdorman",
+    "owed": "Menga qarz",
+    "noDebts": "Qarzlar topilmadi",
+    "noHistory": "Hali to'langan qarzlar yo'q",
+    "startByAdding": "Qarz yaratish uchun chekni qayta ishlang",
+    "amount": "Summa",
+    "undoTitle": "To'lovni bekor qilasizmi?",
+    "undoMessage": "Bu qarz yana faol bo'ladi.",
+    "markPaidError": "Qarz holatini yangilab bo'lmadi.",
+    "editError": "Qarzni yangilab bo'lmadi."
   },
   "receiptReview": {
     "title": "Chekdagi mahsulotlarni tasdiqlash",
@@ -343,6 +446,99 @@
     "errNameReq": "Mahsulot nomi kiritilishi shart",
     "errPriceReq": "Narx 0 dan katta bo'lishi kerak",
     "errQtyReq": "Miqdor 0 dan katta bo'lishi kerak",
-    "errReceiptEmpty": "Chekda kamida bitta mahsulot bo'lishi kerak"
+    "errReceiptEmpty": "Chekda kamida bitta mahsulot bo'lishi kerak",
+    "itemSubtitle": "{{count}} dona ? har biri {{amount}}"
+  },
+  "orders": {
+    "title": "Buyurtmalar",
+    "unassignedProducts": "Taqsimlanmagan mahsulotlar",
+    "dragInstruction": "Kartani bosib turing va avatarga tashlang",
+    "itemDragInstruction": "{{quantity}}x - bosib turing va ishtirokchiga torting",
+    "dropOnParticipant": "Mahsulotni ishtirokchiga tashlang",
+    "everythingAssigned": "Hammasi taqsimlandi",
+    "confirmWhenReady": "Tayyor bo'lganda bo'lishni tasdiqlang.",
+    "confirmSplit": "Bo'lishni tasdiqlash",
+    "saving": "Saqlanmoqda...",
+    "savingSplit": "Bo'lish saqlanmoqda...",
+    "equalSplit": "Teng bo'lish",
+    "byUnits": "Donalab bo'lish",
+    "assignTo": "Kimga beriladi:",
+    "clear": "Tozalash",
+    "assignedToParticipants": "{{count}} ishtirokchiga biriktirildi",
+    "priceSplitEach": "Narx teng bo'lindi: har biri {{amount}}",
+    "unitsAssigned": "{{count}} dona biriktirildi",
+    "perUnit": "Har dona: {{amount}}",
+    "errors": {
+      "sessionRequired": "Sessiya ID kerak",
+      "finalizeFailed": "Sessiyani yakunlab bo'lmadi"
+    }
+  },
+  "billSummary": {
+    "title": "Chek yakuni",
+    "receiptNumber": "Chek #{{id}}",
+    "totalAmount": "Umumiy summa",
+    "paidBy": "To'lagan: {{name}}",
+    "splitByParticipant": "Ishtirokchilar bo'yicha:",
+    "noParticipantData": "Hozircha ishtirokchilar ma'lumoti yo'q.",
+    "splitByItem": "Mahsulotlar bo'yicha:",
+    "noAllocationDetails": "Taqsimot tafsilotlari yo'q.",
+    "whoOwesWhom": "Kim kimga qarz",
+    "completeSettlement": "Hisob-kitobni yakunlash",
+    "cashierFallback": "Kassir"
+  },
+  "settlements": {
+    "transferMethod": "O'tkazma usuli",
+    "owesYou": "sizga qarz",
+    "youOwe": "siz qarzsiz",
+    "owesPerson": "{{name}}ga qarz",
+    "settled": "To'langan",
+    "markAsSettled": "To'langan deb belgilash",
+    "methods": {
+      "cash": "Naqd",
+      "card": "Karta"
+    }
+  },
+  "receiptConfirmation": {
+    "invalidTitle": "Noto'g'ri",
+    "selectPayer": "Iltimos, to'lovchini tanlang",
+    "saved": "Chek muvaffaqiyatli saqlandi!",
+    "processFailed": "Chekni qayta ishlab bo'lmadi. Qayta urinib ko'ring.",
+    "title": "Chekni ko'rib chiqish",
+    "subtitle": "Saqlashdan oldin tafsilotlarni tasdiqlang",
+    "itemsCount": "Mahsulotlar ({{count}})",
+    "splitAmong": "{{count}} kishi orasida bo'linadi:",
+    "whoPaid": "Chekni kim to'ladi?",
+    "selectPayerHint": "Bu chek uchun to'lov qilgan odamni tanlang",
+    "noParticipants": "Ishtirokchilar qo'shilmagan",
+    "noParticipantsHint": "Cheklarni qayta ishlashdan oldin guruhga ishtirokchi qo'shing",
+    "processing": "Qayta ishlanmoqda...",
+    "confirmSave": "Tasdiqlash va saqlash"
+  },
+  "scanReceipt": {
+    "positionHint": "Chekni ramka ichiga joylashtiring",
+    "enableCamera": "Kamerani yoqish",
+    "processingReceipt": "Chek qayta ishlanmoqda...",
+    "aiReading": "AI chekdagi mahsulotlarni o'qimoqda",
+    "retake": "Qayta olish",
+    "scanWithAi": "AI bilan skan qilish",
+    "sessionName": "Sessiya nomi",
+    "processing": "Qayta ishlanmoqda...",
+    "scanReceipt": "Chekni skanerlash",
+    "scannerTitle": "Skaner",
+    "takePhoto": "Rasmga olish",
+    "gallery": "Galereya",
+    "confirmReceipt": "Bu chek rasmi to'g'rimi?",
+    "cameraAccessTitle": "Kameraga ruxsat kerak",
+    "cameraAccessMessage": "Cheklarni skanerlash va do'stlar bilan bo'lish uchun kameraga ruxsat bering",
+    "galleryPermissionTitle": "Rasmlarga ruxsat kerak",
+    "galleryPermissionMessage": "Galereyadan chek rasmini yuklash uchun foto kutubxonaga ruxsat bering.",
+    "processingGallery": "Chek yuklanmoqda...",
+    "errors": {
+      "captureFailed": "Chek rasmini olib bo'lmadi. Qayta urinib ko'ring.",
+      "prepareFailed": "Chek rasmini yuklashga tayyorlab bo'lmadi.",
+      "captureGeneric": "Rasmga olishda xatolik yuz berdi",
+      "sendFailed": "Chekni yuborishda xatolik yuz berdi",
+      "galleryFailed": "Galereyadan chek rasmini yuklashda xatolik yuz berdi"
+    }
   }
 }

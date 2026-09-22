@@ -51,7 +51,19 @@
     "cancel": "キャンセル",
     "confirm": "確認",
     "continue": "続ける",
-    "back": "戻る"
+    "back": "戻る",
+    "all": "All",
+    "history": "History",
+    "undo": "Undo",
+    "save": "Save",
+    "saved": "Saved",
+    "delete": "Delete",
+    "reset": "Reset",
+    "saving": "Saving...",
+    "updating": "Updating...",
+    "you": "You",
+    "unknown": "Unknown",
+    "openSettings": "Open settings"
   },
   "analytics": {
     "title": "分析",
@@ -62,18 +74,68 @@
     "averagePerSession": "セッション平均",
     "monthlySpending": "月間支出",
     "topParticipants": "トップ参加者",
-    "sessions": "セッション"
+    "sessions": "セッション",
+    "subtitle": "Track your spending patterns",
+    "categoryBreakdown": "Spending by Category",
+    "aiPowered": "✨ AI-powered categorization",
+    "export": "Export Report",
+    "exportDesc": "Share or download your data",
+    "exportTitle": "Analytics Report",
+    "exportSuccess": "Report exported successfully",
+    "exportError": "Failed to export report",
+    "share": "Share",
+    "autoCalculated": "(auto-calculated)",
+    "expenses": "Expenses",
+    "debts": "Debts",
+    "chartSingle": "Chart (1 transaction)",
+    "chartByPeriod": "Chart (by period)",
+    "noSelectionData": "No analytics data for this selection yet.",
+    "categoryDistribution": "Category distribution",
+    "cashflowDebt": "Income / expenses / debt",
+    "totalExpenses": "Total expenses",
+    "moneyOwedToMe": "Owed to me",
+    "moneyIOwe": "My debt",
+    "chooseTransaction": "Choose transaction",
+    "chooseTransactionHint": "Only one transaction can be selected. When selected, the chart and summary use that transaction only.",
+    "noTransactions": "No transactions in this period.",
+    "periods": {
+      "day": "Day",
+      "week": "Week",
+      "month": "Month",
+      "all": "All"
+    }
   },
   "friends": {
     "title": "友だち",
     "requests": "リクエスト",
-    "add": "友だちを追加",
-    "empty": "まだ友だちがいません。+ をタップして追加しましょう。",
+    "add": {
+      "title": "Add Friend",
+      "description": "Enter your friend's name to add them to your list.",
+      "namePlaceholder": "Friend's name",
+      "button": "Add",
+      "error": "Error",
+      "nameRequired": "Please enter a name"
+    },
+    "empty": {
+      "title": "No friends yet",
+      "description": "Add friends to start splitting bills together!"
+    },
     "searchPlaceholder": "ID を入力してください (例: USER#1234)",
     "send": "リクエストを送信",
     "remove": "削除",
     "loading": "読み込み中...",
-    "error": "読み込みに失敗しました"
+    "error": "読み込みに失敗しました",
+    "count": "friends",
+    "scanQr": "Scan QR",
+    "search": {
+      "noResults": "No friends found",
+      "tryAgain": "Try a different search"
+    },
+    "edit": {
+      "title": "Edit Friend",
+      "description": "Update your friend's name."
+    },
+    "removeConfirm": "Are you sure you want to remove {{name}}?"
   },
   "home": {
     "header": {
@@ -81,7 +143,9 @@
       "friendFallback": "友だち"
     },
     "scan": {
-      "cta": "招待をスキャンする"
+      "cta": "招待をスキャンする",
+      "receipt": "Scan Receipt",
+      "tapToStart": "Tap to start"
     },
     "actions": {
       "friends": "友だち",
@@ -121,7 +185,8 @@
       "upload": "端末からアップロード",
       "uploading": "アップロード中...",
       "reset": "アバターをリセット",
-      "resetting": "リセット中..."
+      "resetting": "リセット中...",
+      "resetHint": "Use default avatar"
     },
     "info": {
       "title": "ユーザー情報",
@@ -141,7 +206,8 @@
       "confirmPlaceholder": "新しいパスワードを再入力",
       "requirements": "パスワードは8文字以上で、大文字・小文字・数字・記号を含めてください。",
       "submit": "パスワードを変更",
-      "updating": "更新中..."
+      "updating": "更新中...",
+      "min6": "Min 6 characters"
     },
     "logout": "ログアウト",
     "copy": {
@@ -163,7 +229,10 @@
       "passwordChangeFailed": "パスワードを変更できませんでした。",
       "logoutFailed": "ログアウトできませんでした。もう一度お試しください。",
       "imageMissing": "画像ファイルのURIが見つかりません。",
-      "uploadReadFailed": "選択したファイルを読み込めませんでした。"
+      "uploadReadFailed": "選択したファイルを読み込めませんでした。",
+      "usernameUpdated": "Username updated",
+      "emailUpdated": "Email updated",
+      "passwordChanged": "Password changed"
     },
     "validation": {
       "usernameRequired": "ユーザー名を入力してください。",
@@ -174,7 +243,15 @@
       "passwordLength": "新しいパスワードは8文字以上で入力してください。",
       "passwordComplexity": "パスワードには大文字・小文字・数字・記号を含めてください。",
       "passwordMismatch": "パスワードが一致していません。",
-      "passwordDifferent": "別のパスワードを選択してください。"
+      "passwordDifferent": "別のパスワードを選択してください。",
+      "passwordMin6": "Min 6 characters"
+    },
+    "logoutConfirm": "Are you sure?",
+    "menu": {
+      "editUsername": "Edit Username",
+      "editEmail": "Edit Email",
+      "changePassword": "Change Password",
+      "passwordHint": "Update your security"
     }
   },
   "navigation": {
@@ -208,6 +285,57 @@
         "ja": "日本語",
         "uz": "ウズベク語"
       }
+    },
+    "colors": "Colors",
+    "colorTheme": "Color Theme",
+    "colorThemeDesc": "Choose your style",
+    "customColor": "Custom Color",
+    "theme": {
+      "lightDesc": "Bright look",
+      "darkDesc": "Easy on the eyes",
+      "title": "Theme",
+      "description": "Choose light or dark mode",
+      "light": "Light",
+      "dark": "Dark"
+    },
+    "username": {
+      "title": "Username",
+      "placeholder": "New username",
+      "save": "Save"
+    },
+    "password": {
+      "title": "Password",
+      "currentPlaceholder": "Current password",
+      "newPlaceholder": "New password",
+      "confirmPlaceholder": "Confirm",
+      "hint": "Min 8 chars with uppercase, lowercase, number, symbol",
+      "change": "Change password"
+    },
+    "alerts": {
+      "adminModeTitle": "Admin Mode",
+      "adminModeMessage": "Admin password screen is opening",
+      "unavailable": "Unavailable",
+      "signInFirst": "Sign in first.",
+      "usernameUpdated": "Username updated.",
+      "passwordChanged": "Password changed.",
+      "genericFailed": "Failed"
+    },
+    "validation": {
+      "usernameRequired": "Username cannot be empty",
+      "usernameMin": "At least 2 characters",
+      "currentPassword": "Enter current password",
+      "passwordMin": "Min 8 characters",
+      "passwordComplexity": "Need uppercase, lowercase, number, symbol",
+      "passwordMismatch": "Passwords do not match",
+      "passwordDifferent": "Choose different password"
+    },
+    "title": "Settings",
+    "subtitle": "Customize your app experience",
+    "currency": {
+      "title": "Currency",
+      "description": "Default currency for splitting bills.",
+      "source": "Source",
+      "updated": "Updated"
     }
   },
   "receiptReview": {
@@ -224,6 +352,193 @@
     "errNameReq": "商品名は必須です",
     "errPriceReq": "価格は0より大きい必要があります",
     "errQtyReq": "数量は0より大きい必要があります",
-    "errReceiptEmpty": "レシートには少なくとも1つの商品が必要です"
+    "errReceiptEmpty": "レシートには少なくとも1つの商品が必要です",
+    "itemSubtitle": "{{count}} item(s) ? {{amount}} each"
+  },
+  "orders": {
+    "title": "Orders",
+    "unassignedProducts": "Unassigned products",
+    "dragInstruction": "Long press a card, then drop it on an avatar",
+    "itemDragInstruction": "{{quantity}}x - long press and drag to a participant",
+    "dropOnParticipant": "Drop product on a participant",
+    "everythingAssigned": "Everything is assigned",
+    "confirmWhenReady": "Confirm the split when you are ready.",
+    "confirmSplit": "Confirm split",
+    "saving": "Saving...",
+    "savingSplit": "Saving split...",
+    "equalSplit": "Equal split",
+    "byUnits": "By units",
+    "assignTo": "Assign to:",
+    "clear": "Clear",
+    "assignedToParticipants": "Assigned to {{count}} participant(s)",
+    "priceSplitEach": "Price split equally: {{amount}} each",
+    "unitsAssigned": "{{count}} unit(s) assigned",
+    "perUnit": "Per unit: {{amount}}",
+    "errors": {
+      "sessionRequired": "Session ID is required",
+      "finalizeFailed": "Failed to finalize session"
+    }
+  },
+  "billSummary": {
+    "title": "Bill Summary",
+    "receiptNumber": "Receipt #{{id}}",
+    "totalAmount": "Total Amount",
+    "paidBy": "Paid by: {{name}}",
+    "splitByParticipant": "Split by participant:",
+    "noParticipantData": "No participant data available yet.",
+    "splitByItem": "Split by item:",
+    "noAllocationDetails": "No allocation details available.",
+    "whoOwesWhom": "Who owes whom",
+    "completeSettlement": "Complete settlement",
+    "cashierFallback": "Cashier"
+  },
+  "settlements": {
+    "transferMethod": "Transfer method",
+    "owesYou": "owes you",
+    "youOwe": "you owe",
+    "owesPerson": "owes {{name}}",
+    "settled": "Settled",
+    "markAsSettled": "Mark as settled",
+    "methods": {
+      "cash": "Cash",
+      "card": "Card"
+    }
+  },
+  "debts": {
+    "owedToYou": "Owed to you",
+    "toPerson": "To: {{name}}",
+    "fromPerson": "From: {{name}}",
+    "totalDebts": "Debt balance",
+    "owe": "I Owe",
+    "owed": "Owed Me",
+    "noDebts": "No debts found",
+    "noHistory": "No paid debts yet",
+    "startByAdding": "Process a receipt to create debts",
+    "amount": "Amount",
+    "undoTitle": "Undo payment?",
+    "undoMessage": "This debt will become active again.",
+    "markPaidError": "Failed to update debt status.",
+    "editError": "Failed to update debt.",
+    "edit": {
+      "amountHint": "Update the amount for this debt.",
+      "title": "Edit Debt"
+    },
+    "title": "Debt Tracker",
+    "subtitle": "Track who owes what",
+    "youOwe": "You owe",
+    "owesYou": "Owes you",
+    "paid": "Paid",
+    "markPaid": "Mark Paid",
+    "markUnpaid": "Undo",
+    "ownedToYou": "Owed to you",
+    "youOweTotal": "You owe",
+    "netBalance": "Net Balance",
+    "inProfit": "You're in profit!",
+    "inDebt": "You're in debt",
+    "iOwe": "I Owe",
+    "owedMe": "Owed Me",
+    "add": {
+      "title": "Add Debt"
+    },
+    "delete": {
+      "title": "Delete Debt",
+      "confirm": "Are you sure you want to delete this debt?"
+    },
+    "filters": {
+      "active": "Active",
+      "iOwe": "I Owe",
+      "owedMe": "Owed Me",
+      "paid": "Paid"
+    },
+    "form": {
+      "namePlaceholder": "Person name",
+      "amountPlaceholder": "Amount",
+      "descriptionPlaceholder": "Description (optional)"
+    },
+    "errors": {
+      "nameRequired": "Please enter a name",
+      "invalidAmount": "Please enter a valid amount"
+    },
+    "empty": {
+      "title": "No debts yet",
+      "description": "Track money you owe or are owed"
+    }
+  },
+  "quickSplit": {
+    "title": "Quick Split",
+    "subtitle": "Split bills instantly",
+    "totalAmount": "Total Amount",
+    "splitMode": "Split Mode",
+    "equal": "Equal",
+    "percentage": "Percent",
+    "custom": "Custom",
+    "howManyPeople": "How many people?",
+    "eachPays": "Each person pays",
+    "participants": "Participants",
+    "calculate": "Calculate",
+    "result": "Split Result",
+    "total": "Total",
+    "subtotal": "Subtotal",
+    "share": "Share",
+    "shareResult": "Share Result",
+    "shareMessage": "Sharing coming soon!",
+    "person": "Person",
+    "copy": "copy",
+    "chooseColor": "Choose Color",
+    "chooseEmoji": "Choose Avatar",
+    "tip": "Tip",
+    "tipDescription": "Add a tip to the bill",
+    "tipAmount": "Tip amount",
+    "grandTotal": "Grand Total",
+    "minAlert": {
+      "title": "Minimum 2 people",
+      "message": "You need at least 2 people to split!"
+    },
+    "percentageWarning": "Total",
+    "customWarning": "Total",
+    "shouldBe": "should be"
+  },
+  "receiptConfirmation": {
+    "invalidTitle": "Invalid",
+    "selectPayer": "Please select a payer",
+    "saved": "Receipt saved successfully!",
+    "processFailed": "Failed to process receipt. Please try again.",
+    "title": "Review Receipt",
+    "subtitle": "Confirm details before saving",
+    "itemsCount": "Items ({{count}})",
+    "splitAmong": "Split among {{count}} person(s):",
+    "whoPaid": "Who paid the bill?",
+    "selectPayerHint": "Select the person who paid for this receipt",
+    "noParticipants": "No participants added",
+    "noParticipantsHint": "Add participants to your group before processing receipts",
+    "processing": "Processing...",
+    "confirmSave": "Confirm & Save"
+  },
+  "scanReceipt": {
+    "positionHint": "Position receipt inside frame",
+    "enableCamera": "Enable Camera",
+    "processingReceipt": "Processing receipt...",
+    "aiReading": "AI is reading receipt products",
+    "retake": "Retake",
+    "scanWithAi": "Scan with AI",
+    "sessionName": "Session name",
+    "processing": "Processing...",
+    "scanReceipt": "Scan Receipt",
+    "scannerTitle": "Scanner",
+    "takePhoto": "Take Photo",
+    "gallery": "Gallery",
+    "confirmReceipt": "Is this your receipt?",
+    "cameraAccessTitle": "Camera Access Required",
+    "cameraAccessMessage": "Allow camera access to scan your receipts and split bills with friends",
+    "galleryPermissionTitle": "Photo access needed",
+    "galleryPermissionMessage": "Allow photo library access to upload a receipt image from your gallery.",
+    "processingGallery": "Uploading receipt...",
+    "errors": {
+      "captureFailed": "Could not capture the receipt photo. Please try again.",
+      "prepareFailed": "Failed to prepare the receipt photo for upload.",
+      "captureGeneric": "Something went wrong while capturing",
+      "sendFailed": "Something went wrong while sending the receipt",
+      "galleryFailed": "Something went wrong while uploading the receipt image"
+    }
   }
 }

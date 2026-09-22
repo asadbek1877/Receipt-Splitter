@@ -40,7 +40,35 @@ const initialState: State = {
 };
 
 const normalizeEntry = (raw: SessionHistoryEntryRaw): SessionHistoryEntry => {
-  const p: SessionHistoryPayload | undefined = raw.payload;
+  const rawAny = raw as any;
+  const fallbackPayload: SessionHistoryPayload | undefined = rawAny.items || rawAny.participants
+    ? {
+        status: rawAny.status || 'finalized',
+        totals: {
+          byItem: (rawAny.items ?? []).map((item: any) => ({
+            itemId: String(item.itemId ?? item.id),
+            name: item.name || 'Item',
+            total: Number(item.total ?? item.totalAmount ?? 0),
+            kind: item.kind,
+          })),
+          grandTotal: Number(rawAny.grandTotal || 0),
+          byParticipant: (rawAny.participants ?? []).map((participant: any) => ({
+            uniqueId: participant.uniqueId,
+            username: participant.username || participant.uniqueId,
+            amountOwed: Number(participant.amountOwed ?? participant.total ?? 0),
+            avatarUrl: participant.avatarUrl ?? null,
+          })),
+        },
+        createdAt: rawAny.createdAt || rawAny.finalizedAt || new Date().toISOString(),
+        finalizedAt: rawAny.finalizedAt,
+        sessionId: Number(rawAny.sessionId || 0),
+        sessionName: rawAny.sessionName,
+        allocations: rawAny.allocations ?? [],
+        currency: rawAny.currency,
+        payer: rawAny.payer ?? null,
+      }
+    : undefined;
+  const p: SessionHistoryPayload | undefined = raw.payload ?? fallbackPayload;
 
   const participants =
     p?.totals?.byParticipant?.map(bp => ({
@@ -68,6 +96,7 @@ const normalizeEntry = (raw: SessionHistoryEntryRaw): SessionHistoryEntry => {
     totals: p?.totals,
     allocations: p?.allocations ?? [],
     participants,
+    payer: p?.payer ?? null,
     isCreator: raw.isCreator,
     payload: p!,
   };

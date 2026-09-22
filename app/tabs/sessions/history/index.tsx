@@ -90,7 +90,7 @@ function HistoryCard({
         style={({ pressed }) => ({ width: 358, opacity: pressed ? 0.9 : 1 })}
       >
         <YStack
-          h={125}
+          minHeight={138}
           br={16}
           borderWidth={1.5}
           borderColor={colors.glassBorder}
@@ -226,7 +226,15 @@ export default function SessionsHistoryScreen() {
         {history.map((bill, index) => {
           const participants = bill.participants ?? [];
           const dateForSummary = bill.finalizedAt || bill.createdAt;
-          const summary = `${formatSessionDate(dateForSummary)} ${BULLET} ${participants.length} ishtirokchi`;
+          const itemCount = bill.totals?.byItem?.length ?? 0;
+          const payerName = bill.payer?.username || bill.payload?.payer?.username;
+          const summaryParts = [
+            formatSessionDate(dateForSummary),
+            payerName ? `To'lovchi: ${payerName}` : undefined,
+            `${participants.length} ishtirokchi`,
+            itemCount ? `${itemCount} mahsulot` : undefined,
+          ].filter(Boolean);
+          const summary = summaryParts.join(` ${BULLET} `);
           const totalAmount = bill.grandTotal ?? 0;
           const currency = bill.currency || DEFAULT_CURRENCY;
           const amountLabel = `${currency} ${totalAmount.toLocaleString()}`;

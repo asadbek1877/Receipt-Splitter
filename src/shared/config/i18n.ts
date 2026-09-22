@@ -22,7 +22,15 @@ void i18n.use(initReactI18next).init({
   },
   lng: initialLanguage,
   fallbackLng: DEFAULT_LANGUAGE,
+  supportedLngs: LANGUAGE_CODES,
+  nonExplicitSupportedLngs: true,
+  load: 'languageOnly',
+  cleanCode: true,
+  returnNull: false,
   interpolation: { escapeValue: false },
+  react: {
+    useSuspense: false,
+  },
 });
 
 export default i18n;

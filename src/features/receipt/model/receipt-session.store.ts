@@ -24,6 +24,9 @@ export type CapturedReceiptImage = {
 export interface ReceiptSplitItem {
   id: string;
   name: string;
+  imageUrl?: string | null;
+  imageUri?: string | null;
+  thumbnailUrl?: string | null;
   unitPrice: number;
   quantity: number;
   totalPrice: number;
@@ -78,6 +81,7 @@ interface ReceiptSessionStore {
   setLastFinishPayload: (payload?: FinishPayload) => void;
 
   parseReceipt: (payload: ParseReceiptRequest) => Promise<ParseReceiptResponse>;
+  parseReceiptUpload: (formData: FormData) => Promise<ParseReceiptResponse>;
   finalizeSession: () => Promise<FinalizeReceiptResponse>;
   reset: () => void;
 }
@@ -97,6 +101,38 @@ const INITIAL_STATE: Pick<ReceiptSessionStore,
   finalized: undefined,
   lastFinishPayload: undefined,
 };
+
+const toSplitItems = (response: ParseReceiptResponse): ReceiptSplitItem[] =>
+  response.items.map((item) => ({
+    id: item.id,
+    name: item.name,
+    imageUrl: item.imageUrl,
+    imageUri: item.imageUri,
+    thumbnailUrl: item.thumbnailUrl,
+    unitPrice: item.unitPrice,
+    quantity: item.quantity,
+    totalPrice: item.totalPrice,
+    kind: item.kind,
+    splitMode: item.quantity > 1 ? 'count' : 'equal',
+    assignedTo: [],
+    perPersonCount: {},
+  }));
+
+const toParsedSessionState = (response: ParseReceiptResponse) => ({
+  parsing: false,
+  parseError: undefined,
+  session: {
+    sessionId: response.sessionId,
+    sessionName: response.sessionName,
+    language: response.language,
+    summary: response.summary,
+  },
+  items: toSplitItems(response),
+  participants: [],
+  currency: response.summary?.currency || 'UZS',
+  finalized: undefined,
+  finalizeError: undefined,
+});
 
 export const useReceiptSessionStore = create<ReceiptSessionStore>((set, get) => ({
   ...INITIAL_STATE,
@@ -137,37 +173,21 @@ export const useReceiptSessionStore = create<ReceiptSessionStore>((set, get) => 
     set({ parsing: true, parseError: undefined });
     try {
       const response = await ReceiptApi.parse(payload);
-      const splitItems: ReceiptSplitItem[] = response.items.map((item) => ({
-        id: item.id,
-        name: item.name,
-        unitPrice: item.unitPrice,
-        quantity: item.quantity,
-        totalPrice: item.totalPrice,
-        kind: item.kind,
-        splitMode: item.quantity > 1 ? 'count' : 'equal',
-        assignedTo: [],
-        perPersonCount: {},
-      }));
+      set(toParsedSessionState(response));
 
-      // ✅ Извлекаем валюту из ответа API
-      const detectedCurrency = response.summary?.currency || 'UZS';
+      return response;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to parse receipt';
+      set({ parsing: false, parseError: message });
+      throw error;
+    }
+  },
 
-      set({
-        parsing: false,
-        parseError: undefined,
-        session: {
-          sessionId: response.sessionId,
-          sessionName: response.sessionName,
-          language: response.language,
-          summary: response.summary,
-        },
-        items: splitItems,
-        participants: [],
-        currency: detectedCurrency, // ✅ Сохраняем валюту
-        finalized: undefined,
-        finalizeError: undefined,
-      });
-
+  parseReceiptUpload: async (formData) => {
+    set({ parsing: true, parseError: undefined });
+    try {
+      const response = await ReceiptApi.parseUpload(formData);
+      set(toParsedSessionState(response));
       return response;
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to parse receipt';

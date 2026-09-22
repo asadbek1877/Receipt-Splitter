@@ -1,14 +1,15 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'expo-router';
-import { Pressable } from 'react-native';
-import { YStack, XStack, Text, Input, ScrollView, Button, Dialog } from 'tamagui';
-import { ChevronLeft, Plus, Trash2, CheckCircle2 } from '@tamagui/lucide-icons';
+import { FlatList, Pressable, StyleSheet } from 'react-native';
+import { YStack, XStack, Text, Input, Button, Dialog } from 'tamagui';
+import { ChevronLeft, Plus, CheckCircle2 } from '@tamagui/lucide-icons';
 import { useTranslation } from 'react-i18next';
 
 import {
   useReceiptSessionStore,
   type ReceiptSplitItem,
 } from '@/features/receipt/model/receipt-session.store';
+import { ReceiptItemRow, ReceiptItemSkeletonRow } from '@/features/receipt/ui/ReceiptItemRow';
 
 type DraftItem = {
   name: string;
@@ -29,10 +30,16 @@ export default function ReviewItemsScreen() {
   const items = useReceiptSessionStore((s) => s.items);
   const setItems = useReceiptSessionStore((s) => s.setItems);
   const currency = useReceiptSessionStore((s) => s.currency || 'UZS');
-
+  
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [draft, setDraft] = useState<DraftItem>(INITIAL_DRAFT);
   const [error, setError] = useState<string | null>(null);
+  const [showSkeleton, setShowSkeleton] = useState(true);
+
+  useEffect(() => {
+    const timeout = setTimeout(() => setShowSkeleton(false), 700);
+    return () => clearTimeout(timeout);
+  }, []);
 
   const grandTotal = useMemo(
     () => items.reduce((acc, item) => acc + (item.totalPrice || item.unitPrice * item.quantity), 0),
@@ -91,8 +98,30 @@ export default function ReviewItemsScreen() {
       setError(t('receiptReview.errReceiptEmpty'));
       return;
     }
-    router.push('/tabs/sessions/participants');
+
+    // Navigate to the next screen (participants selection)
+    router.push('/tabs/sessions/participants' as any);
   };
+
+  const skeletonRows = useMemo(
+    () => Array.from({ length: 6 }, (_, index) => ({ id: `skeleton-${index}` })),
+    []
+  );
+
+  const renderItem = ({ item }: { item: ReceiptSplitItem }) => (
+    <ReceiptItemRow
+      item={item}
+      currency={currency}
+      onChange={(nextItem) =>
+        updateItem(item.id, (prev) => ({
+          ...prev,
+          ...nextItem,
+          splitMode: nextItem.quantity > 1 ? 'count' : 'equal',
+        }))
+      }
+      onDelete={() => removeItem(item.id)}
+    />
+  );
 
   return (
     <YStack f={1} bg="$background">
@@ -117,86 +146,34 @@ export default function ReviewItemsScreen() {
         </Text>
       </YStack>
 
-      <ScrollView f={1} contentContainerStyle={{ padding: 16, paddingBottom: 120 }}>
-        <YStack gap="$3">
-          {items.map((item, index) => {
-            const lineTotal = item.totalPrice || item.unitPrice * item.quantity;
-            return (
-              <YStack key={`${item.id}-${index}`} p="$3" borderRadius={12} borderWidth={1} borderColor="$gray5" bg="$color1" gap="$2">
-                <XStack ai="center" jc="space-between" gap="$2">
-                  <Input
-                    f={1}
-                    value={item.name}
-                    onChangeText={(value) =>
-                      updateItem(item.id, (prev) => ({ ...prev, name: value }))
-                    }
-                    placeholder={t('receiptReview.productName')}
-                  />
-                  <Pressable onPress={() => removeItem(item.id)}>
-                    <YStack w={36} h={36} ai="center" jc="center" bg="#EF44441A" br={10}>
-                      <Trash2 size={16} color="#EF4444" />
-                    </YStack>
-                  </Pressable>
-                </XStack>
-
-                <XStack gap="$2">
-                  <YStack f={1}>
-                    <Text fontSize={11} color="$gray10" mb="$1">{t('receiptReview.price')}</Text>
-                    <Input
-                      keyboardType="numeric"
-                      value={String(item.unitPrice)}
-                      onChangeText={(value) => {
-                        const numeric = Number(value);
-                        updateItem(item.id, (prev) => {
-                          if (!Number.isFinite(numeric) || numeric <= 0) return prev;
-                          return {
-                            ...prev,
-                            unitPrice: numeric,
-                            totalPrice: numeric * prev.quantity,
-                          };
-                        });
-                      }}
-                    />
-                  </YStack>
-                  <YStack w={110}>
-                    <Text fontSize={11} color="$gray10" mb="$1">{t('receiptReview.qty')}</Text>
-                    <Input
-                      keyboardType="numeric"
-                      value={String(item.quantity)}
-                      onChangeText={(value) => {
-                        const numeric = Number(value);
-                        updateItem(item.id, (prev) => {
-                          if (!Number.isFinite(numeric) || numeric <= 0) return prev;
-                          return {
-                            ...prev,
-                            quantity: Math.max(1, Math.floor(numeric)),
-                            totalPrice: prev.unitPrice * Math.max(1, Math.floor(numeric)),
-                            splitMode: Math.max(1, Math.floor(numeric)) > 1 ? 'count' : 'equal',
-                          };
-                        });
-                      }}
-                    />
-                  </YStack>
-                </XStack>
-
-                <XStack ai="center" jc="space-between">
-                  <Text fontSize={12} color="$gray10">{t('receiptReview.lineTotal')}</Text>
-                  <Text fontSize={14} fontWeight="700" color="#2ECC71">
-                    {fmtCurrency(lineTotal)}
-                  </Text>
-                </XStack>
-              </YStack>
-            );
-          })}
-
-          {items.length === 0 && (
+      {showSkeleton ? (
+        <FlatList
+          data={skeletonRows}
+          keyExtractor={(item) => item.id}
+          renderItem={() => <ReceiptItemSkeletonRow />}
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={styles.listContent}
+          ItemSeparatorComponent={() => <YStack h={12} />}
+        />
+      ) : (
+        <FlatList
+          data={items}
+          keyExtractor={(item, index) => item.id || `item-${index}`}
+          renderItem={renderItem}
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={[
+            styles.listContent,
+            items.length === 0 && styles.emptyListContent,
+          ]}
+          ItemSeparatorComponent={() => <YStack h={12} />}
+          ListEmptyComponent={
             <YStack ai="center" py="$8" gap="$2">
               <Text fontSize={14} color="$gray10">{t('receiptReview.noProductsTitle')}</Text>
               <Text fontSize={12} color="$gray10">{t('receiptReview.noProductsDesc')}</Text>
             </YStack>
-          )}
-        </YStack>
-      </ScrollView>
+          }
+        />
+      )}
 
       <YStack
         position="absolute"
@@ -224,7 +201,7 @@ export default function ReviewItemsScreen() {
           h={48}
           icon={CheckCircle2}
         >
-          {t('receiptReview.confirmContinue')}
+          {t('receiptReview.nextAssign', 'Next: Assign Items')}
         </Button>
       </YStack>
 
@@ -269,3 +246,14 @@ export default function ReviewItemsScreen() {
     </YStack>
   );
 }
+
+const styles = StyleSheet.create({
+  listContent: {
+    padding: 16,
+    paddingBottom: 120,
+  },
+  emptyListContent: {
+    flexGrow: 1,
+    justifyContent: 'center',
+  },
+});

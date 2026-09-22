@@ -3,9 +3,39 @@ import { createJSONStorage, persist } from 'zustand/middleware';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getCurrentUser } from '@/features/auth/api';
 import { getToken, removeToken } from '../utils/token-storage';
+import { queryClient } from '@/shared/config/query-client';
+import { useSplitterStore } from '@/shared/store/useSplitterStore';
+import { useDebtsStore } from '@/features/debts/model/debts.store';
+import { useFriendsStore } from '@/features/friends/model/friends.store';
 import type { LanguageCode } from '@/shared/config/languages';
 import { DEFAULT_LANGUAGE } from '@/shared/config/languages';
 import { DEFAULT_CURRENCY } from '@/shared/config/currencies';
+
+const isAuthError = (error: unknown): boolean => {
+  if (!(error instanceof Error)) return false;
+
+  return /authorization|unauthorized|token expired|expired token|expired/i.test(error.message);
+};
+
+const USER_SCOPED_STORAGE_KEYS = [
+  'receipt-splitter-storage',
+  'debts-storage',
+  'friends-storage',
+];
+
+async function clearUserScopedClientState() {
+  useSplitterStore.getState().resetStore();
+  useDebtsStore.getState().clearAll();
+  useFriendsStore.getState().clearAll();
+  queryClient.clear();
+
+  await Promise.allSettled([
+    useSplitterStore.persist.clearStorage(),
+    useDebtsStore.persist.clearStorage(),
+    useFriendsStore.persist.clearStorage(),
+    AsyncStorage.multiRemove(USER_SCOPED_STORAGE_KEYS),
+  ]);
+}
 
 export interface User {
   id: number;
@@ -29,7 +59,7 @@ interface AppStore {
   // Actions
   setToken: (token: string) => void;
   setUser: (user: User) => void;
-  setAuth: (token: string, user: User) => void;
+  setAuth: (token: string, user: User) => Promise<void>;
   logout: () => Promise<void>;
   initializeAuth: () => Promise<void>;
   setTheme: (theme: 'light' | 'dark') => void;
@@ -54,19 +84,26 @@ export const useAppStore = create<AppStore>()(
       },
 
       setUser: (user: User) => {
+        const previousUserId = get().user?.uniqueId;
+        if (previousUserId && previousUserId !== user.uniqueId) {
+          void clearUserScopedClientState();
+        }
         set({ user });
       },
 
-      setAuth: (token: string, user: User) => {
+      setAuth: async (token: string, user: User) => {
+        await clearUserScopedClientState();
         set({ token, user });
       },
 
       logout: async () => {
         try {
-          await removeToken();
           set({ token: null, user: null });
+          await removeToken();
+          await clearUserScopedClientState();
         } catch (error) {
           console.error('Logout error:', error);
+          set({ token: null, user: null });
         }
       },
 
@@ -76,6 +113,7 @@ export const useAppStore = create<AppStore>()(
           const token = await getToken();
           if (!token) {
             set({ token: null, user: null });
+            await clearUserScopedClientState();
             return;
           }
 
@@ -85,13 +123,15 @@ export const useAppStore = create<AppStore>()(
             const currentUser = await getCurrentUser(token);
             set({ user: currentUser });
           } catch (error) {
+            if (isAuthError(error)) {
+              set({ token: null, user: null });
+              await removeToken();
+              await clearUserScopedClientState();
+              return;
+            }
+
             console.error('Current user fetch error:', error);
             set({ user: null });
-
-            if (error instanceof Error && /authorization/i.test(error.message)) {
-              await removeToken();
-              set({ token: null, user: null });
-            }
           }
         } catch (error) {
           console.error('Auth initialization error:', error);

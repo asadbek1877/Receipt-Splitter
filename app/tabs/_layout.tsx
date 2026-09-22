@@ -140,7 +140,8 @@ function GlobalTabsHeader(props: any) {
 
 export default function TabLayout() {
   const { user } = useAppStore();
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  const languageKey = i18n.resolvedLanguage ?? i18n.language;
 
   const greetingName = user?.username || t('home.header.friendFallback', 'friend');
   const homeTitle = t('home.header.greeting', { name: greetingName });
@@ -163,7 +164,7 @@ export default function TabLayout() {
   return (
     <Tabs
       screenOptions={{
-        header: (props) => <GlobalTabsHeader {...props} />,
+        header: (props) => <GlobalTabsHeader {...props} languageKey={languageKey} />,
         tabBarStyle: { display: 'none' },
       }}
     >

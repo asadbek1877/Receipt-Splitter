@@ -3,14 +3,23 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Pressable } from 'react-native';
+import { useSharedValue } from 'react-native-reanimated';
 import { YStack, XStack, Text, Button, Circle, ScrollView, Spinner } from 'tamagui';
 import { Users as UsersIcon, Check, Plus, Minus, Package as PackageIcon } from '@tamagui/lucide-icons';
+import { useTranslation } from 'react-i18next';
 
 import { useAppStore } from '@/shared/lib/stores/app-store';
 import { useReceiptSessionStore } from '@/features/receipt/model/receipt-session.store';
 import type { FinishPayload, ReceiptSplitItem } from '@/features/receipt/model/receipt-session.store';
 import { ReceiptApi } from '@/features/receipt/api/receipt.api';
 import type { FinalizeReceiptItemPayload, FinalizeTotalsByItem, FinalizeTotalsByParticipant, ReceiptAllocation } from '@/features/receipt/api/receipt.api';
+import { refreshSplitterStoreFromBackend } from '@/features/receipt/api/receipts.api';
+import { useSessionsHistoryStore } from '@/features/sessions/model/history.store';
+import {
+  DraggableProductCard,
+  ParticipantDropDock,
+  type DropZoneRects,
+} from '@/features/receipt/ui/DragAssignment';
 
 // ===== Types =====
 type Participant = { uniqueId: string; username: string };
@@ -18,6 +27,9 @@ type SplitMode = 'equal' | 'count' | undefined;
 type Item = {
   id: string;
   name: string;
+  imageUrl?: string | null;
+  imageUri?: string | null;
+  thumbnailUrl?: string | null;
   price: number;
   quantity: number;
   assignedTo: string[];
@@ -41,6 +53,9 @@ const toLocalItems = (source: ReceiptSplitItem[]): Item[] =>
   source.map((item) => ({
     id: item.id,
     name: item.name,
+    imageUrl: item.imageUrl,
+    imageUri: item.imageUri,
+    thumbnailUrl: item.thumbnailUrl,
     price: item.unitPrice,
     quantity: item.quantity,
     assignedTo: [...item.assignedTo],
@@ -67,6 +82,9 @@ const toStoreItems = (source: Item[]): ReceiptSplitItem[] =>
     return {
       id: item.id,
       name: item.name,
+      imageUrl: item.imageUrl,
+      imageUri: item.imageUri,
+      thumbnailUrl: item.thumbnailUrl,
       unitPrice: item.price,
       quantity: item.quantity,
       totalPrice: typeof item.totalPrice === 'number' ? item.totalPrice : item.price * item.quantity,
@@ -175,6 +193,7 @@ const parseParticipantsParam = (raw?: string): Participant[] => {
 };
 
 export default function ItemsSplitScreen() {
+  const { t } = useTranslation();
   const { participants: participantsParam, receiptId } = useLocalSearchParams<{
     participants?: string;
     receiptId?: string;
@@ -188,6 +207,7 @@ export default function ItemsSplitScreen() {
   const storeParticipants = useReceiptSessionStore((s) => s.participants);
   const setStoreItems = useReceiptSessionStore((s) => s.setItems);
   const setLastFinishPayload = useReceiptSessionStore((s) => s.setLastFinishPayload);
+  const refreshHistory = useSessionsHistoryStore((s) => s.forceRefresh);
 
   const storeCurrency = useReceiptSessionStore((s) => s.currency);
 
@@ -216,6 +236,8 @@ export default function ItemsSplitScreen() {
   const [showSuccess, setShowSuccess] = useState(false);
   const [finalizing, setFinalizing] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const dropZoneRects = useSharedValue<DropZoneRects>([]);
+  const activeDropIndex = useSharedValue(-1);
 
   const participantsFromParams = useMemo(
     () => parseParticipantsParam(participantsParam),
@@ -321,7 +343,27 @@ export default function ItemsSplitScreen() {
   );
 
   const totalItems = items.length;
-  const canContinue = assignedCount > 0; // Allow continuing if at least one item is assigned
+  const receiptTotal = useMemo(
+    () => items.reduce((sum, item) => sum + computeItemTotal(item), 0),
+    [items]
+  );
+  const distributedTotal = useMemo(
+    () =>
+      items.reduce((sum, item) => {
+        if (ensureMode(item) === 'count') {
+          const assignedUnits = Math.min(countAssignedUnits(item), item.quantity || 0);
+          return sum + assignedUnits * item.price;
+        }
+
+        return sum + ((item.assignedTo?.length ?? 0) > 0 ? computeItemTotal(item) : 0);
+      }, 0),
+    [items]
+  );
+  const canContinue = assignedCount > 0;
+  const unassignedItems = useMemo(
+    () => items.filter((item) => !isFullyAssigned(item)),
+    [items]
+  );
 
   useEffect(() => {
     if (!canContinue && submitError) {
@@ -497,6 +539,47 @@ export default function ItemsSplitScreen() {
     });
   }
 
+  function toggleParticipantForItem(itemId: string, participantId: string) {
+    commitItems((prev) =>
+      prev.map((item) => {
+        if (item.id !== itemId) return item;
+
+        const assignedTo = item.assignedTo.includes(participantId)
+          ? item.assignedTo.filter((uid) => uid !== participantId)
+          : [...item.assignedTo, participantId];
+
+        return {
+          ...item,
+          splitMode: 'equal',
+          assignedTo,
+          perPersonCount: {},
+        };
+      })
+    );
+  }
+
+  const onAssign = useCallback(
+    (productId: string, participantIndex: number) => {
+      const userId = participants[participantIndex]?.uniqueId;
+      if (!userId) return;
+
+      console.log('[DragAssign] mock onAssign', { productId, userId });
+      commitItems((prev) =>
+        prev.map((item) => {
+          if (item.id !== productId) return item;
+
+          return {
+            ...item,
+            splitMode: 'equal',
+            assignedTo: [userId],
+            perPersonCount: {},
+          };
+        })
+      );
+    },
+    [commitItems, participants]
+  );
+
   async function modalSave() {
   if (!editing) return;
   const mode: Exclude<SplitMode, undefined> =
@@ -567,7 +650,7 @@ export default function ItemsSplitScreen() {
       (sessionReceiptId ? parseInt(sessionReceiptId, 10) : undefined);
 
     if (!effectiveSessionId) {
-      throw new Error('Session ID is required');
+      throw new Error(t('orders.errors.sessionRequired'));
     }
 
       const fallbackFinalization = buildLocalFinalization(items, participants);
@@ -622,9 +705,17 @@ export default function ItemsSplitScreen() {
   currency: finalCurrency,
   status: result.status,
   createdAt: result.createdAt,
-};
+      };
 
       setLastFinishPayload(finishPayload);
+      try {
+        await Promise.all([
+          refreshSplitterStoreFromBackend(),
+          refreshHistory(100, true),
+        ]);
+      } catch (syncError) {
+        console.warn('[ItemsSplit] finalized but failed to refresh related stores', syncError);
+      }
       setShowSuccess(true);
 
       setTimeout(() => {
@@ -647,7 +738,7 @@ export default function ItemsSplitScreen() {
       setShowSuccess(false);
       setFinalizing(false);
 
-      const message = error instanceof Error ? error.message : 'Failed to finalize session';
+      const message = error instanceof Error ? error.message : t('orders.errors.finalizeFailed');
       setSubmitError(message);
       console.error('Finalize error:', error);
     }
@@ -661,6 +752,7 @@ export default function ItemsSplitScreen() {
     storeCurrency,
     setStoreItems,
     setLastFinishPayload,
+    refreshHistory,
     router,
     resetState,
   ]);
@@ -710,7 +802,9 @@ export default function ItemsSplitScreen() {
     </Button>
   );
 
-  const gapBottom = (insets?.bottom ?? 0) + 72;
+  const dockHeight = 126;
+  const bottomPanelHeight = 64;
+  const gapBottom = (insets?.bottom ?? 0) + dockHeight + bottomPanelHeight + 40;
 
   return (
     <YStack f={1} bg="$background" position="relative">
@@ -719,7 +813,7 @@ export default function ItemsSplitScreen() {
         <XStack w="100%" ai="center" jc="flex-start" mb="$3">
           <YStack ai="flex-start">
             <Text fontSize={16} fontWeight="700">
-              Orders
+              {t('orders.title')}
             </Text>
             <Text fontSize={12} color="$gray10">
               {sessionReceiptId ?? 'N/A'}
@@ -732,142 +826,57 @@ export default function ItemsSplitScreen() {
       <ScrollView
         f={1}
         showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
         contentContainerStyle={{ paddingBottom: gapBottom }}
       >
         <YStack px="$4" gap="$3">
-          {/* Participants */}
-          <YStack>
-            <XStack w="100%" ai="center" jc="flex-start" mb="$2">
-              <XStack ai="center" gap="$2">
-                <UsersIcon size={18} color="$gray10" />
-                <Text fontWeight="700">Participants ({participants.length})</Text>
-              </XStack>
-            </XStack>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-              <XStack gap="$2" pr="$4">
-                {participants.map((p) => (
-                  <XStack
-                    key={p.uniqueId}
-                    ai="center"
-                    gap="$2"
-                    px="$2"
-                    py="$1"
-                    borderWidth={1}
-                    borderColor="$gray6"
-                    borderRadius={16}
-                    minWidth={100}
-                  >
-                    <Avatar name={p.username} />
-                    <Text numberOfLines={1} fontSize={13}>
-                      {p.username}
-                    </Text>
-                  </XStack>
-                ))}
-              </XStack>
-            </ScrollView>
-          </YStack>
-
           {/* Items */}
           <YStack gap="$3" mt="$2">
-            {items.map((it) => {
-              const total =
-                typeof it.totalPrice === 'number' ? it.totalPrice : it.price * it.quantity;
-              const assigned = isPartiallyAssigned(it);
-              const singleOwner = it.splitMode !== 'count' && it.assignedTo.length === 1;
-              const ownerName = singleOwner
-                ? participants.find((p) => p.uniqueId === it.assignedTo[0])?.username
-                : undefined;
-              const priceParts = getCurrencyParts(total);
-              const assignedUnits =
-                it.splitMode === 'count'
-                  ? countAssignedUnits(it)
-                  : 0;
-              const missingUnits =
-                it.splitMode === 'count'
-                  ? Math.max(0, (it.quantity || 0) - assignedUnits)
-                  : 0;
-              const isCountAndMissing = it.splitMode === 'count' && missingUnits > 0;
+            <XStack ai="center" jc="space-between">
+              <YStack>
+                <Text fontSize={15} fontWeight="800">
+                  {t('orders.unassignedProducts')}
+                </Text>
+                <Text fontSize={12} color="$gray10">
+                  {t('orders.dragInstruction')}
+                </Text>
+              </YStack>
+              <Text fontSize={13} fontWeight="800" color="#2ECC71">
+                {assignedCount}/{totalItems}
+              </Text>
+            </XStack>
 
-              let summaryText = '';
-              if (it.splitMode === 'count') {
-                summaryText = `${assignedUnits}/${it.quantity} assigned`;
-              } else if (singleOwner) {
-                summaryText = ownerName ?? '';
-              } else if (it.quantity > 1) {
-                summaryText = `1x ${fmtCurrency(it.price)}`;
-              }
+            {unassignedItems.map((it) => (
+              <DraggableProductCard
+                key={it.id}
+                item={it}
+                currency={storeCurrency || 'UZS'}
+                dropZoneRects={dropZoneRects}
+                activeDropIndex={activeDropIndex}
+                onAssign={onAssign}
+              />
+            ))}
 
-              const showUnitIcon = it.quantity > 1 && summaryText !== '';
-
-              return (
-                <YStack
-                  key={it.id}
-                  w="100%"
-                  borderWidth={1}
-                  borderColor={
-                    isCountAndMissing ? '#E74C3C' : assigned ? '#2ECC71' : '#E4E7EB'
-                  }
-                  borderRadius={12}
-                  bg="$color1"
-                >
-                  <XStack w="100%" ai="center" jc="space-between" px={16} py="$3" gap="$3">
-                    <YStack f={1} pr={12} gap="$1">
-                      <Text fontSize={16} fontWeight="700" numberOfLines={1}>
-                        {it.name}
-                        {it.quantity > 1 ? ` (${it.quantity}x)` : ''}
-                      </Text>
-                      {summaryText && (
-                        <XStack ai="center" gap="$1">
-                          {showUnitIcon && <PackageIcon size={14} color="$gray10" />}
-                          <Text fontSize={12} color="$gray10" numberOfLines={1}>
-                            {summaryText}
-                          </Text>
-                        </XStack>
-                      )}
-                      {isCountAndMissing && (
-                        <Text fontSize={12} color="#E74C3C">
-                          Assign remaining {missingUnits} unit{missingUnits === 1 ? '' : 's'}
-                        </Text>
-                      )}
-                    </YStack>
-
-                    <YStack ai="flex-end" gap="$2" flexShrink={0}>
-                      <XStack ai="baseline" gap="$1">
-                        <Text fontSize={12} color="$gray10">
-                          {priceParts.currency}
-                        </Text>
-                        <Text fontSize={16} fontWeight="700" color="#2ECC71">
-                          {priceParts.amount}
-                        </Text>
-                      </XStack>
-
-                      <Button
-                        unstyled
-                        onPress={() => openAssignModal(it)}
-                        width={assigned ? 109 : undefined}
-                        minHeight={assigned ? 29 : 32}
-                        px={assigned ? 16 : 12}
-                        py={assigned ? 6 : undefined}
-                        borderRadius={assigned ? 5 : 6}
-                        bg={assigned ? '#2ECC711A' : '$backgroundPress'}
-                        borderWidth={assigned ? 0 : 1}
-                        borderColor={assigned ? 'transparent' : '#E4E7EB'}
-                        ai="center"
-                        jc="center"
-                      >
-                        <Text
-                          fontSize={14}
-                          fontWeight="600"
-                          color={assigned ? '#2ECC71' : '$gray11'}
-                        >
-                          {assigned ? 'Change' : 'Who?'}
-                        </Text>
-                      </Button>
-                    </YStack>
-                  </XStack>
-                </YStack>
-              );
-            })}
+            {unassignedItems.length === 0 && (
+              <YStack
+                ai="center"
+                jc="center"
+                py="$8"
+                px="$4"
+                borderRadius={18}
+                borderWidth={1}
+                borderColor="$gray5"
+                bg="$color1"
+              >
+                <Check size={28} color="#2ECC71" />
+                <Text mt="$2" fontSize={15} fontWeight="800">
+                  {t('orders.everythingAssigned')}
+                </Text>
+                <Text mt="$1" fontSize={12} color="$gray10" textAlign="center">
+                  {t('orders.confirmWhenReady')}
+                </Text>
+              </YStack>
+            )}
           </YStack>
         </YStack>
       </ScrollView>
@@ -877,8 +886,13 @@ export default function ItemsSplitScreen() {
         position="absolute"
         left={0}
         right={0}
-        bottom={(insets?.bottom ?? 0) + 8}
+        bottom={(insets?.bottom ?? 0) + dockHeight}
         px="$4"
+        pt="$2"
+        pb="$2"
+        bg="$background"
+        borderTopWidth={1}
+        borderTopColor="$gray4"
       >
         <YStack>
           <Button
@@ -886,46 +900,16 @@ export default function ItemsSplitScreen() {
             onPress={onContinue}
             height={41}
             borderRadius={10}
-            bg="#2ECC71"
+            bg={canContinue ? '#2ECC71' : '#E2E8F0'}
             ai="center"
             jc="center"
             pressStyle={finalizing ? undefined : { opacity: 0.9 }}
             disabled={!canContinue || finalizing}
-            opacity={!canContinue || finalizing ? 0.6 : 1}
           >
-            <Text fontSize={16} fontWeight="600" color="white">
-              {finalizing ? 'Saving...' : assignedCount < totalItems ? `Continue (${assignedCount} items)` : 'Continue'}
+            <Text fontSize={16} fontWeight="700" color={canContinue ? 'white' : '#64748B'}>
+              {finalizing ? t('orders.saving') : t('orders.confirmSplit')}
             </Text>
           </Button>
-          {assignedCount < totalItems && assignedCount > 0 && (
-            <YStack mt="$2" p="$2" borderRadius={8} bg="rgba(251,191,36,0.1)" borderWidth={1} borderColor="rgba(251,191,36,0.3)">
-              <Text color="rgba(217,119,6,1)" fontSize={11} textAlign="center">
-                {totalItems - assignedCount} item{totalItems - assignedCount !== 1 ? 's' : ''} unassigned - they won't be included in the split
-              </Text>
-            </YStack>
-          )}
-          {assignedCount === 0 && (
-            <YStack mt="$2" p="$2" borderRadius={8} bg="rgba(239,68,68,0.1)" borderWidth={1} borderColor="rgba(239,68,68,0.3)">
-              <Text color="#ef4444" fontSize={11} textAlign="center">
-                Please assign at least one item to continue
-              </Text>
-            </YStack>
-          )}
-          {assignedCount > 0 && assignedCount < totalItems && (
-            <YStack mt="$2" p="$2" borderWidth={1} borderColor="$gray5" borderRadius={8} bg="$color1">
-              <XStack w="100%" ai="center" jc="space-between">
-                <Text color="$gray10" fontSize={12}>
-                  Progress
-                </Text>
-                <Text fontSize={12} fontWeight="600">
-                  {assignedCount}/{totalItems}
-                </Text>
-              </XStack>
-              <ProgressBar
-                value={Math.round((assignedCount / Math.max(1, totalItems)) * 100)}
-              />
-            </YStack>
-          )}
           {submitError && (
             <Text mt="$2" color="$red10" fontSize={13} textAlign="center">
               {submitError}
@@ -933,6 +917,13 @@ export default function ItemsSplitScreen() {
           )}
         </YStack>
       </YStack>
+
+      <ParticipantDropDock
+        participants={participants}
+        dropZoneRects={dropZoneRects}
+        activeDropIndex={activeDropIndex}
+        bottomInset={insets?.bottom ?? 0}
+      />
 
       {/* Assign Modal */}
       {editing && (
@@ -970,13 +961,13 @@ export default function ItemsSplitScreen() {
             {editingItem && editingItem.quantity > 1 && (
               <XStack gap="$2" mb="$2">
                 <ModeToggleButton
-                  label="Equal split"
+                  label={t('orders.equalSplit')}
                   icon={<UsersIcon size={16} color={isEqualMode ? 'white' : '#2C3D4F'} />}
                   active={isEqualMode}
                   onPress={switchToEqual}
                 />
                 <ModeToggleButton
-                  label="By units"
+                  label={t('orders.byUnits')}
                   icon={<PackageIcon size={16} color={isCountMode ? 'white' : '#2C3D4F'} />}
                   active={isCountMode}
                   onPress={switchToCount}
@@ -985,17 +976,17 @@ export default function ItemsSplitScreen() {
             )}
 
             <XStack w="100%" ai="center" jc="space-between" mb="$2">
-              <Text fontWeight="600">Assign to:</Text>
+              <Text fontWeight="600">{t('orders.assignTo')}</Text>
               <XStack ai="center" gap="$2">
                 <Button chromeless onPress={modalAll}>
                   <Text color="#2ECC71" fontWeight="700">
-                    All
+                    {t('common.all')}
                   </Text>
                 </Button>
                 <Text color="$gray8">|</Text>
                 <Button chromeless onPress={modalClear}>
                   <Text color="#E74C3C" fontWeight="700">
-                    Clear
+                    {t('orders.clear')}
                   </Text>
                 </Button>
               </XStack>
@@ -1095,11 +1086,12 @@ export default function ItemsSplitScreen() {
             {effectiveMode === 'equal' && editing.assignedTo.length > 0 && (
               <YStack mt="$2" p={8} borderRadius={5} bg="#2ECC711A">
                 <Text fontSize={13} fontWeight="700" color="#2ECC71">
-                  Assigned to {editing.assignedTo.length} participant(s)
+                  {t('orders.assignedToParticipants', { count: editing.assignedTo.length })}
                 </Text>
                 <Text fontSize={12} color="#2ECC71">
-                  Price split equally:{' '}
-                  {fmtCurrency(editingTotal / Math.max(1, editing.assignedTo.length))} each
+                  {t('orders.priceSplitEach', {
+                    amount: fmtCurrency(editingTotal / Math.max(1, editing.assignedTo.length)),
+                  })}
                 </Text>
               </YStack>
             )}
@@ -1109,10 +1101,12 @@ export default function ItemsSplitScreen() {
                 <YStack mt="$2" p={8} borderRadius={5} bg="#2ECC711A">
                   <Text fontSize={13} fontWeight="700" color="#2ECC71">
                     {Object.values(editing.perPersonCount).reduce((a, b) => a + (b || 0), 0)}{' '}
-                    unit(s) assigned
+                    {t('orders.unitsAssigned', {
+                      count: Object.values(editing.perPersonCount).reduce((a, b) => a + (b || 0), 0),
+                    })}
                   </Text>
                   <Text fontSize={12} color="#2ECC71">
-                    Per unit: {fmtCurrency(editingItem?.price || 0)}
+                    {t('orders.perUnit', { amount: fmtCurrency(editingItem?.price || 0) })}
                   </Text>
                 </YStack>
               )}
@@ -1129,7 +1123,7 @@ export default function ItemsSplitScreen() {
                 ai="center"
                 jc="center"
               >
-                <Text>Cancel</Text>
+                <Text>{t('common.cancel')}</Text>
               </Button>
               <Button
                 unstyled
@@ -1144,7 +1138,7 @@ export default function ItemsSplitScreen() {
                 pressStyle={{ opacity: 0.9 }}
               >
                 <Text color="white" fontWeight="600">
-                  Save
+                  {t('common.save')}
                 </Text>
               </Button>
             </XStack>
@@ -1164,7 +1158,7 @@ export default function ItemsSplitScreen() {
           <YStack w={390} h={156} ai="center" jc="center" bg="$color1" br={12}>
             <Spinner size="large" color="#2ECC71" />
             <Text mt="$2" color="#2ECC71" fontSize={16} fontWeight="600">
-              Saving split...
+              {t('orders.savingSplit')}
             </Text>
           </YStack>
         </YStack>

@@ -19,6 +19,9 @@ export interface ParsedReceiptItem {
   unitPrice: number;
   quantity: number;
   totalPrice: number;
+  imageUrl?: string | null;
+  imageUri?: string | null;
+  thumbnailUrl?: string | null;
   kind?: ParsedReceiptItemKind;
 }
 
@@ -157,7 +160,27 @@ export const ReceiptApi = {
       return data;
     } catch (error) {
       const normalizedError = normalizeError(error);
-      console.error('[ReceiptApi] Parse failed:', normalizedError.message);
+      console.warn('[ReceiptApi] Parse failed:', normalizedError.message);
+      throw normalizedError;
+    }
+  },
+
+  async parseUpload(formData: FormData): Promise<ParseReceiptResponse> {
+    try {
+      const { data } = await apiClient.post<ParseReceiptResponse>('/sessions/scan', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+
+      console.log('[ReceiptApi] Upload parse success:', {
+        sessionId: data.sessionId,
+        itemsCount: data.items?.length,
+        grandTotal: data.summary?.grandTotal,
+        source: data.source || 'backend',
+      });
+      return data;
+    } catch (error) {
+      const normalizedError = normalizeError(error);
+      console.warn('[ReceiptApi] Upload parse failed:', normalizedError.message);
       throw normalizedError;
     }
   },
@@ -182,7 +205,7 @@ export const ReceiptApi = {
       return data;
     } catch (error) {
       const normalizedError = normalizeError(error);
-      console.error('[ReceiptApi] Finalize failed:', normalizedError.message);
+      console.warn('[ReceiptApi] Finalize failed:', normalizedError.message);
       throw normalizedError;
     }
   },

@@ -167,7 +167,7 @@ export default function LoginForm() {
         console.warn('Login profile refresh failed:', fetchError);
       }
 
-      setAuth(res.token, profile);
+      await setAuth(res.token, profile);
       router.replace('/tabs');
     } catch (error: any) {
       const msg = error?.message || t('auth.loginError', 'An error occurred during login');

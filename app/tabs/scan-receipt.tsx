@@ -1,9 +1,10 @@
 // app/tabs/scan-receipt.tsx — Receipt scanner with zoom, flashlight & improved design
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  ActivityIndicator, Image, StyleSheet, View,
+  ActivityIndicator, Alert, Image, Linking, Platform, StyleSheet, View,
   Animated as RNAnimated, Pressable, Dimensions,
 } from 'react-native';
+import * as ImagePicker from 'expo-image-picker';
 import { useFocusEffect, useIsFocused } from '@react-navigation/native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { useRouter } from 'expo-router';
@@ -11,12 +12,13 @@ import { YStack, XStack, Button, Paragraph, Input, Text, Spinner, Circle } from 
 import {
   ChevronLeft, AlertTriangle, Camera as CameraIcon,
   Scan, Zap, Receipt, ZoomIn, ZoomOut, Flashlight, X,
-  Focus, Users as UsersIcon, Plus,
+  Focus, Users as UsersIcon, Plus, ImagePlus,
 } from '@tamagui/lucide-icons';
 import { manipulateAsync, SaveFormat } from 'expo-image-manipulator';
 import Animated, { FadeIn, FadeInDown, FadeInUp, SlideInDown } from 'react-native-reanimated';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useTranslation } from 'react-i18next';
 
 import {
   useReceiptSessionStore,
@@ -46,11 +48,35 @@ function guessMime(uri?: string): string {
   return 'image/jpeg';
 }
 
+const getFileNameFromUri = (uri: string, fallback = `receipt-${Date.now()}.jpg`) => {
+  const rawName = uri.split('/').pop()?.split('?')[0];
+  return rawName && rawName.includes('.') ? rawName : fallback;
+};
+
+const appendImageToFormData = async (
+  formData: FormData,
+  file: { uri: string; fileName: string; mimeType: string },
+) => {
+  if (Platform.OS === 'web') {
+    const response = await fetch(file.uri);
+    const blob = await response.blob();
+    formData.append('file', blob, file.fileName);
+    return;
+  }
+
+  formData.append('file', {
+    uri: file.uri,
+    name: file.fileName,
+    type: file.mimeType,
+  } as any);
+};
+
 // Zoom levels
 const ZOOM_LEVELS = [0, 0.25, 0.5, 0.75, 1.0];
 const ZOOM_LABELS = ['1×', '1.5×', '2×', '3×', '4×'];
 
 export default function ScanReceiptScreen() {
+  const { t } = useTranslation();
   const [perm, requestPerm] = useCameraPermissions();
   const isFocused = useIsFocused();
   const router = useRouter();
@@ -61,6 +87,7 @@ export default function ScanReceiptScreen() {
 
   const parsing = useReceiptSessionStore((s) => s.parsing);
   const parseReceipt = useReceiptSessionStore((s) => s.parseReceipt);
+  const parseReceiptUpload = useReceiptSessionStore((s) => s.parseReceiptUpload);
   const parseError = useReceiptSessionStore((s) => s.parseError);
   const setCapture = useReceiptSessionStore((s) => s.setCapture);
   const clearCapture = useReceiptSessionStore((s) => s.clearCapture);
@@ -77,6 +104,8 @@ export default function ScanReceiptScreen() {
   // Captured photo waiting for user confirmation before sending to AI
   const [pendingCapture, setPendingCapture] = useState<CapturedReceiptImage | null>(null);
   const [pendingName, setPendingName] = useState<string>('');
+  const [galleryProcessing, setGalleryProcessing] = useState(false);
+  const [mediaPermission, requestMediaPermission] = ImagePicker.useMediaLibraryPermissions();
 
   // Zoom & Flash state
   const [zoomLevel, setZoomLevel] = useState(0); // index into ZOOM_LEVELS
@@ -157,7 +186,7 @@ export default function ScanReceiptScreen() {
       });
 
       if (!picture?.uri) {
-        throw new Error('Could not capture the receipt photo. Please try again.');
+        throw new Error(t('scanReceipt.errors.captureFailed'));
       }
       console.log('[ReceiptScan] Picture captured:', picture.uri, `(${picture.width}x${picture.height})`);
 
@@ -196,7 +225,7 @@ export default function ScanReceiptScreen() {
       );
 
       if (!manipResult?.base64) {
-        throw new Error('Failed to prepare the receipt photo for upload.');
+        throw new Error(t('scanReceipt.errors.prepareFailed'));
       }
 
       const preparedName = sessionName.trim() || getDefaultSessionName();
@@ -213,11 +242,11 @@ export default function ScanReceiptScreen() {
       setPendingCapture(capture);
       setPendingName(preparedName);
     } catch (error) {
-      console.error('[ReceiptScan] Capture error:', error);
-      const message = error instanceof Error ? error.message : 'Something went wrong while capturing';
+      console.warn('[ReceiptScan] Capture error:', error);
+      const message = error instanceof Error ? error.message : t('scanReceipt.errors.captureGeneric');
       setLocalError(message);
     }
-  }, [cameraRef, parsing, sessionName]);
+  }, [cameraRef, parsing, sessionName, t]);
 
   // Step 2a: user confirms — send to AI
   const handleConfirmScan = useCallback(async () => {
@@ -242,11 +271,115 @@ export default function ScanReceiptScreen() {
       console.log('[ReceiptScan] Navigating to review screen...');
       router.push('/tabs/sessions/review-items' as any);
     } catch (error) {
-      console.error('[ReceiptScan] Error:', error);
-      const message = error instanceof Error ? error.message : 'Something went wrong while sending the receipt';
+      console.warn('[ReceiptScan] Error:', error);
+      const message = error instanceof Error ? error.message : t('scanReceipt.errors.sendFailed');
       setLocalError(message);
     }
-  }, [pendingCapture, parsing, pendingName, setSessionNameStore, setCapture, parseReceipt, language, router]);
+  }, [pendingCapture, parsing, pendingName, setSessionNameStore, setCapture, parseReceipt, language, router, t]);
+
+  const showGalleryPermissionAlert = useCallback(() => {
+    Alert.alert(
+      t('scanReceipt.galleryPermissionTitle'),
+      t('scanReceipt.galleryPermissionMessage'),
+      [
+        { text: t('common.cancel'), style: 'cancel' },
+        {
+          text: t('common.openSettings'),
+          onPress: () => {
+            void Linking.openSettings();
+          },
+        },
+      ],
+    );
+  }, [t]);
+
+  const ensureGalleryPermission = useCallback(async () => {
+    const currentPermission =
+      mediaPermission ?? (await ImagePicker.getMediaLibraryPermissionsAsync());
+
+    if (currentPermission.granted) return true;
+
+    const nextPermission = currentPermission.canAskAgain
+      ? await requestMediaPermission()
+      : currentPermission;
+
+    if (nextPermission.granted) return true;
+
+    showGalleryPermissionAlert();
+    return false;
+  }, [mediaPermission, requestMediaPermission, showGalleryPermissionAlert]);
+
+  const handlePickFromGallery = useCallback(async () => {
+    if (parsing || galleryProcessing || pendingCapture) return;
+
+    const hasPermission = await ensureGalleryPermission();
+    if (!hasPermission) return;
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      quality: 0.9,
+      selectionLimit: 1,
+      base64: false,
+    });
+
+    if (result.canceled || !result.assets?.[0]?.uri) return;
+
+    setGalleryProcessing(true);
+    setLocalError(null);
+
+    try {
+      const asset = result.assets[0];
+      const preparedName = sessionName.trim() || getDefaultSessionName();
+      const targetWidth = Math.min(asset.width || 1280, 1280);
+      const preparedImage = await manipulateAsync(
+        asset.uri,
+        targetWidth > 0 ? [{ resize: { width: targetWidth } }] : [],
+        { compress: 0.58, format: SaveFormat.JPEG, base64: false },
+      );
+
+      const uploadFile = {
+        uri: preparedImage.uri ?? asset.uri,
+        fileName: asset.fileName ?? getFileNameFromUri(asset.uri),
+        mimeType: 'image/jpeg',
+      };
+
+      const formData = new FormData();
+      formData.append('sessionName', preparedName);
+      formData.append('language', language);
+      await appendImageToFormData(formData, uploadFile);
+
+      setSessionNameStore(preparedName);
+      setCapture({
+        uri: uploadFile.uri,
+        base64: '',
+        mimeType: uploadFile.mimeType,
+        width: preparedImage.width ?? asset.width,
+        height: preparedImage.height ?? asset.height,
+      });
+
+      await parseReceiptUpload(formData);
+      router.push('/tabs/sessions/review-items' as any);
+    } catch (error) {
+      console.warn('[ReceiptScan] Gallery upload error:', error);
+      const message = error instanceof Error ? error.message : t('scanReceipt.errors.galleryFailed');
+      setLocalError(message);
+    } finally {
+      setGalleryProcessing(false);
+    }
+  }, [
+    ensureGalleryPermission,
+    galleryProcessing,
+    language,
+    parseReceiptUpload,
+    parsing,
+    pendingCapture,
+    router,
+    sessionName,
+    setCapture,
+    setSessionNameStore,
+    t,
+  ]);
 
   // Step 2b: user retakes the photo
   const handleRetake = useCallback(() => {
@@ -281,7 +414,9 @@ export default function ScanReceiptScreen() {
     setFlashEnabled((prev) => !prev);
   }, []);
 
-  const disableAction = parsing || !perm?.granted || !!pendingCapture;
+  const isProcessingReceipt = parsing || galleryProcessing;
+  const disableCapture = isProcessingReceipt || !perm?.granted || !!pendingCapture;
+  const disableGallery = isProcessingReceipt || !!pendingCapture;
   const errorMessage = localError || parseError;
 
   return (
@@ -338,7 +473,7 @@ export default function ScanReceiptScreen() {
                 <Animated.View entering={FadeIn.delay(300).duration(400)}>
                   <View style={[S.scanHintBadge, { backgroundColor: accentColor }]}>  
                     <Focus size={14} color="#FFF" />
-                    <Text style={S.scanHintText}>Position receipt inside frame</Text>
+                    <Text style={S.scanHintText}>{t('scanReceipt.positionHint')}</Text>
                   </View>
                 </Animated.View>
               </View>
@@ -355,15 +490,15 @@ export default function ScanReceiptScreen() {
                     <CameraIcon size={48} color={accentColor} />
                   </View>
                   <Text color="white" fontSize={18} fontWeight="700" textAlign="center">
-                    Camera Access Required
+                    {t('scanReceipt.cameraAccessTitle')}
                   </Text>
                   <Text color="$gray8" fontSize={14} textAlign="center" px="$4">
-                    Allow camera access to scan your receipts and split bills with friends
+                    {t('scanReceipt.cameraAccessMessage')}
                   </Text>
                   <Pressable onPress={requestPerm}>
                     <View style={[S.permButton, { backgroundColor: accentColor }]}>
                       <CameraIcon size={18} color="#FFF" />
-                      <Text color="white" fontWeight="700" fontSize={15}>Enable Camera</Text>
+                      <Text color="white" fontWeight="700" fontSize={15}>{t('scanReceipt.enableCamera')}</Text>
                     </View>
                   </Pressable>
                 </YStack>
@@ -373,16 +508,16 @@ export default function ScanReceiptScreen() {
         )}
 
         {/* Processing Overlay */}
-        {parsing && (
+        {isProcessingReceipt && (
           <View style={S.processingOverlay}>
             <Animated.View entering={FadeIn.duration(300)}>
               <View style={[S.processingCard, { borderColor: `${accentColor}40` }]}>
                 <Spinner size="large" color={accentColor} />
                 <Text mt="$3" color="white" fontWeight="700" fontSize={17}>
-                  Processing receipt...
+                  {galleryProcessing ? t('scanReceipt.processingGallery') : t('scanReceipt.processingReceipt')}
                 </Text>
                 <Text mt="$1" color="$gray9" fontSize={13}>
-                  AI is reading receipt products
+                  {t('scanReceipt.aiReading')}
                 </Text>
                 <View style={[S.processingProgress, { backgroundColor: `${accentColor}30` }]}>
                   <View style={[S.processingProgressBar, { backgroundColor: accentColor }]} />
@@ -407,19 +542,19 @@ export default function ScanReceiptScreen() {
           />
           <YStack style={S.confirmActions} gap="$3" px="$4" pb={insets.bottom + 16}>
             <Text color="white" fontSize={17} fontWeight="700" textAlign="center">
-              Чек тасвири тўғрими? / Is this your receipt?
+              {t('scanReceipt.confirmReceipt')}
             </Text>
             <XStack gap="$3">
               <Pressable style={S.cancelBtn} onPress={handleRetake}>
                 <X size={18} color="white" />
-                <Text color="white" fontWeight="600" fontSize={14}>Qayta olish</Text>
+                <Text color="white" fontWeight="600" fontSize={14}>{t('scanReceipt.retake')}</Text>
               </Pressable>
               <Pressable
                 style={[S.scanBtn, { backgroundColor: accentColor }]}
                 onPress={handleConfirmScan}
               >
                 <Scan size={20} color="white" />
-                <Text color="white" fontWeight="800" fontSize={15}>AI билан скан қил</Text>
+                <Text color="white" fontWeight="800" fontSize={15}>{t('scanReceipt.scanWithAi')}</Text>
               </Pressable>
             </XStack>
           </YStack>
@@ -440,7 +575,7 @@ export default function ScanReceiptScreen() {
           <XStack ai="center" gap="$2">
             <Receipt size={18} color={accentColor} />
             <Text color="white" fontWeight="700" fontSize={17}>
-              Scanner
+              {t('scanReceipt.scannerTitle')}
             </Text>
           </XStack>
 
@@ -464,7 +599,7 @@ export default function ScanReceiptScreen() {
           <Input
             value={sessionName}
             onChangeText={handleSessionNameChange}
-            placeholder="Session name"
+            placeholder={t('scanReceipt.sessionName')}
             height={40}
             borderRadius={10}
             px={12}
@@ -479,34 +614,48 @@ export default function ScanReceiptScreen() {
             }}
           />
 
-          {/* One main action button */}
-          <Pressable
-            style={[
-              S.scanBtn,
-              { 
-                backgroundColor: accentColor, 
-                opacity: disableAction ? 0.5 : 1,
-                height: 52,
-                borderRadius: 12,
-              }
-            ]}
-            onPress={handleCapture}
-            disabled={disableAction}
-          >
-            <YStack f={1} ai="center" jc="center" w="100%">
-              {parsing ? (
-                <>
-                  <Spinner size="small" color="#FFF" />
-                  <Text color="white" fontWeight="700" fontSize={13} mt="$1">Processing...</Text>
-                </>
-              ) : (
-                <>
-                  <Scan size={22} color="white" />
-                  <Text color="white" fontWeight="800" fontSize={15}>Scan Receipt</Text>
-                </>
-              )}
-            </YStack>
-          </Pressable>
+          <XStack gap="$2">
+            <Pressable
+              style={[S.galleryBtn, disableGallery && S.disabledButton]}
+              onPress={handlePickFromGallery}
+              disabled={disableGallery}
+              accessibilityRole="button"
+              accessibilityLabel={t('scanReceipt.gallery')}
+            >
+              <ImagePlus size={24} color={accentColor} />
+              <Text fontSize={10} fontWeight="800" color={accentColor} mt="$1">
+                {t('scanReceipt.gallery')}
+              </Text>
+            </Pressable>
+
+            <Pressable
+              style={[
+                S.scanBtn,
+                { 
+                  backgroundColor: accentColor, 
+                  opacity: disableCapture ? 0.5 : 1,
+                  height: 52,
+                  borderRadius: 12,
+                }
+              ]}
+              onPress={handleCapture}
+              disabled={disableCapture}
+            >
+              <YStack f={1} ai="center" jc="center" w="100%">
+                {isProcessingReceipt ? (
+                  <>
+                    <Spinner size="small" color="#FFF" />
+                    <Text color="white" fontWeight="700" fontSize={13} mt="$1">{t('scanReceipt.processing')}</Text>
+                  </>
+                ) : (
+                  <>
+                    <CameraIcon size={22} color="white" />
+                    <Text color="white" fontWeight="800" fontSize={15}>{t('scanReceipt.takePhoto')}</Text>
+                  </>
+                )}
+              </YStack>
+            </Pressable>
+          </XStack>
 
           {/* Error message if any */}
           {errorMessage && (
@@ -725,6 +874,24 @@ const S = StyleSheet.create({
   },
 
   // Action buttons
+  galleryBtn: {
+    width: 72,
+    height: 52,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: 'rgba(229,231,235,0.88)',
+    shadowColor: '#E5E7EB',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.9,
+    shadowRadius: 18,
+    elevation: 4,
+  },
+  disabledButton: {
+    opacity: 0.5,
+  },
   cancelBtn: {
     flex: 1,
     flexDirection: 'row',

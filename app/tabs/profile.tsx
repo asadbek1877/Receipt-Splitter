@@ -158,16 +158,16 @@ export default function ProfileScreen() {
   const handleSaveUsername = useCallback(async () => {
     if (!user) return;
     const trimmed = usernameDraft.trim();
-    if (!trimmed || trimmed.length < 2) { setUsernameError('Min 2 characters'); return; }
+    if (!trimmed || trimmed.length < 2) { setUsernameError(t('profile.validation.usernameMin')); return; }
     if (trimmed === user.username) { setActiveEdit('none'); return; }
     try {
       setIsSavingUsername(true);
       const updatedUser = await updateUsername({ username: trimmed });
       setUser(updatedUser);
       setActiveEdit('none');
-      Alert.alert('Success', 'Username updated');
+      Alert.alert(t('common.success'), t('profile.alerts.usernameUpdated'));
     } catch (e) {
-      Alert.alert('Error', e instanceof Error ? e.message : 'Failed');
+      Alert.alert(t('common.error'), e instanceof Error ? e.message : t('profile.alerts.usernameUpdateFailed'));
     } finally { setIsSavingUsername(false); }
   }, [user, usernameDraft, setUser]);
 
@@ -175,34 +175,34 @@ export default function ProfileScreen() {
   const handleSaveEmail = useCallback(async () => {
     if (!user) return;
     const trimmed = emailDraft.trim();
-    if (!trimmed || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)) { setEmailError('Invalid email'); return; }
+    if (!trimmed || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)) { setEmailError(t('profile.validation.emailInvalid')); return; }
     if (trimmed.toLowerCase() === (user.email ?? '').toLowerCase()) { setActiveEdit('none'); return; }
     try {
       setIsSavingEmail(true);
       const updatedUser = await updateEmail({ email: trimmed });
       setUser(updatedUser);
       setActiveEdit('none');
-      Alert.alert('Success', 'Email updated');
+      Alert.alert(t('common.success'), t('profile.alerts.emailUpdated'));
     } catch (e) {
-      Alert.alert('Error', e instanceof Error ? e.message : 'Failed');
+      Alert.alert(t('common.error'), e instanceof Error ? e.message : t('profile.alerts.emailUpdateFailed'));
     } finally { setIsSavingEmail(false); }
   }, [user, emailDraft, setUser]);
 
   // Password handler
   const handleChangePassword = useCallback(async () => {
     if (!user) return;
-    if (!currentPassword.trim()) { setPasswordError('Enter current password'); return; }
-    if (newPassword.length < 6) { setPasswordError('Min 6 characters'); return; }
-    if (newPassword !== confirmPassword) { setPasswordError('Passwords don\'t match'); return; }
-    if (newPassword === currentPassword) { setPasswordError('Choose different password'); return; }
+    if (!currentPassword.trim()) { setPasswordError(t('profile.validation.passwordCurrent')); return; }
+    if (newPassword.length < 6) { setPasswordError(t('profile.validation.passwordMin6')); return; }
+    if (newPassword !== confirmPassword) { setPasswordError(t('profile.validation.passwordMismatch')); return; }
+    if (newPassword === currentPassword) { setPasswordError(t('profile.validation.passwordDifferent')); return; }
     try {
       setIsChangingPassword(true);
       await changePassword({ currentPassword, newPassword });
       setCurrentPassword(''); setNewPassword(''); setConfirmPassword('');
       setActiveEdit('none');
-      Alert.alert('Success', 'Password changed');
+      Alert.alert(t('common.success'), t('profile.alerts.passwordChanged'));
     } catch (e) {
-      Alert.alert('Error', e instanceof Error ? e.message : 'Failed');
+      Alert.alert(t('common.error'), e instanceof Error ? e.message : t('profile.alerts.passwordChangeFailed'));
     } finally { setIsChangingPassword(false); }
   }, [user, currentPassword, newPassword, confirmPassword]);
 
@@ -217,7 +217,7 @@ export default function ProfileScreen() {
       { text: t('common.cancel', 'Cancel'), style: 'cancel' },
       {
         text: t('profile.logout', 'Log out'), style: 'destructive',
-        onPress: () => logout().then(() => router.replace({ pathname: '/' })).catch(() => Alert.alert('Error', 'Could not log out')),
+        onPress: () => logout().then(() => router.replace({ pathname: '/' })).catch(() => Alert.alert(t('common.error'), t('profile.alerts.logoutFailed'))),
       },
     ]);
   }, [logout, router, t]);
@@ -332,7 +332,7 @@ export default function ProfileScreen() {
                         <Pressable style={{ flex: 1 }} onPress={handleSaveUsername} disabled={isSavingUsername}>
                           <View py="$2.5" br={12} ai="center" style={{ backgroundColor: colors.accent }}>
                             <Text fontSize={13} fontWeight="600" style={{ color: '#FFF' }}>
-                              {isSavingUsername ? 'Saving...' : t('common.save', 'Save')}
+                              {isSavingUsername ? t('common.saving') : t('common.save', 'Save')}
                             </Text>
                           </View>
                         </Pressable>
@@ -400,7 +400,7 @@ export default function ProfileScreen() {
                         placeholder={t('profile.password.currentPlaceholder', 'Current password')} />
                       <PasswordInput value={newPassword} onChangeText={setNewPassword}
                         placeholder={t('profile.password.newPlaceholder', 'New password')} />
-                      <Text fontSize={11} style={{ color: colors.textMuted }}>Min 6 characters</Text>
+                      <Text fontSize={11} style={{ color: colors.textMuted }}>{t('profile.password.min6')}</Text>
                       <PasswordInput value={confirmPassword} onChangeText={setConfirmPassword}
                         placeholder={t('profile.password.confirmPlaceholder', 'Confirm')}
                         error={passwordError || undefined} />
@@ -408,7 +408,7 @@ export default function ProfileScreen() {
                         <Pressable style={{ flex: 1 }} onPress={handleChangePassword} disabled={isChangingPassword}>
                           <View py="$2.5" br={12} ai="center" style={{ backgroundColor: colors.purple }}>
                             <Text fontSize={13} fontWeight="600" style={{ color: '#FFF' }}>
-                              {isChangingPassword ? 'Updating...' : t('profile.password.submit', 'Change')}
+                              {isChangingPassword ? t('common.updating') : t('profile.password.submit', 'Change')}
                             </Text>
                           </View>
                         </Pressable>
