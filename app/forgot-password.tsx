@@ -94,15 +94,6 @@ export default function ForgotPasswordScreen() {
     transform: [{ translateX: shakeX.value }],
   }));
 
-  const applyDebugCode = (code?: string) => {
-    if (!code) return;
-    const digits = code.replace(/\D/g, '').slice(0, 6).split('');
-    const next = Array.from({ length: 6 }, (_, i) => digits[i] || '');
-    setVerificationCode(next);
-    const lastIndex = Math.min(digits.length, 5);
-    setTimeout(() => codeInputRefs.current[lastIndex]?.focus(), 50);
-  };
-
   // Resend timer
   useEffect(() => {
     if (resendTimer > 0) {
@@ -116,11 +107,10 @@ export default function ForgotPasswordScreen() {
     clearError();
     try {
       setIsLoading(true);
-      const res = await forgotPassword({ email: values.email });
+      await forgotPassword({ email: values.email });
       setPendingEmail(values.email);
       setStep('code');
       setResendTimer(60);
-      applyDebugCode(res.debugCode);
     } catch (error: any) {
       triggerError(error?.message || t('auth.forgotPasswordError', 'Failed to send reset code. Please try again.'));
     } finally {
@@ -189,10 +179,9 @@ export default function ForgotPasswordScreen() {
     clearError();
     try {
       setIsLoading(true);
-      const res = await forgotPassword({ email: pendingEmail });
+      await forgotPassword({ email: pendingEmail });
       setResendTimer(60);
       setVerificationCode(['', '', '', '', '', '']);
-      applyDebugCode(res.debugCode);
     } catch (error: any) {
       triggerError(error?.message || 'Failed to resend code');
     } finally {

@@ -177,16 +177,18 @@ export default function ProfileScreen() {
     const trimmed = emailDraft.trim();
     if (!trimmed || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)) { setEmailError(t('profile.validation.emailInvalid')); return; }
     if (trimmed.toLowerCase() === (user.email ?? '').toLowerCase()) { setActiveEdit('none'); return; }
+    if (!currentPassword.trim()) { setEmailError(t('profile.validation.passwordCurrent')); return; }
     try {
       setIsSavingEmail(true);
-      const updatedUser = await updateEmail({ email: trimmed });
+      const updatedUser = await updateEmail({ email: trimmed, currentPassword });
       setUser(updatedUser);
+      setCurrentPassword('');
       setActiveEdit('none');
       Alert.alert(t('common.success'), t('profile.alerts.emailUpdated'));
     } catch (e) {
       Alert.alert(t('common.error'), e instanceof Error ? e.message : t('profile.alerts.emailUpdateFailed'));
     } finally { setIsSavingEmail(false); }
-  }, [user, emailDraft, setUser]);
+  }, [user, emailDraft, currentPassword, setUser]);
 
   // Password handler
   const handleChangePassword = useCallback(async () => {
@@ -364,6 +366,8 @@ export default function ProfileScreen() {
                         placeholder={t('profile.info.emailPlaceholder', 'New email')}
                         error={emailError || undefined}
                         textInputProps={{ keyboardType: 'email-address', autoCapitalize: 'none', autoCorrect: false }} />
+                      <PasswordInput value={currentPassword} onChangeText={setCurrentPassword}
+                        placeholder={t('profile.password.currentPlaceholder', 'Current password')} />
                       <XStack gap="$2">
                         <Pressable style={{ flex: 1 }} onPress={handleSaveEmail} disabled={isSavingEmail}>
                           <View py="$2.5" br={12} ai="center" style={{ backgroundColor: colors.accent }}>
@@ -372,7 +376,7 @@ export default function ProfileScreen() {
                             </Text>
                           </View>
                         </Pressable>
-                        <Pressable onPress={() => { setActiveEdit('none'); setEmailDraft(user?.email ?? ''); setEmailError(null); }}>
+                        <Pressable onPress={() => { setActiveEdit('none'); setEmailDraft(user?.email ?? ''); setEmailError(null); setCurrentPassword(''); }}>
                           <View py="$2.5" px="$4" br={12} ai="center" style={{ backgroundColor: colors.chipBg }}>
                             <Text fontSize={13} fontWeight="600" style={{ color: colors.textSecondary }}>{t('common.cancel', 'Cancel')}</Text>
                           </View>

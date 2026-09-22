@@ -1,7 +1,7 @@
 import axios, { AxiosError } from 'axios';
 import { Platform } from 'react-native';
 import Constants from 'expo-constants';
-import { getToken } from '@/shared/lib/utils/token-storage';
+import { getToken, saveToken } from '@/shared/lib/utils/token-storage';
 import { emitUnauthorized } from '@/shared/api/auth-events';
 
 const DEFAULT_API_PORT = '3001';
@@ -254,16 +254,22 @@ export async function updateUsername(payload: UpdateUsernamePayload): Promise<Us
 
 export interface UpdateEmailPayload {
   email: string;
+  currentPassword: string;
 }
 
 /**
  * PATCH /user/email
- * Updates the current user's email address.
+ * Updates the current user's email address. The server issues a new token
+ * (tokens are bound to the email), which replaces the stored one.
  */
 export async function updateEmail(payload: UpdateEmailPayload): Promise<User> {
-  const response = await apiClient.patch<User | null>('/user/email', payload);
+  const response = await apiClient.patch<(User & { token?: string }) | null>('/user/email', payload);
   if (response.data) {
-    return response.data;
+    const { token, ...user } = response.data;
+    if (token) {
+      await saveToken(token);
+    }
+    return user;
   }
   return getCurrentUser();
 }
@@ -288,7 +294,6 @@ export interface ForgotPasswordRequest {
 export interface ForgotPasswordResponse {
   success: boolean;
   message: string;
-  debugCode?: string;
 }
 
 /** POST /auth/forgot-password */
@@ -308,7 +313,6 @@ export interface SendVerificationCodeRequest {
 export interface SendVerificationCodeResponse {
   success: boolean;
   message: string;
-  debugCode?: string;
 }
 
 /** POST /auth/register/send-code — Step 1: send verification code */
