@@ -8,21 +8,24 @@ datasource db {
 }
 
 model User {
-  id                  Int                  @id @default(autoincrement())
-  email               String               @unique
-  password            String
-  username            String
-  uniqueId            String               @unique
-  createdAt           DateTime             @default(now())
-  avatarUrl           String?
-  receivedFriendships Friendship[]         @relation("UserFriendshipReceiver")
-  sentFriendships     Friendship[]         @relation("UserFriendshipRequester")
-  ownedGroups         Group[]              @relation("GroupOwner")
-  groupMemberships    GroupMember[]
-  itemAssignments     ItemAssignment[]
-  sessionsCreated     Session[]            @relation("SessionCreator")
-  sessionParticipates SessionParticipant[]
+  id                    Int                   @id @default(autoincrement())
+  email                 String                @unique
+  password              String
+  username              String
+  uniqueId              String                @unique
+  createdAt             DateTime              @default(now())
+  avatarUrl             String?
+  receivedFriendships   Friendship[]          @relation("UserFriendshipReceiver")
+  sentFriendships       Friendship[]          @relation("UserFriendshipRequester")
+  ownedGroups           Group[]               @relation("GroupOwner")
+  groupMemberships      GroupMember[]
+  itemAssignments       ItemAssignment[]
+  sessionsCreated       Session[]             @relation("SessionCreator")
+  sessionParticipates   SessionParticipant[]
   sessionHistoryEntries SessionHistoryEntry[]
+  transactions          Transaction[]
+  creditorDebts         Debt[]                @relation("CreditorDebts")
+  debtorDebts           Debt[]                @relation("DebtorDebts")
 }
 
 model Friendship {
@@ -76,22 +79,22 @@ model Session {
 }
 
 model SessionHistoryEntry {
-  id                    Int       @id @default(autoincrement())
-  sessionId             Int       @unique
-  creatorId             Int
-  sessionName           String?
-  payload               Json
-  participantUniqueIds  String[]  @default([])
-  grandTotal            Decimal   @default(0)
-  currency              String    @default("UNKNOWN")
-  finalizedAt           DateTime  @default(now())
-  createdAt             DateTime  @default(now())
-  updatedAt             DateTime  @updatedAt
-  session               Session   @relation(fields: [sessionId], references: [id])
-  creator               User      @relation(fields: [creatorId], references: [id])
+  id                   Int           @id @default(autoincrement())
+  sessionId            Int           @unique
+  creatorId            Int
+  sessionName          String?
+  payload              Json
+  participantUniqueIds String        @default("")
+  grandTotal           Decimal       @default(0)
+  currency             String        @default("UNKNOWN")
+  finalizedAt          DateTime      @default(now())
+  createdAt            DateTime      @default(now())
+  updatedAt            DateTime      @updatedAt
+  session              Session       @relation(fields: [sessionId], references: [id])
+  creator              User          @relation(fields: [creatorId], references: [id])
+  transactions         Transaction[]
 
   @@index([creatorId])
-  @@index([participantUniqueIds], type: Gin)
 }
 
 model SessionParticipant {
@@ -113,6 +116,19 @@ model ReceiptItem {
   session     Session          @relation(fields: [sessionId], references: [id])
 }
 
+model ProductImage {
+  id             Int      @id @default(autoincrement())
+  normalizedName String   @unique
+  displayName    String
+  imageUrl       String
+  provider       String?
+  lastFetchedAt  DateTime @default(now())
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([lastFetchedAt])
+}
+
 model ItemAssignment {
   itemId Int
   userId Int
@@ -120,6 +136,44 @@ model ItemAssignment {
   user   User        @relation(fields: [userId], references: [id])
 
   @@id([itemId, userId])
+}
+
+model Transaction {
+  id               Int                  @id @default(autoincrement())
+  userId           Int
+  sessionHistoryId Int?
+  totalAmount      Decimal
+  category         TransactionCategory  @default(OTHER)
+  description      String?
+  createdAt        DateTime             @default(now())
+  updatedAt        DateTime             @updatedAt
+  user             User                 @relation(fields: [userId], references: [id])
+  sessionHistory   SessionHistoryEntry? @relation(fields: [sessionHistoryId], references: [id])
+  debts            Debt[]
+
+  @@index([userId])
+  @@index([createdAt])
+  @@index([category])
+}
+
+model Debt {
+  id            Int         @id @default(autoincrement())
+  transactionId Int
+  creditorId    Int
+  debtorId      Int
+  amount        Decimal
+  status        DebtStatus  @default(ACTIVE)
+  description   String?
+  createdAt     DateTime    @default(now())
+  settledAt     DateTime?
+  transaction   Transaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+  creditor      User        @relation("CreditorDebts", fields: [creditorId], references: [id])
+  debtor        User        @relation("DebtorDebts", fields: [debtorId], references: [id])
+
+  @@index([creditorId])
+  @@index([debtorId])
+  @@index([status])
+  @@index([createdAt])
 }
 
 enum FriendshipStatus {
@@ -138,4 +192,20 @@ enum SessionStatus {
   ACTIVE
   CLOSED
   CANCELED
+}
+
+enum TransactionCategory {
+  FOOD
+  DRINKS
+  SHOPPING
+  TRANSPORT
+  ENTERTAINMENT
+  UTILITIES
+  OTHER
+}
+
+enum DebtStatus {
+  ACTIVE
+  PAID
+  CANCELLED
 }

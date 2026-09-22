@@ -13,6 +13,11 @@ import usersRoutes from "./routes/users.js";
 import uploadsRoutes from "./routes/uploads.js";
 import { logAuthAttempts } from "./middleware/logAuth.js";
 import debugRoutes from "./routes/debug.js";
+import analyticsRoutes from "./routes/analytics.js";
+import adminRoutes from "./routes/admin.js";
+import receiptsRoutes from "./routes/receipts.js";
+import debtsRoutes from "./routes/debts.js";
+import productImagesRoutes from "./routes/productImages.js";
 
 // Load .env
 dotenv.config();
@@ -87,6 +92,11 @@ app.use("/sessions", sessionsRoutes);
 app.use("/users", usersRoutes);
 app.use("/uploads", uploadsRoutes);
 app.use("/debug", debugRoutes);
+app.use("/analytics", analyticsRoutes);
+app.use("/admin", adminRoutes);
+app.use("/receipts", receiptsRoutes);
+app.use("/debts", debtsRoutes);
+app.use("/product-images", productImagesRoutes);
 
 // Health check
 app.get("/health", (req, res) => {
@@ -97,9 +107,10 @@ app.get("/health", (req, res) => {
 app.use(errorHandler);
 
 // Start server
-const PORT = process.env.PORT || 3001;
-app.listen(PORT, () => {
-  console.log(`Server running on http://localhost:${PORT}`);
+const PORT = Number(process.env.PORT) || 3001;
+
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`Server running on http://0.0.0.0:${PORT}`);
   console.log(
     "CORS allowlist:",
     allowAllCors
@@ -109,6 +120,7 @@ app.listen(PORT, () => {
       : "(none / dev mode)"
   );
 });
+
 
 console.log("DEBUG ENV:", {
   PORT: process.env.PORT,

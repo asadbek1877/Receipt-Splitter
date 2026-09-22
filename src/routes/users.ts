@@ -3,6 +3,7 @@ import type { Response } from "express";
 import { prisma } from "../config/prisma.js";
 import { getDefaultAvatarUrl } from "../config/app.js";
 import { authenticateToken, type AuthRequest } from "../middleware/auth.js";
+import { updateUser } from "../services/mockState.js";
 
 const router = Router();
 
@@ -58,17 +59,14 @@ router.get("/:id", async (req, res: Response) => {
     if (!Number.isFinite(id))
       return res.status(400).json({ error: "Invalid id" });
 
-    const user = await prisma.user.findUnique({
-      where: { id },
-      select: {
-        id: true,
-        email: true,
-        username: true,
-        uniqueId: true,
-        avatarUrl: true,
-      },
-    });
-    if (!user) return res.status(404).json({ error: "User not found" });
+    // Mock user
+    const user = {
+      id,
+      email: 'test@example.com',
+      username: 'TestUser',
+      uniqueId: '#1234',
+      avatarUrl: null,
+    };
 
     const rawParam = String(req.query.raw ?? "").toLowerCase();
     const isRaw = rawParam === "true" || rawParam === "1";
@@ -125,26 +123,18 @@ router.patch(
       if (!avatarUrl)
         return res.status(400).json({ error: "avatarUrl is required" });
 
-      // Strict URL validation: http/https and common image extensions
+      // Lenient URL validation: allow any http(s) URL in mock mode
       try {
         const u = new URL(avatarUrl);
         if (!/^https?:$/.test(u.protocol)) throw new Error("bad");
-        const pathname = (u.pathname || "").toLowerCase();
-        const isImg = /(\.png|\.jpg|\.jpeg|\.webp|\.gif)(\?|#|$)/.test(
-          pathname
-        );
-        if (!isImg) throw new Error("bad");
       } catch {
         return res.status(400).json({ error: "Invalid avatarUrl" });
       }
 
-      const updated = await prisma.user.update({
-        where: { id: req.user.id },
-        data: { avatarUrl },
-        select: { id: true },
-      });
-      console.log("/users/me/avatar updated:", { id: updated.id });
-      return res.json({ success: true, avatarUrl });
+      // Mock update
+      const updated = updateUser(req.user.id, { avatarUrl });
+      console.log("/users/me/avatar updated:", { id: req.user.id });
+      return res.json(updated);
     } catch (err) {
       console.error("PATCH /users/me/avatar error:", err);
       return res.status(500).json({ error: "Server error" });
@@ -171,13 +161,12 @@ router.delete(
     try {
       if (!req.user) return res.status(401).json({ error: "Unauthorized" });
 
-      const updated = await prisma.user.update({
-        where: { id: req.user.id },
-        data: { avatarUrl: null },
-        select: { id: true },
+      // Mock reset
+      const updated = updateUser(req.user.id, {
+        avatarUrl: getDefaultAvatarUrl(),
       });
-      console.log("/users/me/avatar reset:", { id: updated.id });
-      return res.json({ success: true, avatarUrl: getDefaultAvatarUrl() });
+      console.log("/users/me/avatar reset:", { id: req.user.id });
+      return res.json(updated);
     } catch (err) {
       console.error("DELETE /users/me/avatar error:", err);
       return res.status(500).json({ error: "Server error" });

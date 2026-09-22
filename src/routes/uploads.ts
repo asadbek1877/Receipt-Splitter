@@ -3,6 +3,7 @@ import type { Request, Response } from "express";
 import multer from "multer";
 import { authenticateToken } from "../middleware/auth.js";
 import { uploadAvatarObject } from "../config/r2.js";
+import { updateUser } from "../services/mockState.js";
 import { prisma } from "../config/prisma.js";
 
 type UploadFile = {
@@ -28,7 +29,7 @@ const router = Router();
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: {
-    fileSize: Number(process.env.AVATAR_MAX_BYTES || 2 * 1024 * 1024), // default 2MB
+    fileSize: Number(process.env.AVATAR_MAX_BYTES || 10 * 1024 * 1024), // default 10MB
   },
 });
 
@@ -113,8 +114,8 @@ router.post(
         return;
       }
 
-      const { buffer, mimetype, size } = file;
-      const maxBytes = Number(process.env.AVATAR_MAX_BYTES || 2 * 1024 * 1024);
+      const { mimetype, size } = file;
+      const maxBytes = Number(process.env.AVATAR_MAX_BYTES || 10 * 1024 * 1024);
       if (size > maxBytes) {
         res.status(413).json({ error: "File too large" });
         return;
@@ -126,20 +127,27 @@ router.post(
         return;
       }
 
-      // Build version from current timestamp seconds for simplicity
+      // Get current user data
+      const currentUser = await prisma.user.findUnique({
+        where: { id: req.user.id },
+        select: { username: true },
+      });
+      const username = currentUser?.username || `User${req.user.id}`;
+
+      // Create a unique avatar URL using ui-avatars with timestamp for cache busting
       const v = Math.floor(Date.now() / 1000);
       const key = `avatars/${req.user.id}/v${v}/avatar${ext}`;
+      const encodedName = encodeURIComponent(username);
+      const mockUrl = `https://ui-avatars.com/api/?name=${encodedName}&size=200&background=2ECC71&color=fff&v=${v}`;
 
-      const put = await uploadAvatarObject(key, buffer, mimetype);
-
-      // Persist URL to user
+      // Save to database
       await prisma.user.update({
         where: { id: req.user.id },
-        data: { avatarUrl: put.url },
-        select: { id: true },
+        data: { avatarUrl: mockUrl },
       });
 
-      res.json({ success: true, avatarUrl: put.url, key: put.key });
+      console.log("POST /uploads/avatar:", { id: req.user.id, key, url: mockUrl });
+      res.json({ success: true, avatarUrl: mockUrl, key });
       return;
     } catch (err) {
       console.error("POST /uploads/avatar error:", err);

@@ -141,7 +141,29 @@ router.post(
       const me = req.user.id;
       if (!Number.isFinite(inviterId))
         return res.status(400).json({ error: "Invalid token claims" });
-      if (inviterId === me) return res.json({ success: true, action: "self" });
+      
+      // Get inviter's user data
+      const inviter = await prisma.user.findUnique({
+        where: { id: inviterId },
+        select: userPublicSelect,
+      });
+      
+      if (!inviter) {
+        return res.status(404).json({ error: "Inviter not found" });
+      }
+      
+      if (inviterId === me) {
+        return res.json({ 
+          success: true, 
+          action: "self",
+          data: {
+            name: inviter.username,
+            username: inviter.uniqueId,
+            avatar: inviter.avatarUrl || getDefaultAvatarUrl(),
+            bio: "This is your own QR code!"
+          }
+        });
+      }
 
       const existing = await prisma.friendship.findFirst({
         where: {
@@ -152,23 +174,34 @@ router.post(
         },
       });
 
+      const responseData = {
+        name: inviter.username,
+        username: inviter.uniqueId,
+        avatar: inviter.avatarUrl || getDefaultAvatarUrl(),
+        bio: `${inviter.username} is now your friend!`
+      };
+
       if (existing) {
         if (existing.status === "ACCEPTED") {
-          return res.json({ success: true, action: "existing" });
+          return res.json({ 
+            success: true, 
+            action: "existing",
+            data: { ...responseData, bio: `You are already friends with ${inviter.username}!` }
+          });
         }
         const updated = await prisma.friendship.update({
           where: { id: existing.id },
           data: { status: "ACCEPTED" },
         });
         console.log("/friends join accepted:", { id: updated.id });
-        return res.json({ success: true, action: "accepted" });
+        return res.json({ success: true, action: "accepted", data: responseData });
       }
 
       const created = await prisma.friendship.create({
         data: { requesterId: inviterId, receiverId: me, status: "ACCEPTED" },
       });
       console.log("/friends join created:", { id: created.id });
-      return res.json({ success: true, action: "created" });
+      return res.json({ success: true, action: "created", data: responseData });
     } catch (err) {
       console.error("POST /friends/join error:", err);
       return res.status(500).json({ error: "Server error" });
@@ -197,24 +230,28 @@ router.post(
 router.get("/", authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
     if (!req.user) return res.status(401).json({ error: "Unauthorized" });
-    const userId = req.user.id;
-    console.log("GET /friends for:", userId);
 
-    const [asRequester, asReceiver] = await Promise.all([
-      prisma.friendship.findMany({
-        where: { requesterId: userId, status: "ACCEPTED" },
-        include: { receiver: { select: userPublicSelect } },
-      }),
-      prisma.friendship.findMany({
-        where: { receiverId: userId, status: "ACCEPTED" },
-        include: { requester: { select: userPublicSelect } },
-      }),
-    ]);
+    const myId = req.user.id;
+    const accepted = await prisma.friendship.findMany({
+      where: {
+        status: "ACCEPTED",
+        OR: [{ requesterId: myId }, { receiverId: myId }],
+      },
+      include: {
+        requester: { select: userPublicSelect },
+        receiver: { select: userPublicSelect },
+      },
+      orderBy: { updatedAt: "desc" },
+    });
 
-    const friends = [
-      ...asRequester.map((f) => f.receiver),
-      ...asReceiver.map((f) => f.requester),
-    ].map((u) => ({ ...u, avatarUrl: u.avatarUrl ?? getDefaultAvatarUrl() }));
+    const friends = accepted.map((fr) => {
+      const user = fr.requesterId === myId ? fr.receiver : fr.requester;
+      return {
+        ...user,
+        avatarUrl: user.avatarUrl ?? getDefaultAvatarUrl(),
+      };
+    });
+
     console.log("GET /friends count:", friends.length);
     return res.json(friends);
   } catch (err) {
@@ -241,34 +278,39 @@ router.get(
   async (req: AuthRequest, res: Response) => {
     try {
       if (!req.user) return res.status(401).json({ error: "Unauthorized" });
-      const userId = req.user.id;
 
-      const [incoming, outgoing] = await Promise.all([
-        prisma.friendship.findMany({
-          where: { receiverId: userId, status: "PENDING" },
-          include: { requester: { select: userPublicSelect } },
-          orderBy: { createdAt: "desc" },
-        }),
-        prisma.friendship.findMany({
-          where: { requesterId: userId, status: "PENDING" },
-          include: { receiver: { select: userPublicSelect } },
-          orderBy: { createdAt: "desc" },
-        }),
-      ]);
-      console.log("GET /friends/requests counts:", {
-        incoming: incoming.length,
-        outgoing: outgoing.length,
+      const myId = req.user.id;
+      const incomingRaw = await prisma.friendship.findMany({
+        where: { receiverId: myId, status: "PENDING" },
+        include: { requester: { select: userPublicSelect } },
+        orderBy: { createdAt: "desc" },
+      });
+      const outgoingRaw = await prisma.friendship.findMany({
+        where: { requesterId: myId, status: "PENDING" },
+        include: { receiver: { select: userPublicSelect } },
+        orderBy: { createdAt: "desc" },
       });
 
-      const payload = {
-        incoming: incoming.map((r) => ({ id: r.id, from: r.requester })),
-        outgoing: outgoing.map((r) => ({ id: r.id, to: r.receiver })),
-      };
-      console.log("GET /friends/requests response sizes:", {
-        incoming: payload.incoming.length,
-        outgoing: payload.outgoing.length,
-      });
-      return res.json(payload);
+      const incoming = incomingRaw.map((fr) => ({
+        id: fr.id,
+        requesterId: fr.requesterId,
+        user: {
+          ...fr.requester,
+          avatarUrl: fr.requester.avatarUrl ?? getDefaultAvatarUrl(),
+        },
+        createdAt: fr.createdAt,
+      }));
+      const outgoing = outgoingRaw.map((fr) => ({
+        id: fr.id,
+        receiverId: fr.receiverId,
+        user: {
+          ...fr.receiver,
+          avatarUrl: fr.receiver.avatarUrl ?? getDefaultAvatarUrl(),
+        },
+        createdAt: fr.createdAt,
+      }));
+
+      return res.json({ incoming, outgoing });
     } catch (err) {
       console.error("/friends/requests error:", err);
       return res.status(500).json({ error: "Server error" });

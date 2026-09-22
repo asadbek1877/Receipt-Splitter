@@ -186,7 +186,7 @@ function safeParseJson(text: string): { ok: boolean; data?: ParseResult } {
       const unit = Number(it.unitPrice ?? it.price ?? 0) || 0;
       const total = Number(it.totalPrice ?? unit * q) || 0;
       return {
-        id: String(it.id ?? idx + 1),
+        id: String(it.id || (idx + 1)) + '-' + Math.random().toString(36).substr(2, 5),
         name: String(it.name ?? "Item"),
         unitPrice: round2(unit),
         quantity: q,
@@ -221,47 +221,51 @@ function round2(n: number) {
   return Math.round(n * 100) / 100;
 }
 
-/** Fallback deterministic mock when API key missing or parse fails */
-function mockParse(): ParseResult {
-  const items: ParsedReceiptItem[] = [
-    {
-      id: "1001",
-      name: "Кола 0.5L",
-      unitPrice: 2.0,
-      quantity: 6,
-      totalPrice: 12.0,
-    },
-    {
-      id: "1002",
-      name: "Кола (стакан)",
-      unitPrice: 2.5,
-      quantity: 1,
-      totalPrice: 2.5,
-    },
-    {
-      id: "FEE1",
-      name: "Сервис",
-      unitPrice: 1.2,
-      quantity: 1,
-      totalPrice: 1.2,
-      kind: "fee",
-    },
-  ];
-  const grandTotal = items.reduce((s, i) => s + i.totalPrice, 0);
+// Mock deterministic fallback parser for development
+function parseMockReceipt(): ParseResult {
   return {
-    items,
-    summary: { grandTotal, currency: "RUB" },
+    items: [
+      {
+        id: "1",
+        name: "Coffee",
+        unitPrice: 5.0,
+        quantity: 1,
+        totalPrice: 5.0,
+        kind: "item",
+      },
+      {
+        id: "2",
+        name: "Sandwich",
+        unitPrice: 8.5,
+        quantity: 1,
+        totalPrice: 8.5,
+        kind: "item",
+      },
+      {
+        id: "3",
+        name: "Tips",
+        unitPrice: 2.5,
+        quantity: 1,
+        totalPrice: 2.5,
+        kind: "tip",
+      },
+    ],
+    summary: {
+      grandTotal: 16.0,
+      currency: "USD",
+    },
     source: "mock",
+    durationMs: 10,
   };
 }
 
 export async function parseReceipt(
   options: ParseOptions
 ): Promise<ParseResult> {
+  // Fallback to mock if no API key
   if (!GEMINI_API_KEY) {
-    if (DEBUG_PARSE)
-      console.warn("[parseReceipt] Using mock: GEMINI_API_KEY not set");
-    return mockParse();
+    console.warn("[parseReceipt] GEMINI_API_KEY not set, using mock parser for development");
+    return parseMockReceipt();
   }
 
   if (DEBUG_PARSE && !/^AIza[0-9A-Za-z_-]{10,}$/.test(GEMINI_API_KEY)) {
@@ -375,12 +379,19 @@ export async function parseReceipt(
   }
   if (DEBUG_PARSE)
     console.error(
-      "[parseReceipt] All model attempts failed, returning mock. Last error:",
+      "[parseReceipt] All model attempts failed. Last error:",
       lastError
     );
-  const fallback = mockParse();
-  if (DEBUG_PARSE) fallback.modelsTried = modelsTried;
-  return fallback;
+
+  // Fallback to mock parsing if all AI models fail
+  if (process.env.FALLBACK_TO_MOCK === "1") {
+    console.warn("[parseReceipt] All AI models failed, falling back to mock parser");
+    return parseMockReceipt();
+  }
+
+  const err = new Error("AI could not parse this receipt. Please retry with a clearer photo, or check that the image shows a complete receipt within the frame boundaries.");
+  (err as any).modelsTried = modelsTried;
+  throw err;
 }
 
 async function generateViaRest(
@@ -415,14 +426,15 @@ async function generateViaRest(
       });
       if (!resp.ok) {
         let errorPayload: any = undefined;
+        let responseText = "";
         try {
-          const txt = await resp.text();
-          if (txt) {
+          responseText = await resp.text();
+          if (responseText) {
             try {
-              const parsed = JSON.parse(txt);
+              const parsed = JSON.parse(responseText);
               errorPayload = parsed.error || parsed;
             } catch {
-              errorPayload = { raw: txt.slice(0, 500) };
+              errorPayload = { raw: responseText.slice(0, 500) };
             }
           }
         } catch {}
@@ -432,6 +444,7 @@ async function generateViaRest(
           console.warn(
             `[generateViaRest] ${ver} ${model} -> HTTP ${resp.status} (${code}) ${msg}`
           );
+          console.warn(`[generateViaRest] Full response:`, responseText.slice(0, 800));
           if (errorPayload?.status && errorPayload?.status !== code) {
             console.warn(
               `[generateViaRest] API error status field: ${errorPayload.status}`

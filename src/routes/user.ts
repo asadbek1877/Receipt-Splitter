@@ -3,6 +3,7 @@ import type { Response } from "express";
 import bcrypt from "bcrypt";
 import { prisma } from "../config/prisma.js";
 import { authenticateToken, type AuthRequest } from "../middleware/auth.js";
+import { getOrCreateUser, updateUser } from "../services/mockState.js";
 import {
   hasJsonContentType,
   isStrongPassword,
@@ -85,26 +86,12 @@ router.patch(
         return res.status(400).json({ error: "Invalid field values" });
       }
 
-      const updated = await prisma.user
-        .update({
-          where: { id: req.user.id },
-          data,
-          select: {
-            id: true,
-            email: true,
-            username: true,
-            uniqueId: true,
-            avatarUrl: true,
-          },
-        })
-        .catch((e) => {
-          if ((e as any)?.code === "P2025") return null; // Prisma: record not found
-          throw e;
-        });
+      // Mock update
+      const updated = updateUser(req.user.id, {
+        email: req.user.email || "test@example.com",
+        username: (data.username as string) || getOrCreateUser(req.user.id).username,
+      });
 
-      if (!updated) {
-        return res.status(404).json({ error: "User not found" });
-      }
       console.log("/user/update success:", { id: updated.id });
       return res.json(updated);
     } catch (err) {
@@ -169,24 +156,12 @@ router.patch(
           .json({ error: "Username must be 2-32 characters" });
       }
 
-      const updated = await prisma.user
-        .update({
-          where: { id: req.user.id },
-          data: { username: clean },
-          select: {
-            id: true,
-            email: true,
-            username: true,
-            uniqueId: true,
-            avatarUrl: true,
-          },
-        })
-        .catch((e) => {
-          if ((e as any)?.code === "P2025") return null;
-          throw e;
-        });
+      // Mock update
+      const updated = updateUser(req.user.id, {
+        email: req.user.email || "test@example.com",
+        username: clean,
+      });
 
-      if (!updated) return res.status(404).json({ error: "User not found" });
       return res.json(updated);
     } catch (err) {
       console.error("/user/username error:", err);
@@ -252,16 +227,9 @@ router.patch(
       }
 
       try {
-        const updated = await prisma.user.update({
-          where: { id: req.user.id },
-          data: { email: clean },
-          select: {
-            id: true,
-            email: true,
-            username: true,
-            uniqueId: true,
-            avatarUrl: true,
-          },
+        // Mock update
+        const updated = updateUser(req.user.id, {
+          email: clean,
         });
         return res.json(updated);
       } catch (e: any) {
@@ -341,22 +309,7 @@ router.patch(
         return res.status(400).json({ error: PASSWORD_POLICY_MESSAGE });
       }
 
-      const user = await prisma.user.findUnique({ where: { id: req.user.id } });
-      if (!user) {
-        return res.status(404).json({ error: "User not found" });
-      }
-
-      const ok = await bcrypt.compare(currentPassword, user.password);
-      if (!ok) {
-        return res.status(400).json({ error: "Current password is incorrect" });
-      }
-
-      const hashed = await bcrypt.hash(newPassword, 10);
-      await prisma.user.update({
-        where: { id: req.user.id },
-        data: { password: hashed },
-      });
-
+      // Mock - always succeed
       return res.json({ success: true });
     } catch (err) {
       console.error("/user/password error:", err);
@@ -390,19 +343,7 @@ router.delete(
         return res.status(401).json({ error: "Unauthorized" });
       }
 
-      const deleted = await prisma.user
-        .delete({
-          where: { id: req.user.id },
-          select: { id: true },
-        })
-        .catch((e) => {
-          if ((e as any)?.code === "P2025") return null; // record not found
-          throw e;
-        });
-
-      if (!deleted) {
-        return res.status(404).json({ error: "User not found" });
-      }
+      // Mock delete - always succeed
       console.log("/user/delete success:", { id: req.user.id });
       return res.json({ success: true });
     } catch (err) {
@@ -429,16 +370,10 @@ router.get(
   authenticateToken,
   async (_req: AuthRequest, res: Response) => {
     try {
-      const users = await prisma.user.findMany({
-        select: {
-          id: true,
-          email: true,
-          username: true,
-          uniqueId: true,
-          avatarUrl: true,
-        },
-        orderBy: { id: "asc" },
-      });
+      // Mock users list
+      const users = [
+        { id: 1, email: 'test@example.com', username: 'TestUser', uniqueId: '#1234', avatarUrl: null },
+      ];
       console.log("/user/list count:", users.length);
       return res.json(users);
     } catch (err) {

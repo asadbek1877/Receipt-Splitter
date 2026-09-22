@@ -4,15 +4,41 @@ import jwt from "jsonwebtoken";
 import { prisma } from "../config/prisma.js";
 import { authenticateToken, type AuthRequest } from "../middleware/auth.js";
 import {
+  getOrCreateUser,
+  updateUser,
+  findUserByEmail,
+  createUser,
+  toPublicUser,
+  generateVerificationCode,
+  saveVerificationCode,
+  getVerificationCode,
+  deleteVerificationCode,
+  saveResetToken,
+  getResetToken,
+  deleteResetToken,
+} from "../services/mockState.js";
+import {
   isStrongPassword,
   PASSWORD_POLICY_MESSAGE,
+  isValidEmail,
+  EMAIL_VALIDATION_MESSAGE,
+  isValidUsername,
+  USERNAME_VALIDATION_MESSAGE,
 } from "../utils/validation.js";
+import { APIError } from "../middleware/errorHandler.js";
+import { sendVerificationCode, sendPasswordResetCode, isEmailConfigured } from "../services/emailService.js";
 
 const router = Router();
 
 function generateUniqueId() {
-  // Format: #1234 (4-digit code). Removed 'USER' prefix per requirement.
   return "#" + Math.floor(1000 + Math.random() * 9000);
+}
+
+// Helper: coerce value to string if possible
+function coerceString(val: any): string | undefined {
+  if (typeof val === "string") return val;
+  if (typeof val === "number") return String(val);
+  return undefined;
 }
 
 /**
@@ -24,9 +50,9 @@ function generateUniqueId() {
 
 /**
  * @swagger
- * /auth/register:
+ * /auth/register/send-code:
  *   post:
- *     summary: Регистрация нового пользователя
+ *     summary: Step 1 — Send verification code to email
  *     tags: [Auth]
  *     security: []
  *     requestBody:
@@ -35,139 +61,222 @@ function generateUniqueId() {
  *         application/json:
  *           schema:
  *             type: object
- *             required:
- *               - email
- *               - password
- *               - username
+ *             required: [email, password, username]
  *             properties:
  *               email:
  *                 type: string
- *                 example: user@example.com
  *               password:
  *                 type: string
- *                 example: Aa1!secure
- *                 description: Must be at least 8 characters and include uppercase, lowercase, number, and special character
  *               username:
  *                 type: string
- *                 example: John
- *           example:
- *             email: "user@example.com"
- *             password: "Aa1!secure"
- *             username: "John"
  *     responses:
  *       200:
- *         description: Успешная регистрация
- *       400:
- *         description: Неверные данные запроса
+ *         description: Verification code sent
  *       409:
- *         description: Email уже используется
- *       415:
- *         description: Неверный Content-Type (нужен application/json)
+ *         description: Email already in use
  */
-router.post("/register", async (req, res) => {
-  const ct = String(req.headers["content-type"] || "");
-  console.log("/auth/register content-type:", ct);
-  console.log("/auth/register body:", req.body);
+router.post("/register/send-code", async (req, res, next) => {
   try {
+    const ct = String(req.headers["content-type"] || "");
     if (!ct.includes("application/json")) {
-      return res
-        .status(415)
-        .json({ error: "Content-Type must be application/json" });
+      return res.status(415).json({ success: false, error: "Content-Type must be application/json" });
     }
 
     const { email, password, username } = req.body ?? {};
-    console.log("/auth/register types:", {
-      email: typeof email,
-      password: typeof password,
-      username: typeof username,
-    });
+    const emailVal = coerceString(email);
+    const passwordVal = coerceString(password);
+    const usernameVal = coerceString(username);
 
-    // Soft type coercion: numbers → strings, arrays/objects are not allowed
-    const emailVal =
-      typeof email === "string"
-        ? email
-        : typeof email === "number"
-        ? String(email)
-        : email;
-    const passwordVal =
-      typeof password === "string"
-        ? password
-        : typeof password === "number"
-        ? String(password)
-        : password;
-    const usernameVal =
-      typeof username === "string"
-        ? username
-        : typeof username === "number"
-        ? String(username)
-        : username;
-
-    if (
-      typeof emailVal !== "string" ||
-      typeof passwordVal !== "string" ||
-      typeof usernameVal !== "string"
-    ) {
-      return res.status(400).json({
-        error:
-          "Invalid field types: expected strings for email, password, username",
-      });
+    if (!emailVal || !passwordVal || !usernameVal) {
+      return res.status(400).json({ success: false, error: "Please provide email, password, and username" });
     }
 
     const cleanEmail = emailVal.trim().toLowerCase();
     const cleanUsername = usernameVal.trim();
     const cleanPassword = passwordVal;
 
-    if (!cleanEmail || !cleanPassword || !cleanUsername) {
-      return res
-        .status(400)
-        .json({ error: "Please provide email, password, and username" });
+    if (!isValidEmail(cleanEmail)) {
+      return res.status(400).json({ success: false, error: EMAIL_VALIDATION_MESSAGE });
     }
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(cleanEmail)) {
-      return res.status(400).json({ error: "Invalid email format" });
+    if (!isValidUsername(cleanUsername)) {
+      return res.status(400).json({ success: false, error: USERNAME_VALIDATION_MESSAGE });
     }
     if (!isStrongPassword(cleanPassword)) {
-      return res.status(400).json({ error: PASSWORD_POLICY_MESSAGE });
+      return res.status(400).json({ success: false, error: PASSWORD_POLICY_MESSAGE });
     }
 
-    const existingUser = await prisma.user.findUnique({
-      where: { email: cleanEmail },
-    });
-    if (existingUser) {
-      return res.status(409).json({ error: "Email already in use" });
+    // Check if email already exists
+    const existing = findUserByEmail(cleanEmail);
+    if (existing) {
+      return res.status(409).json({ success: false, error: "This email is already registered. Please sign in." });
     }
 
     const hashedPassword = await bcrypt.hash(cleanPassword, 10);
+    const code = generateVerificationCode();
 
-    // Generate uniqueId with multiple attempts to avoid collisions
-    let uniqueId = "";
-    for (let i = 0; i < 5; i++) {
-      uniqueId = generateUniqueId();
-      const exists = await prisma.user.findUnique({ where: { uniqueId } });
-      if (!exists) break;
-      if (i === 4) {
-        return res.status(500).json({ error: "Failed to generate unique ID" });
-      }
-    }
-    console.log("/auth/register generated uniqueId:", uniqueId);
+    // Save verification code with pending user data
+    saveVerificationCode(cleanEmail, {
+      code,
+      expiresAt: Date.now() + 10 * 60 * 1000, // 10 minutes
+      type: "register",
+      pendingData: { username: cleanUsername, email: cleanEmail, passwordHash: hashedPassword },
+    });
 
-    let user;
-    try {
-      user = await prisma.user.create({
-        data: {
-          email: cleanEmail,
-          password: hashedPassword,
-          username: cleanUsername,
-          uniqueId,
-        },
-      });
-    } catch (e: any) {
-      if (e?.code === "P2002") {
-        // unique constraint conflict
-        return res.status(409).json({ error: "Email already in use" });
-      }
-      throw e;
+    // Send email
+    await sendVerificationCode(cleanEmail, code);
+
+    const debugCode = !isEmailConfigured() && process.env.NODE_ENV !== "production" ? code : undefined;
+
+    console.log("/auth/register/send-code:", { email: cleanEmail, code });
+    return res.json({
+      success: true,
+      message: "Verification code sent to your email.",
+      ...(debugCode ? { debugCode } : {}),
+    });
+  } catch (err) {
+    console.error(err);
+    next(err);
+  }
+});
+
+/**
+ * @swagger
+ * /auth/register/verify:
+ *   post:
+ *     summary: Step 2 — Verify code and complete registration
+ *     tags: [Auth]
+ *     security: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [email, code]
+ *             properties:
+ *               email:
+ *                 type: string
+ *               code:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Registration complete, returns token + user
+ *       400:
+ *         description: Invalid or expired code
+ */
+router.post("/register/verify", async (req, res, next) => {
+  try {
+    const ct = String(req.headers["content-type"] || "");
+    if (!ct.includes("application/json")) {
+      return res.status(415).json({ success: false, error: "Content-Type must be application/json" });
     }
+
+    const { email, code } = req.body ?? {};
+    const emailVal = coerceString(email);
+    const codeVal = coerceString(code);
+
+    if (!emailVal || !codeVal) {
+      return res.status(400).json({ success: false, error: "Email and code are required." });
+    }
+
+    const cleanEmail = emailVal.trim().toLowerCase();
+    const cleanCode = codeVal.trim();
+
+    const entry = getVerificationCode(cleanEmail);
+    if (!entry || entry.type !== "register") {
+      return res.status(400).json({ success: false, error: "Verification code expired or not found. Please request a new one." });
+    }
+
+    if (entry.code !== cleanCode) {
+      return res.status(400).json({ success: false, error: "Invalid verification code. Please try again." });
+    }
+
+    if (!entry.pendingData) {
+      return res.status(400).json({ success: false, error: "Registration data not found. Please start over." });
+    }
+
+    // Create the user
+    const uniqueId = generateUniqueId();
+    const user = createUser({
+      email: entry.pendingData.email,
+      username: entry.pendingData.username,
+      passwordHash: entry.pendingData.passwordHash,
+      uniqueId,
+    });
+
+    deleteVerificationCode(cleanEmail);
+
+    const token = jwt.sign(
+      { id: user.id, email: user.email },
+      process.env.JWT_SECRET as string,
+      { expiresIn: "7d" }
+    );
+
+    console.log("/auth/register/verify success:", { id: user.id });
+    return res.json({
+      success: true,
+      token,
+      user: toPublicUser(user),
+    });
+  } catch (err) {
+    console.error(err);
+    next(err);
+  }
+});
+
+/**
+ * @swagger
+ * /auth/register:
+ *   post:
+ *     summary: Direct registration (без верификации, fallback)
+ *     tags: [Auth]
+ *     security: []
+ */
+router.post("/register", async (req, res, next) => {
+  const ct = String(req.headers["content-type"] || "");
+  try {
+    if (!ct.includes("application/json")) {
+      return res.status(415).json({ error: "Content-Type must be application/json" });
+    }
+
+    const { email, password, username } = req.body ?? {};
+    const emailVal = coerceString(email);
+    const passwordVal = coerceString(password);
+    const usernameVal = coerceString(username);
+
+    if (!emailVal || !passwordVal || !usernameVal) {
+      return res.status(400).json({ success: false, error: "Please provide email, password, and username" });
+    }
+
+    const cleanEmail = emailVal.trim().toLowerCase();
+    const cleanUsername = usernameVal.trim();
+    const cleanPassword = passwordVal;
+
+    if (!isValidEmail(cleanEmail)) {
+      return res.status(400).json({ success: false, error: EMAIL_VALIDATION_MESSAGE });
+    }
+    if (!isValidUsername(cleanUsername)) {
+      return res.status(400).json({ success: false, error: USERNAME_VALIDATION_MESSAGE });
+    }
+    if (!isStrongPassword(cleanPassword)) {
+      return res.status(400).json({ success: false, error: PASSWORD_POLICY_MESSAGE });
+    }
+
+    // Check if email already exists
+    const existing = findUserByEmail(cleanEmail);
+    if (existing) {
+      return res.status(409).json({ success: false, error: "This email is already registered. Please sign in." });
+    }
+
+    const hashedPassword = await bcrypt.hash(cleanPassword, 10);
+    const uniqueId = generateUniqueId();
+
+    const user = createUser({
+      email: cleanEmail,
+      username: cleanUsername,
+      passwordHash: hashedPassword,
+      uniqueId,
+    });
 
     const token = jwt.sign(
       { id: user.id, email: user.email },
@@ -177,17 +286,13 @@ router.post("/register", async (req, res) => {
 
     console.log("/auth/register success:", { id: user.id });
     res.json({
+      success: true,
       token,
-      user: {
-        id: user.id,
-        email: user.email,
-        username: user.username,
-        uniqueId: user.uniqueId,
-      },
+      user: toPublicUser(user),
     });
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: "Server error" });
+    next(err);
   }
 });
 
@@ -198,105 +303,52 @@ router.post("/register", async (req, res) => {
  *     summary: Авторизация пользователя
  *     tags: [Auth]
  *     security: []
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             required:
- *               - email
- *               - password
- *             properties:
- *               email:
- *                 type: string
- *                 example: user@example.com
- *               password:
- *                 type: string
- *                 example: 123456
- *           example:
- *             email: "user@example.com"
- *             password: "123456"
- *     responses:
- *       200:
- *         description: Успешный вход
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 token:
- *                   type: string
- *                 user:
- *                   type: object
- *                   properties:
- *                     id:
- *                       type: integer
- *                     email:
- *                       type: string
- *                     username:
- *                       type: string
- *                     uniqueId:
- *                       type: string
- *                     avatarUrl:
- *                       type: string
- *                       nullable: true
- *             example:
- *               token: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
- *               user:
- *                 id: 1
- *                 email: user@example.com
- *                 username: John
- *                 uniqueId: "#1234"
- *                 avatarUrl: https://static.splitter.qzz.io/avatars/1/v1696070000/avatar.webp
- *       400:
- *         description: Неверные учетные данные
- *       415:
- *         description: Неверный Content-Type (нужен application/json)
  */
-router.post("/login", async (req, res) => {
+router.post("/login", async (req, res, next) => {
   console.log("/auth/login body:", req.body);
   try {
     const ct = String(req.headers["content-type"] || "");
     if (!ct.includes("application/json")) {
-      return res
-        .status(415)
-        .json({ error: "Content-Type must be application/json" });
+      return res.status(415).json({ success: false, error: "Content-Type must be application/json", code: 415 });
     }
 
     const { email, password } = req.body ?? {};
+    const emailVal = coerceString(email);
+    const passwordVal = coerceString(password);
 
-    const emailVal =
-      typeof email === "string"
-        ? email
-        : typeof email === "number"
-        ? String(email)
-        : email;
-    const passwordVal =
-      typeof password === "string"
-        ? password
-        : typeof password === "number"
-        ? String(password)
-        : password;
-
-    if (typeof emailVal !== "string" || typeof passwordVal !== "string") {
-      return res.status(400).json({ error: "Invalid field types" });
+    if (!emailVal || !passwordVal) {
+      return res.status(400).json({ success: false, error: "Please provide both email and password", code: 400 });
     }
 
     const cleanEmail = emailVal.trim().toLowerCase();
     const cleanPassword = passwordVal;
+    
     if (!cleanEmail || !cleanPassword) {
-      return res.status(400).json({ error: "Please fill all fields" });
+      return res.status(400).json({ success: false, error: "Please provide both email and password", code: 400 });
     }
 
-    const user = await prisma.user.findUnique({ where: { email: cleanEmail } });
+    if (!isValidEmail(cleanEmail)) {
+      return res.status(400).json({ success: false, error: EMAIL_VALIDATION_MESSAGE, code: 400 });
+    }
+
+    // Find user by email
+    const user = findUserByEmail(cleanEmail);
     if (!user) {
-      return res.status(400).json({ error: "Invalid email or password" });
+      return res.status(401).json({ 
+        success: false,
+        error: "Account not found or incorrect password",
+        code: 401,
+      });
     }
 
-    const isValid = await bcrypt.compare(cleanPassword, user.password);
+    // Verify password
+    const isValid = await bcrypt.compare(cleanPassword, user.passwordHash);
     if (!isValid) {
-      return res.status(400).json({ error: "Invalid email or password" });
+      return res.status(401).json({ 
+        success: false,
+        error: "Account not found or incorrect password",
+        code: 401,
+      });
     }
 
     const token = jwt.sign(
@@ -307,18 +359,13 @@ router.post("/login", async (req, res) => {
 
     console.log("/auth/login success:", { id: user.id });
     res.json({
+      success: true,
       token,
-      user: {
-        id: user.id,
-        email: user.email,
-        username: user.username,
-        uniqueId: user.uniqueId,
-        avatarUrl: user.avatarUrl ?? null,
-      },
+      user: toPublicUser(user),
     });
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: "Server error" });
+    next(err);
   }
 });
 
@@ -327,37 +374,9 @@ router.post("/login", async (req, res) => {
  * /auth/me:
  *   get:
  *     summary: Получение информации о текущем пользователе
- *     description: Возвращает профиль пользователя по ID из JWT токена.
  *     tags: [Auth]
  *     security:
  *       - bearerAuth: []
- *     responses:
- *       200:
- *         description: Информация о пользователе
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 id:
- *                   type: integer
- *                   example: 1
- *                 email:
- *                   type: string
- *                   example: user@example.com
- *                 username:
- *                   type: string
- *                   example: John
- *                 uniqueId:
- *                   type: string
- *                   example: #1234
- *                 avatarUrl:
- *                   type: string
- *                   example: https://cdn.example.com/avatars/u1.png
- *       401:
- *         description: Требуется авторизация или неверный токен
- *       404:
- *         description: Пользователь не найден
  */
 router.get("/me", authenticateToken, async (req: AuthRequest, res) => {
   try {
@@ -365,24 +384,148 @@ router.get("/me", authenticateToken, async (req: AuthRequest, res) => {
       return res.status(401).json({ error: "Unauthorized" });
     }
 
-    const user = await prisma.user.findUnique({
-      where: { id: req.user.id },
-      select: {
-        id: true,
-        email: true,
-        username: true,
-        uniqueId: true,
-        avatarUrl: true,
-      },
+    const user = getOrCreateUser(req.user.id, {
+      email: req.user.email || "test@example.com",
     });
 
-    if (!user) {
-      return res.status(404).json({ error: "User not found" });
-    }
-
-    return res.json(user);
+    return res.json(toPublicUser(user));
   } catch (err) {
     console.error("/auth/me error:", err);
+    return res.status(500).json({ error: "Server error" });
+  }
+});
+
+/**
+ * @swagger
+ * /auth/forgot-password:
+ *   post:
+ *     summary: Send password reset code to email
+ *     tags: [Auth]
+ */
+router.post("/forgot-password", async (req, res) => {
+  try {
+    const { email } = req.body || {};
+    if (!email || typeof email !== "string") {
+      return res.status(400).json({ success: false, error: "Email is required" });
+    }
+
+    const cleanEmail = email.trim().toLowerCase();
+
+    // Always return success to prevent email enumeration
+    // But only send email if user exists
+    const user = findUserByEmail(cleanEmail);
+    let debugResetCode: string | undefined;
+    if (user) {
+      const code = generateVerificationCode();
+      saveVerificationCode(cleanEmail, {
+        code,
+        expiresAt: Date.now() + 10 * 60 * 1000,
+        type: "reset",
+      });
+      await sendPasswordResetCode(cleanEmail, code);
+      console.log("/auth/forgot-password code:", { email: cleanEmail, code });
+      if (!isEmailConfigured() && process.env.NODE_ENV !== "production") {
+        debugResetCode = code;
+      }
+    } else {
+      console.log("/auth/forgot-password: user not found for", cleanEmail);
+    }
+
+    return res.json({
+      success: true,
+      message: "If an account exists with this email, a reset code has been sent.",
+      ...(debugResetCode ? { debugCode: debugResetCode } : {}),
+    });
+  } catch (err) {
+    console.error("/auth/forgot-password error:", err);
+    return res.status(500).json({ error: "Server error" });
+  }
+});
+
+/**
+ * @swagger
+ * /auth/verify-reset-code:
+ *   post:
+ *     summary: Verify the password reset code
+ *     tags: [Auth]
+ */
+router.post("/verify-reset-code", async (req, res) => {
+  try {
+    const { email, code } = req.body || {};
+    if (!email || typeof email !== "string" || !code || typeof code !== "string") {
+      return res.status(400).json({ success: false, error: "Email and code are required" });
+    }
+
+    const cleanEmail = email.trim().toLowerCase();
+    const entry = getVerificationCode(cleanEmail);
+
+    if (!entry || entry.type !== "reset") {
+      return res.status(400).json({ success: false, error: "Reset code expired or not found. Please request a new one." });
+    }
+
+    if (entry.code !== code.trim()) {
+      return res.status(400).json({ success: false, error: "Invalid reset code. Please try again." });
+    }
+
+    // Generate a temporary reset token
+    const resetToken = jwt.sign(
+      { email: cleanEmail, purpose: "reset" },
+      process.env.JWT_SECRET as string,
+      { expiresIn: "15m" }
+    );
+
+    saveResetToken(resetToken, { email: cleanEmail, expiresAt: Date.now() + 15 * 60 * 1000 });
+    deleteVerificationCode(cleanEmail);
+
+    return res.json({ success: true, resetToken });
+  } catch (err) {
+    console.error("/auth/verify-reset-code error:", err);
+    return res.status(500).json({ error: "Server error" });
+  }
+});
+
+/**
+ * @swagger
+ * /auth/reset-password:
+ *   post:
+ *     summary: Reset password with verified token
+ *     tags: [Auth]
+ */
+router.post("/reset-password", async (req, res) => {
+  try {
+    const { resetToken, newPassword } = req.body || {};
+    if (!resetToken || typeof resetToken !== "string") {
+      return res.status(400).json({ success: false, error: "Reset token is required" });
+    }
+    if (!newPassword || typeof newPassword !== "string") {
+      return res.status(400).json({ success: false, error: "New password is required" });
+    }
+    if (!isStrongPassword(newPassword)) {
+      return res.status(400).json({ success: false, error: PASSWORD_POLICY_MESSAGE });
+    }
+
+    const entry = getResetToken(resetToken);
+    if (!entry) {
+      return res.status(400).json({ success: false, error: "Reset token is invalid or expired. Please start over." });
+    }
+
+    const user = findUserByEmail(entry.email);
+    if (!user) {
+      return res.status(400).json({ success: false, error: "User not found." });
+    }
+
+    // Update password
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+    updateUser(user.id, { passwordHash: hashedPassword });
+    deleteResetToken(resetToken);
+
+    console.log("/auth/reset-password success for:", entry.email);
+    return res.json({ 
+      success: true, 
+      message: "Password has been reset successfully. Please sign in with your new password." 
+    });
+  } catch (err) {
+    console.error("/auth/reset-password error:", err);
     return res.status(500).json({ error: "Server error" });
   }
 });
