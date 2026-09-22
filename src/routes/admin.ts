@@ -1,21 +1,47 @@
 import { Router } from "express";
 import type { Response } from "express";
+import { createHash, timingSafeEqual } from "node:crypto";
 import { prisma } from "../config/prisma.js";
 import { authenticateToken, type AuthRequest } from "../middleware/auth.js";
 
 const router = Router();
 
-function getAdminPassword(): string {
-  return process.env.ADMIN_PANEL_PASSWORD || "admin123";
+// Admin access requires BOTH:
+//   1. the authenticated user's id in ADMIN_USER_IDS (comma-separated), and
+//   2. the x-admin-password header matching ADMIN_PANEL_PASSWORD.
+// There is no default: if either variable is missing, admin routes are disabled.
+function getAdminUserIds(): Set<number> {
+  return new Set(
+    (process.env.ADMIN_USER_IDS || "")
+      .split(",")
+      .map((v) => Number(v.trim()))
+      .filter((v) => Number.isInteger(v) && v > 0)
+  );
+}
+
+function passwordsMatch(provided: string, expected: string): boolean {
+  const a = createHash("sha256").update(provided).digest();
+  const b = createHash("sha256").update(expected).digest();
+  return timingSafeEqual(a, b);
 }
 
 function assertAdmin(req: AuthRequest, res: Response): boolean {
+  const expectedPassword = process.env.ADMIN_PANEL_PASSWORD || "";
+  const adminIds = getAdminUserIds();
+  if (!expectedPassword || adminIds.size === 0) {
+    res.status(503).json({ error: "Admin access is not configured" });
+    return false;
+  }
+  if (!req.user || !adminIds.has(req.user.id)) {
+    res.status(403).json({ error: "Admin access denied" });
+    return false;
+  }
   const password = String(req.headers["x-admin-password"] || "").trim();
   if (!password) {
     res.status(401).json({ error: "Admin password required" });
     return false;
   }
-  if (password !== getAdminPassword()) {
+  if (!passwordsMatch(password, expectedPassword)) {
     res.status(403).json({ error: "Invalid admin password" });
     return false;
   }

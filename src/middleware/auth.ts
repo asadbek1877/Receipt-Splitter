@@ -1,6 +1,7 @@
 import type { Request, Response, NextFunction } from "express";
 import type { JwtPayload as LibJwtPayload } from "jsonwebtoken";
 import jwtPkg from "jsonwebtoken";
+import { prisma } from "../config/prisma.js";
 const jwt = jwtPkg as unknown as {
   verify: typeof jwtPkg.verify;
   decode: typeof jwtPkg.decode;
@@ -25,6 +26,14 @@ declare global {
 }
 
 export interface AuthRequest extends Request {}
+
+export function signAuthToken(user: { id: number; email: string }) {
+  return jwtPkg.sign(
+    { id: user.id, email: user.email },
+    process.env.JWT_SECRET as string,
+    { expiresIn: "7d" }
+  );
+}
 
 export function authenticateToken(
   req: Request,
@@ -88,8 +97,23 @@ export function authenticateToken(
         secondsUntilExp: exp ? exp - now : undefined,
       });
     }
-    req.user = userPayload;
-    next();
+    // The token must belong to an existing user whose email still matches.
+    // This rejects tokens for deleted accounts, tokens issued before an email
+    // change, and tokens whose numeric id now belongs to a different user.
+    prisma.user
+      .findUnique({ where: { id: idValue }, select: { id: true, email: true } })
+      .then((dbUser) => {
+        if (!dbUser || dbUser.email !== payload.email) {
+          return res.status(401).json({ error: "Invalid token" });
+        }
+        req.user = userPayload;
+        next();
+      })
+      .catch((lookupErr) => {
+        console.error("Auth user lookup failed:", lookupErr);
+        res.status(500).json({ error: "Server error" });
+      });
+    return;
   } catch (err) {
     const DEBUG_AUTH =
       (process.env.DEBUG_AUTH || "").toLowerCase() === "true" ||

@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { authenticateToken, type AuthRequest } from '../middleware/auth.js';
 import { prisma } from '../config/prisma.js';
+import { resolveEligibleDebtors } from '../services/debtEligibility.js';
 
 const router = Router();
 
@@ -28,16 +29,34 @@ router.post('/', authenticateToken, async (req: AuthRequest, res) => {
       return res.status(400).json({ error: 'allocations array required' });
     }
 
+    // A receipt may only be linked to the caller's own finalized session.
+    let historyEntry: { id: number } | null = null;
+    if (sessionId) {
+      historyEntry = await prisma.sessionHistoryEntry.findFirst({
+        where: { sessionId: Number(sessionId), creatorId: userId },
+        select: { id: true },
+      });
+      if (!historyEntry) {
+        return res.status(404).json({ error: 'Session not found' });
+      }
+    }
+
+    // Debts may only target real users who are accepted friends of the caller.
+    const requestedDebtors = allocations
+      .filter((alloc: any) => alloc && alloc.userUniqueId && Number.isFinite(Number(alloc.amount)))
+      .map((alloc: any) => String(alloc.userUniqueId));
+    const eligibleDebtors = await resolveEligibleDebtors(userId, requestedDebtors);
+    const ineligible = requestedDebtors.filter((uid: string) => !eligibleDebtors.has(uid));
+    if (ineligible.length > 0) {
+      return res.status(400).json({
+        error: 'Debts can only be created for your accepted friends',
+        details: { ineligible: ineligible.join(',') },
+      });
+    }
+
     // Run DB transaction to create Transaction and Debt records atomically
     const db = prisma as any;
     const result = await db.$transaction(async (tx: any) => {
-      const historyEntry = sessionId
-        ? await tx.sessionHistoryEntry.findUnique({
-            where: { sessionId: Number(sessionId) },
-            select: { id: true },
-          })
-        : null;
-
       const txRec = await tx.transaction.create({
         data: {
           userId,
@@ -51,14 +70,14 @@ router.post('/', authenticateToken, async (req: AuthRequest, res) => {
       const createdDebts = [];
       for (const alloc of allocations) {
         if (!alloc || !alloc.userUniqueId || !Number.isFinite(Number(alloc.amount))) continue;
-        const debtor = await tx.user.findUnique({ where: { uniqueId: String(alloc.userUniqueId) } });
-        if (!debtor) continue;
+        const debtorId = eligibleDebtors.get(String(alloc.userUniqueId));
+        if (!debtorId) continue;
 
         const debt = await tx.debt.create({
           data: {
             transactionId: txRec.id,
             creditorId: userId,
-            debtorId: debtor.id,
+            debtorId,
             amount: Number(alloc.amount),
             status: 'ACTIVE',
             description: alloc.description || null,

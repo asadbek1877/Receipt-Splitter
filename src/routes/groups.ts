@@ -244,7 +244,7 @@ router.post("/join", authenticateToken, async (req: AuthRequest, res: Response) 
     if (!token) return res.status(400).json({ error: "token is required" });
 
     // Mock join - just return success
-    console.log("POST /groups/join:", { token: token.substring(0, 20) + '...' });
+    console.log("POST /groups/join");
     return res.json({
       joined: true,
       friendship: "created",

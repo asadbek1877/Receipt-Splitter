@@ -3,7 +3,7 @@ import type { Response } from "express";
 import { prisma } from "../config/prisma.js";
 import { getDefaultAvatarUrl } from "../config/app.js";
 import { authenticateToken, type AuthRequest } from "../middleware/auth.js";
-import { updateUser } from "../services/mockState.js";
+import { PUBLIC_USER_SELECT, toPublicUser } from "../utils/publicUser.js";
 
 const router = Router();
 
@@ -19,7 +19,10 @@ const router = Router();
  * /users/{id}:
  *   get:
  *     summary: Get public user profile by numeric id
+ *     description: Requires authentication. `email` is only included for the caller's own profile.
  *     tags: [Users]
+ *     security:
+ *       - bearerAuth: []
  *     parameters:
  *       - in: query
  *         name: raw
@@ -53,20 +56,14 @@ const router = Router();
  *       404:
  *         description: User not found
  */
-router.get("/:id", async (req, res: Response) => {
+router.get("/:id", authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
     const id = Number(req.params.id);
-    if (!Number.isFinite(id))
+    if (!Number.isInteger(id))
       return res.status(400).json({ error: "Invalid id" });
 
-    // Mock user
-    const user = {
-      id,
-      email: 'test@example.com',
-      username: 'TestUser',
-      uniqueId: '#1234',
-      avatarUrl: null,
-    };
+    const user = await prisma.user.findUnique({ where: { id }, select: PUBLIC_USER_SELECT });
+    if (!user) return res.status(404).json({ error: "User not found" });
 
     const rawParam = String(req.query.raw ?? "").toLowerCase();
     const isRaw = rawParam === "true" || rawParam === "1";
@@ -76,7 +73,8 @@ router.get("/:id", async (req, res: Response) => {
 
     return res.json({
       id: user.id,
-      email: user.email,
+      // Email is private: only returned to the account owner.
+      ...(req.user?.id === user.id ? { email: user.email } : {}),
       username: user.username,
       uniqueId: user.uniqueId,
       avatarUrl,
@@ -131,10 +129,13 @@ router.patch(
         return res.status(400).json({ error: "Invalid avatarUrl" });
       }
 
-      // Mock update
-      const updated = updateUser(req.user.id, { avatarUrl });
+      const updated = await prisma.user.update({
+        where: { id: req.user.id },
+        data: { avatarUrl },
+        select: PUBLIC_USER_SELECT,
+      });
       console.log("/users/me/avatar updated:", { id: req.user.id });
-      return res.json(updated);
+      return res.json(toPublicUser(updated));
     } catch (err) {
       console.error("PATCH /users/me/avatar error:", err);
       return res.status(500).json({ error: "Server error" });
@@ -161,12 +162,13 @@ router.delete(
     try {
       if (!req.user) return res.status(401).json({ error: "Unauthorized" });
 
-      // Mock reset
-      const updated = updateUser(req.user.id, {
-        avatarUrl: getDefaultAvatarUrl(),
+      const updated = await prisma.user.update({
+        where: { id: req.user.id },
+        data: { avatarUrl: null },
+        select: PUBLIC_USER_SELECT,
       });
       console.log("/users/me/avatar reset:", { id: req.user.id });
-      return res.json(updated);
+      return res.json(toPublicUser(updated));
     } catch (err) {
       console.error("DELETE /users/me/avatar error:", err);
       return res.status(500).json({ error: "Server error" });

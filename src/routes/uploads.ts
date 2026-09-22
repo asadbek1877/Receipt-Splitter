@@ -3,7 +3,6 @@ import type { Request, Response } from "express";
 import multer from "multer";
 import { authenticateToken } from "../middleware/auth.js";
 import { uploadAvatarObject } from "../config/r2.js";
-import { updateUser } from "../services/mockState.js";
 import { prisma } from "../config/prisma.js";
 
 type UploadFile = {

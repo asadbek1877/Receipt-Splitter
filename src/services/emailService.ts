@@ -23,8 +23,8 @@ export function isEmailConfigured(): boolean {
  */
 export async function sendVerificationCode(to: string, code: string): Promise<boolean> {
   if (!isEmailConfigured()) {
-    console.log(`[Email] SMTP not configured. Verification code for ${to}: ${code}`);
-    return true; // Return true so the flow continues (dev mode)
+    console.error("[Email] SMTP not configured; verification code was not sent.");
+    return false;
   }
 
   try {
@@ -69,8 +69,8 @@ export async function sendVerificationCode(to: string, code: string): Promise<bo
  */
 export async function sendPasswordResetCode(to: string, code: string): Promise<boolean> {
   if (!isEmailConfigured()) {
-    console.log(`[Email] SMTP not configured. Reset code for ${to}: ${code}`);
-    return true;
+    console.error("[Email] SMTP not configured; password reset code was not sent.");
+    return false;
   }
 
   try {

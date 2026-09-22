@@ -4,8 +4,15 @@ import multer from "multer";
 import { authenticateToken, type AuthRequest } from "../middleware/auth.js";
 import { parseReceipt } from "../services/receiptParser.js";
 import { prisma } from "../config/prisma.js";
+import type { Prisma, TransactionCategory } from "@prisma/client";
+import { computeSplit, normalizeParticipants } from "../services/splitCalculator.js";
+import { resolveEligibleDebtors } from "../services/debtEligibility.js";
+import { fromMinor } from "../utils/money.js";
 
 const router = Router();
+
+/** Thrown inside the finalize transaction when the session is not owned by the caller. */
+class SessionAccessError extends Error {}
 
 const DEFAULT_CURRENCY_CODE = "UNKNOWN";
 const MAX_RECEIPT_IMAGE_BYTES = 5 * 1024 * 1024;
@@ -28,9 +35,6 @@ const receiptImageUpload = multer({
     cb(null, true);
   },
 });
-
-// In-memory storage for finalized sessions (keyed by userId)
-const sessionHistory: Map<number, any[]> = new Map();
 
 function normalizeCurrencyCode(input: unknown): string {
   if (typeof input !== "string") return DEFAULT_CURRENCY_CODE;
@@ -187,31 +191,21 @@ router.post(
         });
       }
 
-      let sessionId = Math.floor(Math.random() * 1000000);
-      
+      // The session must exist in the database: finalize later verifies ownership against it.
+      let sessionId: number;
       try {
-        // Only try to insert into Prisma if the user exists in Prisma
-        // This is a temporary fix because auth is using mockState but sessions are using Prisma
-        const userExists = await prisma.user.findUnique({
-          where: { id: req.user.id }
+        const createdSession = await prisma.session.create({
+          data: {
+            creatorId: req.user.id,
+            total: parseResult.summary?.grandTotal || 0,
+            status: "ACTIVE",
+          },
+          select: { id: true },
         });
-        
-        if (userExists) {
-          const createdSession = await prisma.session.create({
-            data: {
-              creatorId: req.user.id,
-              total: parseResult.summary?.grandTotal || 0,
-              status: "ACTIVE",
-            },
-            select: { id: true },
-          });
-          sessionId = createdSession.id;
-        } else {
-          console.warn(`[Sessions] User ${req.user.id} not found in PostgreSQL. Using mock sessionId=${sessionId}`);
-        }
+        sessionId = createdSession.id;
       } catch (dbError: any) {
         console.error("Database error while creating session:", dbError);
-        console.warn(`[Sessions] Falling back to mock sessionId=${sessionId} due to DB error`);
+        return res.status(500).json({ error: "Failed to create session" });
       }
 
       console.log("POST /sessions/scan success:", { 
@@ -496,121 +490,38 @@ router.post(
   async (req: AuthRequest, res: Response) => {
     try {
       if (!req.user) return res.status(401).json({ error: "Unauthorized" });
-      const { sessionId, sessionName, participants, items } = req.body || {};
+      const userId = req.user.id;
+      const { sessionName, participants: rawParticipants, items } = req.body || {};
+      const sessionId = Number(req.body?.sessionId);
       const currency = normalizeCurrencyCode(req.body?.currency);
-      if (!Number.isFinite(Number(sessionId))) {
+      if (!Number.isInteger(sessionId) || sessionId <= 0) {
         return res.status(400).json({ error: "sessionId required" });
       }
-      if (!Array.isArray(participants) || participants.length === 0) {
+      if (!Array.isArray(rawParticipants) || rawParticipants.length === 0) {
         return res.status(400).json({ error: "participants array required" });
       }
       if (!Array.isArray(items) || items.length === 0) {
         return res.status(400).json({ error: "items array required" });
       }
+      const participants = normalizeParticipants(rawParticipants);
+      if (participants.length === 0) {
+        return res.status(400).json({ error: "participants array required" });
+      }
 
-      // Initialize participant totals
-      const participantTotals: Record<string, number> = {};
-      participants.forEach((p: any) => {
-        participantTotals[p.uniqueId] = 0;
+      // Only the creator of a session may finalize it.
+      const session = await prisma.session.findUnique({
+        where: { id: sessionId },
+        select: { id: true, creatorId: true },
       });
+      if (!session) {
+        return res.status(404).json({ error: "Session not found" });
+      }
+      if (session.creatorId !== userId) {
+        return res.status(403).json({ error: "You do not have access to this session" });
+      }
 
-      const byItem: any[] = [];
-      const allocations: any[] = [];
-
-      // Process each item based on split mode
-      items.forEach((item: any) => {
-        const itemTotal = item.totalPrice || item.price * (item.quantity || 1) || 0;
-        byItem.push({
-          id: item.id,
-          name: item.name,
-          totalAmount: itemTotal,
-          itemId: item.id,
-          total: itemTotal,
-        });
-
-        const splitMode = item.splitMode || 'equal';
-
-        if (splitMode === 'count' && item.perPersonCount) {
-          // Count mode: distribute by units
-          const perPersonCount = item.perPersonCount;
-          const totalUnits = Object.values(perPersonCount).reduce(
-            (sum: number, count: any) => sum + (Number(count) || 0),
-            0
-          );
-
-          if (totalUnits > 0) {
-            const unitPrice = item.price || 0;
-            Object.entries(perPersonCount).forEach(([uid, count]: [string, any]) => {
-              const numCount = Number(count) || 0;
-              if (numCount > 0) {
-                const shareAmount = Math.round(unitPrice * numCount);
-                participantTotals[uid] = (participantTotals[uid] || 0) + shareAmount;
-                allocations.push({
-                  itemId: item.id,
-                  participantId: uid,
-                  shareAmount,
-                  shareUnits: numCount,
-                  shareRatio: numCount / totalUnits,
-                });
-              }
-            });
-          }
-        } else if (splitMode === 'equal' && Array.isArray(item.assignedTo)) {
-          // Equal mode: split evenly among assigned participants
-          const assignedTo = item.assignedTo.filter((uid: any) => uid);
-          if (assignedTo.length > 0) {
-            const perPerson = Math.round(itemTotal / assignedTo.length);
-            assignedTo.forEach((uid: string) => {
-              participantTotals[uid] = (participantTotals[uid] || 0) + perPerson;
-              allocations.push({
-                itemId: item.id,
-                participantId: uid,
-                shareAmount: perPerson,
-                shareRatio: 1 / assignedTo.length,
-                shareUnits: null,
-              });
-            });
-          }
-        }
-      });
-
-      const byParticipant = participants.map((p: any) => ({
-        uniqueId: p.uniqueId,
-        username: p.username,
-        amountOwed: participantTotals[p.uniqueId] || 0,
-        participantId: p.uniqueId,
-        total: participantTotals[p.uniqueId] || 0,
-      }));
-
-      const grandTotal = byItem.reduce((sum, item) => sum + item.total, 0);
-
-      const now = new Date();
-      const payer = await prisma.user.findUnique({
-        where: { id: req.user.id },
-        select: { id: true, uniqueId: true, username: true, email: true },
-      });
-      const responsePayload = {
-        sessionId: Number(sessionId),
-        sessionName: sessionName || null,
-        status: "finalized",
-        createdAt: now.toISOString(),
-        finalizedAt: now.toISOString(),
-        currency,
-        payer: payer
-          ? {
-              id: payer.id,
-              uniqueId: payer.uniqueId,
-              username: payer.username || payer.email,
-            }
-          : null,
-        totals: {
-          currency,
-          grandTotal,
-          byParticipant,
-          byItem,
-        },
-        allocations,
-      };
+      const split = computeSplit(items, participants, currency);
+      const { grandTotal, byParticipant, byItem, allocations, digits } = split;
 
       // Validate calculations
       if (grandTotal < 0) {
@@ -620,188 +531,134 @@ router.post(
         return res.status(400).json({ error: "no items were assigned to participants" });
       }
 
-      console.log("POST /sessions/finalize success:", { 
-        sessionId, 
-        participantCount: participants.length, 
-        itemCount: items.length,
-        grandTotal,
-        allocationsCount: allocations.length
+      const payer = await prisma.user.findUnique({
+        where: { id: userId },
+        select: { id: true, uniqueId: true, username: true, email: true },
       });
+      if (!payer) return res.status(401).json({ error: "Unauthorized" });
 
-      // Store in history
-      try {
-        const userId = req.user.id;
-        if (!sessionHistory.has(userId)) {
-          sessionHistory.set(userId, []);
-        }
-        const userHistory = sessionHistory.get(userId)!;
-        
-        // Create history entry
-        const historyEntry = {
-          receiptId: `receipt-${sessionId}`,
-          sessionId,
-          sessionName: sessionName || null,
-          finalizedAt: now.toISOString(),
+      const now = new Date();
+      const responsePayload = {
+        sessionId,
+        sessionName: sessionName || null,
+        status: "finalized",
+        createdAt: now.toISOString(),
+        finalizedAt: now.toISOString(),
+        currency,
+        payer: {
+          id: payer.id,
+          uniqueId: payer.uniqueId,
+          username: payer.username || payer.email,
+        },
+        totals: {
           currency,
           grandTotal,
-          participants: byParticipant.map((p: any) => ({
-            uniqueId: p.uniqueId,
-            username: p.username,
-            total: p.total,
-          })),
-          items: byItem.map((item: any) => ({
-            itemId: item.id,
-            name: item.name,
-            total: item.total,
-          })),
-          allocations,
-        };
-        
-        // Add to beginning of array (most recent first)
-        userHistory.unshift(historyEntry);
-        
-        // Keep only last 50 entries
-        if (userHistory.length > 50) {
-          userHistory.length = 50;
-        }
+          byParticipant,
+          byItem,
+        },
+        allocations,
+      };
 
-        const participantUniqueIds = byParticipant
-          .map((p: any) => String(p.uniqueId || "").trim())
-          .filter(Boolean)
-          .join(",");
+      const participantUniqueIds = byParticipant
+        .map((p) => String(p.uniqueId || "").trim())
+        .filter(Boolean)
+        .join(",");
 
-        // Check if user and session exist before saving to Prisma
-        const userExists = await prisma.user.findUnique({
-          where: { id: userId },
-          select: { id: true, uniqueId: true, username: true },
-        });
-        
-        if (userExists) {
-          const sessionExists = await prisma.session.findUnique({ where: { id: Number(sessionId) } });
-          let storedHistoryEntryId: number | null = null;
+      // Debts are only recorded for participants who are real, accepted friends of the payer.
+      const debtCandidates = byParticipant.filter(
+        (p) => p.uniqueId !== payer.uniqueId && (split.participantTotalsMinor.get(p.uniqueId) ?? 0) > 0
+      );
+      const eligibleDebtors = await resolveEligibleDebtors(
+        userId,
+        debtCandidates.map((p) => p.uniqueId)
+      );
 
-          if (sessionExists) {
-            await prisma.session.update({
-              where: { id: Number(sessionId) },
-              data: {
-                status: "CLOSED",
-                total: grandTotal,
-              },
-            });
+      // All writes succeed together or not at all.
+      await prisma.$transaction(
+        async (tx) => {
+          const closed = await tx.session.updateMany({
+            where: { id: sessionId, creatorId: userId },
+            data: { status: "CLOSED", total: grandTotal },
+          });
+          if (closed.count !== 1) throw new SessionAccessError();
 
-            const storedHistoryEntry = await prisma.sessionHistoryEntry.upsert({
-              where: { sessionId: Number(sessionId) },
-              create: {
-                sessionId: Number(sessionId),
-                creatorId: userId,
-                sessionName: sessionName || null,
-                payload: {
-                  ...responsePayload,
-                  creatorId: userId,
-                },
-                participantUniqueIds,
-                grandTotal,
-                currency,
-                finalizedAt: now,
-              },
-              update: {
-                sessionName: sessionName || null,
-                payload: {
-                  ...responsePayload,
-                  creatorId: userId,
-                },
-                participantUniqueIds,
-                grandTotal,
-                currency,
-                finalizedAt: now,
-              },
-            });
+          const historyData = {
+            sessionName: sessionName || null,
+            payload: { ...responsePayload, creatorId: userId } as unknown as Prisma.InputJsonObject,
+            participantUniqueIds,
+            grandTotal,
+            currency,
+            finalizedAt: now,
+          };
+          const storedHistoryEntry = await tx.sessionHistoryEntry.upsert({
+            where: { sessionId },
+            create: { sessionId, creatorId: userId, ...historyData },
+            update: historyData,
+          });
 
-            storedHistoryEntryId = storedHistoryEntry.id;
-            console.log("History stored successfully in DB for user:", userId);
-          } else {
-            console.warn(`Session ${sessionId} not in DB, analytics will be saved without DB history link`);
+          await tx.transaction.deleteMany({
+            where: { userId, sessionHistoryId: storedHistoryEntry.id },
+          });
+
+          const categoryTotalsMinor = new Map<string, number>();
+          items.forEach((item: any, index: number) => {
+            const amountMinor = split.itemTotalsMinor[index] ?? 0;
+            if (amountMinor <= 0) return;
+            const category = inferTransactionCategory(item?.name);
+            categoryTotalsMinor.set(category, (categoryTotalsMinor.get(category) || 0) + amountMinor);
+          });
+          if (categoryTotalsMinor.size === 0) {
+            categoryTotalsMinor.set("OTHER", split.itemTotalsMinor.reduce((s, v) => s + v, 0));
           }
 
-          await (prisma as any).$transaction(async (tx: any) => {
-            if (storedHistoryEntryId) {
-              await tx.transaction.deleteMany({
-                where: {
-                  userId,
-                  sessionHistoryId: storedHistoryEntryId,
-                },
-              });
-            }
+          let debtTransactionId: number | null = null;
+          for (const [category, totalMinor] of categoryTotalsMinor) {
+            const transactionRecord = await tx.transaction.create({
+              data: {
+                userId,
+                sessionHistoryId: storedHistoryEntry.id,
+                totalAmount: fromMinor(totalMinor, digits),
+                category: category as TransactionCategory,
+                description: sessionName || `Session #${sessionId}`,
+              },
+            });
+            if (!debtTransactionId) debtTransactionId = transactionRecord.id;
+          }
+          if (!debtTransactionId) return;
 
-            const categoryTotals = new Map<string, number>();
-            for (const item of items) {
-              const amount = Number(item.totalPrice || item.price * (item.quantity || 1) || 0);
-              if (!Number.isFinite(amount) || amount <= 0) continue;
-              const category = inferTransactionCategory(item.name);
-              categoryTotals.set(category, (categoryTotals.get(category) || 0) + amount);
-            }
+          for (const participant of debtCandidates) {
+            const debtorId = eligibleDebtors.get(participant.uniqueId);
+            if (!debtorId) continue;
+            await tx.debt.create({
+              data: {
+                transactionId: debtTransactionId,
+                creditorId: userId,
+                debtorId,
+                amount: fromMinor(split.participantTotalsMinor.get(participant.uniqueId) ?? 0, digits),
+                status: "ACTIVE",
+                description: sessionName || `Session #${sessionId}`,
+              },
+            });
+          }
+        },
+        { timeout: 20000 }
+      );
 
-            if (categoryTotals.size === 0) {
-              categoryTotals.set("OTHER", grandTotal);
-            }
-
-            let debtTransactionId: number | null = null;
-            for (const [category, totalAmount] of categoryTotals) {
-              const transactionRecord = await tx.transaction.create({
-                data: {
-                  userId,
-                  ...(storedHistoryEntryId ? { sessionHistoryId: storedHistoryEntryId } : {}),
-                  totalAmount,
-                  category,
-                  description: sessionName || `Session #${sessionId}`,
-                },
-              });
-              if (!debtTransactionId) {
-                debtTransactionId = transactionRecord.id;
-              }
-            }
-
-            if (!debtTransactionId) return;
-
-            for (const participant of byParticipant) {
-              const participantUniqueId = String(participant.uniqueId || "").trim();
-              const amount = Number(participant.amountOwed || 0);
-
-              if (!participantUniqueId || amount <= 0) continue;
-              if (userExists.uniqueId && participantUniqueId === userExists.uniqueId) continue;
-
-              const debtor = await tx.user.findUnique({
-                where: { uniqueId: participantUniqueId },
-                select: { id: true },
-              });
-              if (!debtor) continue;
-
-              await tx.debt.create({
-                data: {
-                  transactionId: debtTransactionId,
-                  creditorId: userId,
-                  debtorId: debtor.id,
-                  amount,
-                  status: "ACTIVE",
-                  description: sessionName || `Session #${sessionId}`,
-                },
-              });
-            }
-          });
-          console.log("Analytics and debts stored successfully for user:", userId);
-        } else {
-          console.warn(`User ${userId} not in DB, history/analytics saved in memory only`);
-        }
-      } catch (historyErr) {
-        console.error("Failed to store history:", historyErr);
-        // Don't fail the request if history storage fails - return response anyway
-      }
+      console.log("POST /sessions/finalize success:", {
+        sessionId,
+        participantCount: participants.length,
+        itemCount: items.length,
+        grandTotal,
+        allocationsCount: allocations.length,
+      });
 
       return res.json(responsePayload);
     } catch (err) {
+      if (err instanceof SessionAccessError) {
+        return res.status(403).json({ error: "You do not have access to this session" });
+      }
       console.error("POST /sessions/finalize error:", err);
-      const errMsg = err instanceof Error ? err.message : 'Failed to finalize session';
-      return res.status(500).json({ error: errMsg });
+      return res.status(500).json({ error: "Failed to finalize session. Nothing was saved." });
     }
   }
 );
@@ -860,18 +717,16 @@ router.get(
         },
       });
 
-      const userHistory = dbHistory.length
-        ? dbHistory.map((entry) => ({
-            sessionId: entry.sessionId,
-            sessionName: entry.sessionName || "",
-            finalizedAt: entry.finalizedAt.toISOString(),
-            grandTotal: Number(entry.grandTotal),
-            currency: entry.currency,
-            participantUniqueIds: entry.participantUniqueIds,
-            isCreator: true,
-            payload: entry.payload,
-          }))
-        : (sessionHistory.get(userId) || []);
+      const userHistory = dbHistory.map((entry) => ({
+        sessionId: entry.sessionId,
+        sessionName: entry.sessionName || "",
+        finalizedAt: entry.finalizedAt.toISOString(),
+        grandTotal: Number(entry.grandTotal),
+        currency: entry.currency,
+        participantUniqueIds: entry.participantUniqueIds,
+        isCreator: true,
+        payload: entry.payload,
+      }));
       
       const requestAll = req.query.all === "true" || req.query.all === "1";
       const limitParam = req.query.limit ? parseInt(String(req.query.limit), 10) : undefined;

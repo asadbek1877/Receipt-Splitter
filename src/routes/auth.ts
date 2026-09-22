@@ -2,13 +2,8 @@ import { Router } from "express";
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
 import { prisma } from "../config/prisma.js";
-import { authenticateToken, type AuthRequest } from "../middleware/auth.js";
+import { authenticateToken, signAuthToken, type AuthRequest } from "../middleware/auth.js";
 import {
-  getOrCreateUser,
-  updateUser,
-  findUserByEmail,
-  createUser,
-  toPublicUser,
   generateVerificationCode,
   saveVerificationCode,
   getVerificationCode,
@@ -25,10 +20,13 @@ import {
   isValidUsername,
   USERNAME_VALIDATION_MESSAGE,
 } from "../utils/validation.js";
-import { APIError } from "../middleware/errorHandler.js";
+import { PUBLIC_USER_SELECT, toPublicUser } from "../utils/publicUser.js";
 import { sendVerificationCode, sendPasswordResetCode, isEmailConfigured } from "../services/emailService.js";
 
 const router = Router();
+
+const EMAIL_UNAVAILABLE_MESSAGE =
+  "Email service is not configured. Please try again later.";
 
 function generateUniqueId() {
   return "#" + Math.floor(1000 + Math.random() * 9000);
@@ -39,6 +37,40 @@ function coerceString(val: any): string | undefined {
   if (typeof val === "string") return val;
   if (typeof val === "number") return String(val);
   return undefined;
+}
+
+class EmailInUseError extends Error {}
+
+/** Creates a persistent user with a uniqueId that is not already taken. */
+async function createPersistentUser(data: {
+  email: string;
+  username: string;
+  passwordHash: string;
+}) {
+  for (let attempt = 0; attempt < 20; attempt++) {
+    const uniqueId = generateUniqueId();
+    const taken = await prisma.user.findUnique({ where: { uniqueId }, select: { id: true } });
+    if (taken) continue;
+    try {
+      return await prisma.user.create({
+        data: {
+          email: data.email,
+          username: data.username,
+          password: data.passwordHash,
+          uniqueId,
+        },
+        select: PUBLIC_USER_SELECT,
+      });
+    } catch (e: any) {
+      if (e?.code === "P2002") {
+        const target = String(e?.meta?.target ?? "");
+        if (target.includes("email")) throw new EmailInUseError();
+        continue; // uniqueId race: try another one
+      }
+      throw e;
+    }
+  }
+  throw new Error("Failed to generate a unique user id");
 }
 
 /**
@@ -74,6 +106,8 @@ function coerceString(val: any): string | undefined {
  *         description: Verification code sent
  *       409:
  *         description: Email already in use
+ *       503:
+ *         description: Email service not configured
  */
 router.post("/register/send-code", async (req, res, next) => {
   try {
@@ -105,16 +139,18 @@ router.post("/register/send-code", async (req, res, next) => {
       return res.status(400).json({ success: false, error: PASSWORD_POLICY_MESSAGE });
     }
 
-    // Check if email already exists
-    const existing = findUserByEmail(cleanEmail);
+    const existing = await prisma.user.findUnique({ where: { email: cleanEmail }, select: { id: true } });
     if (existing) {
       return res.status(409).json({ success: false, error: "This email is already registered. Please sign in." });
+    }
+
+    if (!isEmailConfigured()) {
+      return res.status(503).json({ success: false, error: EMAIL_UNAVAILABLE_MESSAGE });
     }
 
     const hashedPassword = await bcrypt.hash(cleanPassword, 10);
     const code = generateVerificationCode();
 
-    // Save verification code with pending user data
     saveVerificationCode(cleanEmail, {
       code,
       expiresAt: Date.now() + 10 * 60 * 1000, // 10 minutes
@@ -122,16 +158,15 @@ router.post("/register/send-code", async (req, res, next) => {
       pendingData: { username: cleanUsername, email: cleanEmail, passwordHash: hashedPassword },
     });
 
-    // Send email
-    await sendVerificationCode(cleanEmail, code);
+    const sent = await sendVerificationCode(cleanEmail, code);
+    if (!sent) {
+      deleteVerificationCode(cleanEmail);
+      return res.status(503).json({ success: false, error: "Failed to send verification email. Please try again later." });
+    }
 
-    const debugCode = !isEmailConfigured() && process.env.NODE_ENV !== "production" ? code : undefined;
-
-    console.log("/auth/register/send-code:", { email: cleanEmail, code });
     return res.json({
       success: true,
       message: "Verification code sent to your email.",
-      ...(debugCode ? { debugCode } : {}),
     });
   } catch (err) {
     console.error(err);
@@ -195,27 +230,27 @@ router.post("/register/verify", async (req, res, next) => {
       return res.status(400).json({ success: false, error: "Registration data not found. Please start over." });
     }
 
-    // Create the user
-    const uniqueId = generateUniqueId();
-    const user = createUser({
-      email: entry.pendingData.email,
-      username: entry.pendingData.username,
-      passwordHash: entry.pendingData.passwordHash,
-      uniqueId,
-    });
+    let user;
+    try {
+      user = await createPersistentUser({
+        email: entry.pendingData.email,
+        username: entry.pendingData.username,
+        passwordHash: entry.pendingData.passwordHash,
+      });
+    } catch (e) {
+      if (e instanceof EmailInUseError) {
+        deleteVerificationCode(cleanEmail);
+        return res.status(409).json({ success: false, error: "This email is already registered. Please sign in." });
+      }
+      throw e;
+    }
 
     deleteVerificationCode(cleanEmail);
-
-    const token = jwt.sign(
-      { id: user.id, email: user.email },
-      process.env.JWT_SECRET as string,
-      { expiresIn: "7d" }
-    );
 
     console.log("/auth/register/verify success:", { id: user.id });
     return res.json({
       success: true,
-      token,
+      token: signAuthToken(user),
       user: toPublicUser(user),
     });
   } catch (err) {
@@ -262,32 +297,31 @@ router.post("/register", async (req, res, next) => {
       return res.status(400).json({ success: false, error: PASSWORD_POLICY_MESSAGE });
     }
 
-    // Check if email already exists
-    const existing = findUserByEmail(cleanEmail);
+    const existing = await prisma.user.findUnique({ where: { email: cleanEmail }, select: { id: true } });
     if (existing) {
       return res.status(409).json({ success: false, error: "This email is already registered. Please sign in." });
     }
 
     const hashedPassword = await bcrypt.hash(cleanPassword, 10);
-    const uniqueId = generateUniqueId();
 
-    const user = createUser({
-      email: cleanEmail,
-      username: cleanUsername,
-      passwordHash: hashedPassword,
-      uniqueId,
-    });
-
-    const token = jwt.sign(
-      { id: user.id, email: user.email },
-      process.env.JWT_SECRET as string,
-      { expiresIn: "7d" }
-    );
+    let user;
+    try {
+      user = await createPersistentUser({
+        email: cleanEmail,
+        username: cleanUsername,
+        passwordHash: hashedPassword,
+      });
+    } catch (e) {
+      if (e instanceof EmailInUseError) {
+        return res.status(409).json({ success: false, error: "This email is already registered. Please sign in." });
+      }
+      throw e;
+    }
 
     console.log("/auth/register success:", { id: user.id });
     res.json({
       success: true,
-      token,
+      token: signAuthToken(user),
       user: toPublicUser(user),
     });
   } catch (err) {
@@ -305,7 +339,6 @@ router.post("/register", async (req, res, next) => {
  *     security: []
  */
 router.post("/login", async (req, res, next) => {
-  console.log("/auth/login body:", req.body);
   try {
     const ct = String(req.headers["content-type"] || "");
     if (!ct.includes("application/json")) {
@@ -322,7 +355,7 @@ router.post("/login", async (req, res, next) => {
 
     const cleanEmail = emailVal.trim().toLowerCase();
     const cleanPassword = passwordVal;
-    
+
     if (!cleanEmail || !cleanPassword) {
       return res.status(400).json({ success: false, error: "Please provide both email and password", code: 400 });
     }
@@ -331,36 +364,28 @@ router.post("/login", async (req, res, next) => {
       return res.status(400).json({ success: false, error: EMAIL_VALIDATION_MESSAGE, code: 400 });
     }
 
-    // Find user by email
-    const user = findUserByEmail(cleanEmail);
+    const user = await prisma.user.findUnique({ where: { email: cleanEmail } });
     if (!user) {
-      return res.status(401).json({ 
+      return res.status(401).json({
         success: false,
         error: "Account not found or incorrect password",
         code: 401,
       });
     }
 
-    // Verify password
-    const isValid = await bcrypt.compare(cleanPassword, user.passwordHash);
+    const isValid = await bcrypt.compare(cleanPassword, user.password);
     if (!isValid) {
-      return res.status(401).json({ 
+      return res.status(401).json({
         success: false,
         error: "Account not found or incorrect password",
         code: 401,
       });
     }
-
-    const token = jwt.sign(
-      { id: user.id, email: user.email },
-      process.env.JWT_SECRET as string,
-      { expiresIn: "7d" }
-    );
 
     console.log("/auth/login success:", { id: user.id });
     res.json({
       success: true,
-      token,
+      token: signAuthToken(user),
       user: toPublicUser(user),
     });
   } catch (err) {
@@ -384,9 +409,13 @@ router.get("/me", authenticateToken, async (req: AuthRequest, res) => {
       return res.status(401).json({ error: "Unauthorized" });
     }
 
-    const user = getOrCreateUser(req.user.id, {
-      email: req.user.email || "test@example.com",
+    const user = await prisma.user.findUnique({
+      where: { id: req.user.id },
+      select: PUBLIC_USER_SELECT,
     });
+    if (!user) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
 
     return res.json(toPublicUser(user));
   } catch (err) {
@@ -409,12 +438,14 @@ router.post("/forgot-password", async (req, res) => {
       return res.status(400).json({ success: false, error: "Email is required" });
     }
 
+    // Checked before the user lookup so the response does not reveal whether an account exists.
+    if (!isEmailConfigured()) {
+      return res.status(503).json({ success: false, error: EMAIL_UNAVAILABLE_MESSAGE });
+    }
+
     const cleanEmail = email.trim().toLowerCase();
 
-    // Always return success to prevent email enumeration
-    // But only send email if user exists
-    const user = findUserByEmail(cleanEmail);
-    let debugResetCode: string | undefined;
+    const user = await prisma.user.findUnique({ where: { email: cleanEmail }, select: { id: true } });
     if (user) {
       const code = generateVerificationCode();
       saveVerificationCode(cleanEmail, {
@@ -422,19 +453,16 @@ router.post("/forgot-password", async (req, res) => {
         expiresAt: Date.now() + 10 * 60 * 1000,
         type: "reset",
       });
-      await sendPasswordResetCode(cleanEmail, code);
-      console.log("/auth/forgot-password code:", { email: cleanEmail, code });
-      if (!isEmailConfigured() && process.env.NODE_ENV !== "production") {
-        debugResetCode = code;
+      const sent = await sendPasswordResetCode(cleanEmail, code);
+      if (!sent) {
+        deleteVerificationCode(cleanEmail);
+        return res.status(503).json({ success: false, error: "Failed to send reset email. Please try again later." });
       }
-    } else {
-      console.log("/auth/forgot-password: user not found for", cleanEmail);
     }
 
     return res.json({
       success: true,
       message: "If an account exists with this email, a reset code has been sent.",
-      ...(debugResetCode ? { debugCode: debugResetCode } : {}),
     });
   } catch (err) {
     console.error("/auth/forgot-password error:", err);
@@ -509,20 +537,20 @@ router.post("/reset-password", async (req, res) => {
       return res.status(400).json({ success: false, error: "Reset token is invalid or expired. Please start over." });
     }
 
-    const user = findUserByEmail(entry.email);
+    const user = await prisma.user.findUnique({ where: { email: entry.email }, select: { id: true } });
     if (!user) {
-      return res.status(400).json({ success: false, error: "User not found." });
+      deleteResetToken(resetToken);
+      return res.status(400).json({ success: false, error: "Reset token is invalid or expired. Please start over." });
     }
 
-    // Update password
     const hashedPassword = await bcrypt.hash(newPassword, 10);
-    updateUser(user.id, { passwordHash: hashedPassword });
+    await prisma.user.update({ where: { id: user.id }, data: { password: hashedPassword } });
     deleteResetToken(resetToken);
 
-    console.log("/auth/reset-password success for:", entry.email);
-    return res.json({ 
-      success: true, 
-      message: "Password has been reset successfully. Please sign in with your new password." 
+    console.log("/auth/reset-password success:", { id: user.id });
+    return res.json({
+      success: true,
+      message: "Password has been reset successfully. Please sign in with your new password."
     });
   } catch (err) {
     console.error("/auth/reset-password error:", err);

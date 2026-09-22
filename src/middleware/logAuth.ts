@@ -1,12 +1,19 @@
 import type { Request, Response, NextFunction } from "express";
 
+const SECRET_KEYS = new Set(["code", "token", "resettoken"]);
+
+function isSecretKey(key: string): boolean {
+  const k = key.toLowerCase();
+  return k.includes("password") || SECRET_KEYS.has(k);
+}
+
 function maskSecrets(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(maskSecrets);
   if (value && typeof value === "object") {
     const src = value as Record<string, unknown>;
     const out: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(src)) {
-      if (k.toLowerCase() === "password") out[k] = "***";
+      if (isSecretKey(k)) out[k] = "***";
       else out[k] = maskSecrets(v);
     }
     return out;
