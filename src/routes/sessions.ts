@@ -2,12 +2,12 @@ import { Router } from "express";
 import type { Response } from "express";
 import multer from "multer";
 import { authenticateToken, type AuthRequest } from "../middleware/auth.js";
-import { parseReceipt } from "../services/receiptParser.js";
+import { parseReceipt, ReceiptParseError } from "../services/receiptParser.js";
 import { prisma } from "../config/prisma.js";
 import type { Prisma, TransactionCategory } from "@prisma/client";
-import { computeSplit, normalizeParticipants } from "../services/splitCalculator.js";
+import { computeSplit, normalizeParticipants, SplitValidationError } from "../services/splitCalculator.js";
 import { resolveEligibleDebtors } from "../services/debtEligibility.js";
-import { fromMinor } from "../utils/money.js";
+import { allocateMinor, fromMinor } from "../utils/money.js";
 
 const router = Router();
 
@@ -120,12 +120,28 @@ function inferTransactionCategory(name: unknown): string {
  *                       unitPrice: { type: number }
  *                       quantity: { type: number }
  *                       totalPrice: { type: number }
+ *                       discount: { type: number, nullable: true }
  *                       kind: { type: string, nullable: true }
+ *                       needsReview: { type: boolean }
+ *                       issues: { type: array, items: { type: string } }
  *                 summary:
  *                   type: object
  *                   properties:
- *                     grandTotal: { type: number }
- *                     currency: { type: string, nullable: true, example: "USD" }
+ *                     subtotal: { type: number }
+ *                     grandTotal: { type: number, description: "Payable total computed from items and adjustments" }
+ *                     printedTotal: { type: number, nullable: true }
+ *                     printedTotalMismatch: { type: boolean, description: "Items + adjustments differ from the printed total" }
+ *                     currency: { type: string, example: "USD" }
+ *                     adjustments: { type: array, items: { type: object } }
+ *                     needsReview: { type: boolean }
+ *                     issues: { type: array, items: { type: string } }
+ *                 source: { type: string, enum: [gemini, mock] }
+ *       422:
+ *         description: AI answered but no usable receipt could be read
+ *       502:
+ *         description: AI service failed or timed out
+ *       503:
+ *         description: AI service not configured
  */
 router.post(
   "/scan",
@@ -177,18 +193,12 @@ router.post(
         });
       } catch (parseError) {
         console.error("parseReceipt failed:", parseError);
-        // Return better error message for common issues
-        const errMsg = parseError instanceof Error ? parseError.message : 'Unknown error';
-        if (errMsg.includes('GEMINI_API_KEY')) {
-          return res.status(503).json({ 
-            error: "AI service not configured",
-            details: "GEMINI_API_KEY not set, using fallback mock parser"
-          });
+        if (parseError instanceof ReceiptParseError) {
+          const status =
+            parseError.code === "AI_NOT_CONFIGURED" ? 503 : parseError.code === "AI_INVALID_RESULT" ? 422 : 502;
+          return res.status(status).json({ error: parseError.message, code: parseError.code });
         }
-        return res.status(500).json({ 
-          error: "Failed to parse receipt",
-          details: errMsg 
-        });
+        return res.status(500).json({ error: "Failed to parse receipt" });
       }
 
       // The session must exist in the database: finalize later verifies ownership against it.
@@ -429,12 +439,25 @@ router.patch(
  *                   properties:
  *                     id: { type: string }
  *                     name: { type: string }
- *                     price: { type: number }
+ *                     price: { type: number, description: "Unit price" }
  *                     quantity: { type: number }
+ *                     totalPrice: { type: number, description: "Actual line total (wins over price × quantity)" }
  *                     kind: { type: string, nullable: true }
  *                     splitMode: { type: string, enum: [equal, count] }
  *                     perPersonCount: { type: object, additionalProperties: { type: number } }
  *                     assignedTo: { type: array, items: { type: string } }
+ *               adjustments:
+ *                 type: array
+ *                 description: Receipt-level tax/discount/tip/service, shared in proportion to item subtotals
+ *                 items:
+ *                   type: object
+ *                   required: [type, amount]
+ *                   properties:
+ *                     id: { type: string }
+ *                     type: { type: string, enum: [tax, discount, tip, service] }
+ *                     label: { type: string }
+ *                     amount: { type: number, description: "Positive magnitude; discounts reduce the total" }
+ *                     includedInPrices: { type: boolean, description: "Tax/service already in item prices (not added again)" }
  *     responses:
  *       200:
  *         description: Finalized allocations
@@ -520,8 +543,8 @@ router.post(
         return res.status(403).json({ error: "You do not have access to this session" });
       }
 
-      const split = computeSplit(items, participants, currency);
-      const { grandTotal, byParticipant, byItem, allocations, digits } = split;
+      const split = computeSplit(items, participants, currency, req.body?.adjustments);
+      const { grandTotal, subtotal, adjustments, byParticipant, byItem, allocations, digits } = split;
 
       // Validate calculations
       if (grandTotal < 0) {
@@ -552,6 +575,8 @@ router.post(
         },
         totals: {
           currency,
+          subtotal,
+          adjustments,
           grandTotal,
           byParticipant,
           byItem,
@@ -607,8 +632,23 @@ router.post(
             const category = inferTransactionCategory(item?.name);
             categoryTotalsMinor.set(category, (categoryTotalsMinor.get(category) || 0) + amountMinor);
           });
+          // Receipt-level adjustments (tax, discount, tip, service) are spread over the
+          // categories in proportion, so the transactions add up to the receipt total.
+          if (categoryTotalsMinor.size > 0 && split.adjustmentsTotalMinor !== 0) {
+            const categories = Array.from(categoryTotalsMinor.keys());
+            const shares = allocateMinor(
+              split.adjustmentsTotalMinor,
+              categories.map((c) => categoryTotalsMinor.get(c) ?? 0)
+            );
+            categories.forEach((c, i) => {
+              categoryTotalsMinor.set(c, (categoryTotalsMinor.get(c) ?? 0) + (shares[i] ?? 0));
+            });
+          }
           if (categoryTotalsMinor.size === 0) {
-            categoryTotalsMinor.set("OTHER", split.itemTotalsMinor.reduce((s, v) => s + v, 0));
+            categoryTotalsMinor.set(
+              "OTHER",
+              split.itemTotalsMinor.reduce((s, v) => s + v, 0) + split.adjustmentsTotalMinor
+            );
           }
 
           let debtTransactionId: number | null = null;
@@ -618,6 +658,7 @@ router.post(
                 userId,
                 sessionHistoryId: storedHistoryEntry.id,
                 totalAmount: fromMinor(totalMinor, digits),
+                currency,
                 category: category as TransactionCategory,
                 description: sessionName || `Session #${sessionId}`,
               },
@@ -635,6 +676,7 @@ router.post(
                 creditorId: userId,
                 debtorId,
                 amount: fromMinor(split.participantTotalsMinor.get(participant.uniqueId) ?? 0, digits),
+                currency,
                 status: "ACTIVE",
                 description: sessionName || `Session #${sessionId}`,
               },
@@ -656,6 +698,9 @@ router.post(
     } catch (err) {
       if (err instanceof SessionAccessError) {
         return res.status(403).json({ error: "You do not have access to this session" });
+      }
+      if (err instanceof SplitValidationError) {
+        return res.status(400).json({ error: err.message, ...(err.details ? { details: err.details } : {}) });
       }
       console.error("POST /sessions/finalize error:", err);
       return res.status(500).json({ error: "Failed to finalize session. Nothing was saved." });

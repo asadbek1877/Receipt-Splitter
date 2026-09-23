@@ -21,6 +21,9 @@ router.post('/', authenticateToken, async (req: AuthRequest, res) => {
     if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
     const userId = req.user.id;
     const { sessionId, totalAmount, category, description, allocations } = req.body || {};
+    // Currency is recorded as given (ISO 4217) or explicitly UNKNOWN; it is never assumed.
+    const rawCurrency = typeof req.body?.currency === 'string' ? req.body.currency.trim().toUpperCase() : '';
+    const currency = /^[A-Z]{3}$/.test(rawCurrency) ? rawCurrency : 'UNKNOWN';
 
     if (!Number.isFinite(Number(totalAmount))) {
       return res.status(400).json({ error: 'totalAmount is required' });
@@ -62,6 +65,7 @@ router.post('/', authenticateToken, async (req: AuthRequest, res) => {
           userId,
           ...(historyEntry ? { sessionHistoryId: historyEntry.id } : {}),
           totalAmount: Number(totalAmount),
+          currency,
           category: category || 'OTHER',
           description: description || null,
         },
@@ -79,6 +83,7 @@ router.post('/', authenticateToken, async (req: AuthRequest, res) => {
             creditorId: userId,
             debtorId,
             amount: Number(alloc.amount),
+            currency,
             status: 'ACTIVE',
             description: alloc.description || null,
           },

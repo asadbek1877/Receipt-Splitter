@@ -143,6 +143,7 @@ model Transaction {
   userId           Int
   sessionHistoryId Int?
   totalAmount      Decimal
+  currency         String               @default("UNKNOWN")
   category         TransactionCategory  @default(OTHER)
   description      String?
   createdAt        DateTime             @default(now())
@@ -162,6 +163,7 @@ model Debt {
   creditorId    Int
   debtorId      Int
   amount        Decimal
+  currency      String      @default("UNKNOWN")
   status        DebtStatus  @default(ACTIVE)
   description   String?
   createdAt     DateTime    @default(now())

@@ -1,6 +1,20 @@
 import { Router } from 'express';
 import { authenticateToken } from '../middleware/auth.js';
 import { prisma } from '../config/prisma.js';
+import { currencyMinorDigits, fromMinor, toMinor } from '../utils/money.js';
+
+/** Sums debt amounts per currency using exact minor units. */
+function sumByCurrency(list: Array<{ amount: unknown; currency?: string | null }>): Map<string, number> {
+  const minorTotals = new Map<string, number>();
+  for (const debt of list) {
+    const code = debt.currency || 'UNKNOWN';
+    const minor = toMinor(Number(debt.amount || 0), currencyMinorDigits(code));
+    minorTotals.set(code, (minorTotals.get(code) ?? 0) + minor);
+  }
+  return new Map(
+    Array.from(minorTotals, ([code, minor]) => [code, fromMinor(minor, currencyMinorDigits(code))])
+  );
+}
 
 const router = Router();
 
@@ -52,10 +66,27 @@ router.get('/', authenticateToken, async (req, res) => {
       orderBy: [{ settledAt: 'desc' }, { createdAt: 'desc' }],
     });
 
-    const totalOwed = owedList.reduce((s: number, d: any) => s + Number(d.amount || 0), 0);
-    const totalIOwe = iOweList.reduce((s: number, d: any) => s + Number(d.amount || 0), 0);
+    // Amounts in different currencies are never added together.
+    const owedByCurrency = sumByCurrency(owedList);
+    const iOweByCurrency = sumByCurrency(iOweList);
+    const currencies = Array.from(new Set([...owedByCurrency.keys(), ...iOweByCurrency.keys()]));
+    const totalsByCurrency = currencies.map((code) => ({
+      currency: code,
+      owed: owedByCurrency.get(code) ?? 0,
+      iOwe: iOweByCurrency.get(code) ?? 0,
+    }));
 
-    res.json({ totalOwed, totalIOwe, owedList, iOweList, historyList });
+    // Legacy single-number totals refer to one explicit currency: the requested one,
+    // otherwise the currency of the most recent active debt.
+    const requested = typeof req.query.currency === 'string' ? req.query.currency.trim().toUpperCase() : '';
+    const mostRecent = [...owedList, ...iOweList].sort(
+      (a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    )[0];
+    const currency = requested || mostRecent?.currency || null;
+    const totalOwed = currency ? owedByCurrency.get(currency) ?? 0 : 0;
+    const totalIOwe = currency ? iOweByCurrency.get(currency) ?? 0 : 0;
+
+    res.json({ currency, totalOwed, totalIOwe, totalsByCurrency, owedList, iOweList, historyList });
   } catch (err) {
     console.error('GET /debts error:', err);
     res.status(500).json({ error: 'Failed to fetch debts' });
