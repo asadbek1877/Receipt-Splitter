@@ -415,6 +415,7 @@ async function deleteUserAndRelatedData(userId: number) {
 
     await tx.session.deleteMany({ where: { id: { in: ownedSessionIds } } });
     await tx.friendship.deleteMany({ where: { OR: [{ requesterId: userId }, { receiverId: userId }] } });
+    await tx.idempotencyKey.deleteMany({ where: { userId } });
     await tx.user.delete({ where: { id: userId } });
   }, { timeout: 20000 });
 }

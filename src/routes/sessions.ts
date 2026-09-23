@@ -8,11 +8,36 @@ import type { Prisma, TransactionCategory } from "@prisma/client";
 import { computeSplit, normalizeParticipants, SplitValidationError } from "../services/splitCalculator.js";
 import { resolveEligibleDebtors } from "../services/debtEligibility.js";
 import { allocateMinor, fromMinor } from "../utils/money.js";
+import { claimIdempotencyKey, completeIdempotencyKey, readIdempotencyKey } from "../services/idempotency.js";
+
+const SCAN_IDEMPOTENCY_ENDPOINT = "sessions.scan";
 
 const router = Router();
 
-/** Thrown inside the finalize transaction when the session is not owned by the caller. */
-class SessionAccessError extends Error {}
+/**
+ * Thrown inside the finalize transaction when the status-guarded update matched no row —
+ * i.e. a concurrent request finalized this session first. Ownership was already verified
+ * before the transaction started, so this is always the "already finalized" race, never
+ * an authorization failure.
+ */
+class FinalizeRaceError extends Error {}
+
+/**
+ * Reconstructs the response a finalize call would have returned, from the stored
+ * SessionHistoryEntry. Used to make a duplicate/retried finalize idempotent: the caller
+ * gets back exactly what the original, successful call produced, with no recomputation
+ * and no additional writes. Returns null if no finalized result exists for this session
+ * and owner (an edge case the caller turns into a 409).
+ */
+async function replayFinalizedSession(sessionId: number, userId: number) {
+  const entry = await prisma.sessionHistoryEntry.findFirst({
+    where: { sessionId, creatorId: userId },
+    select: { payload: true },
+  });
+  if (!entry || !entry.payload || typeof entry.payload !== "object") return null;
+  const { creatorId: _creatorId, ...payload } = entry.payload as Record<string, unknown>;
+  return payload;
+}
 
 const DEFAULT_CURRENCY_CODE = "UNKNOWN";
 const MAX_RECEIPT_IMAGE_BYTES = 5 * 1024 * 1024;
@@ -148,9 +173,36 @@ router.post(
   authenticateToken,
   receiptImageUpload.single("file"),
   async (req: AuthRequest, res: Response) => {
+    // Tracks the claimed IdempotencyKey row (if any) so every exit path can record its
+    // outcome. A retried/duplicated request with the same key then replays this result
+    // instead of calling the AI again or creating a second session.
+    let idempotencyRowId: number | null = null;
+    const finish = async (status: number, body: unknown) => {
+      if (idempotencyRowId !== null) {
+        await completeIdempotencyKey(idempotencyRowId, status < 400 ? "COMPLETED" : "FAILED", status, body);
+      }
+      return res.status(status).json(body as any);
+    };
+
     try {
       if (!req.user) return res.status(401).json({ error: "Unauthorized" });
-      
+
+      const idempotencyKey = readIdempotencyKey(req.headers["idempotency-key"]);
+      if (idempotencyKey) {
+        const claim = await claimIdempotencyKey(req.user.id, SCAN_IDEMPOTENCY_ENDPOINT, idempotencyKey);
+        if (claim.mode === "replay") {
+          return res.status(claim.status).json(claim.body as any);
+        }
+        if (claim.mode === "conflict") {
+          return res.status(409).json({ error: "A scan for this request is already in progress" });
+        }
+        if (claim.mode === "proceed") {
+          idempotencyRowId = claim.rowId;
+        }
+        // "unsupported" (idempotency table not migrated yet) falls through unguarded,
+        // identical to behavior before this feature existed.
+      }
+
       const uploadedFile = (req as AuthRequest & { file?: UploadedReceiptFile }).file;
       const { sessionName, language } = req.body || {};
       const image = uploadedFile
@@ -159,27 +211,27 @@ router.post(
             data: uploadedFile.buffer.toString("base64"),
           }
         : req.body?.image;
-      
+
       // Validation
       if (!sessionName || typeof sessionName !== "string") {
-        return res.status(400).json({ error: "sessionName required" });
+        return finish(400, { error: "sessionName required" });
       }
       if (!language || typeof language !== "string") {
-        return res.status(400).json({ error: "language required" });
+        return finish(400, { error: "language required" });
       }
       if (!image || typeof image !== "object") {
-        return res.status(400).json({ error: "image object required" });
+        return finish(400, { error: "image object required" });
       }
       if (!image.mimeType || typeof image.mimeType !== "string") {
-        return res.status(400).json({ error: "image.mimeType required" });
+        return finish(400, { error: "image.mimeType required" });
       }
       if (!image.data || typeof image.data !== "string") {
-        return res.status(400).json({ error: "image.data (base64) required" });
+        return finish(400, { error: "image.data (base64) required" });
       }
-      
+
       // Validate base64 length (should be reasonably sized)
       if (!uploadedFile && image.data.length > 5000000) {
-        return res.status(413).json({ error: "Image too large (max 5MB)" });
+        return finish(413, { error: "Image too large (max 5MB)" });
       }
 
       // Parse receipt using AI
@@ -196,9 +248,9 @@ router.post(
         if (parseError instanceof ReceiptParseError) {
           const status =
             parseError.code === "AI_NOT_CONFIGURED" ? 503 : parseError.code === "AI_INVALID_RESULT" ? 422 : 502;
-          return res.status(status).json({ error: parseError.message, code: parseError.code });
+          return finish(status, { error: parseError.message, code: parseError.code });
         }
-        return res.status(500).json({ error: "Failed to parse receipt" });
+        return finish(500, { error: "Failed to parse receipt" });
       }
 
       // The session must exist in the database: finalize later verifies ownership against it.
@@ -215,17 +267,17 @@ router.post(
         sessionId = createdSession.id;
       } catch (dbError: any) {
         console.error("Database error while creating session:", dbError);
-        return res.status(500).json({ error: "Failed to create session" });
+        return finish(500, { error: "Failed to create session" });
       }
 
-      console.log("POST /sessions/scan success:", { 
-        sessionId, 
-        sessionName, 
+      console.log("POST /sessions/scan success:", {
+        sessionId,
+        sessionName,
         itemsCount: parseResult.items.length,
-        source: parseResult.source 
+        source: parseResult.source
       });
-      
-      return res.json({
+
+      return finish(200, {
         sessionId,
         sessionName,
         language,
@@ -236,8 +288,8 @@ router.post(
     } catch (err) {
       console.error("POST /sessions/scan error:", err);
       const errMsg = err instanceof Error ? err.message : 'Server error';
-      return res.status(500).json({ 
-        error: errMsg || "Failed to process receipt" 
+      return finish(500, {
+        error: errMsg || "Failed to process receipt"
       });
     }
   }
@@ -511,11 +563,18 @@ router.post(
   "/finalize",
   authenticateToken,
   async (req: AuthRequest, res: Response) => {
+    // Mirrors of sessionId/userId for the catch block: `const`s declared inside the try
+    // block below are not visible in `catch`, but the FinalizeRaceError handler needs
+    // them to look up which session's result to replay.
+    let sessionIdForReplay: number | undefined;
+    let userIdForReplay: number | undefined;
     try {
       if (!req.user) return res.status(401).json({ error: "Unauthorized" });
       const userId = req.user.id;
       const { sessionName, participants: rawParticipants, items } = req.body || {};
       const sessionId = Number(req.body?.sessionId);
+      userIdForReplay = userId;
+      sessionIdForReplay = sessionId;
       const currency = normalizeCurrencyCode(req.body?.currency);
       if (!Number.isInteger(sessionId) || sessionId <= 0) {
         return res.status(400).json({ error: "sessionId required" });
@@ -534,13 +593,24 @@ router.post(
       // Only the creator of a session may finalize it.
       const session = await prisma.session.findUnique({
         where: { id: sessionId },
-        select: { id: true, creatorId: true },
+        select: { id: true, creatorId: true, status: true },
       });
       if (!session) {
         return res.status(404).json({ error: "Session not found" });
       }
       if (session.creatorId !== userId) {
         return res.status(403).json({ error: "You do not have access to this session" });
+      }
+
+      // Duplicate-safe finalize: a session can only ever be finalized once. If this
+      // session is already closed (a resent request, a client retry after a timeout, or
+      // the user pressing "confirm" again), replay the stored result instead of
+      // recomputing and rewriting transactions/debts — this is what keeps a manually
+      // PAID debt paid and guarantees exactly one history entry per session.
+      if (session.status !== "ACTIVE") {
+        const replay = await replayFinalizedSession(sessionId, userId);
+        if (replay) return res.json({ ...replay, idempotentReplay: true });
+        return res.status(409).json({ error: "Session is already closed" });
       }
 
       const split = computeSplit(items, participants, currency, req.body?.adjustments);
@@ -601,11 +671,16 @@ router.post(
       // All writes succeed together or not at all.
       await prisma.$transaction(
         async (tx) => {
+          // Status-guarded compare-and-swap: only the request that actually flips
+          // ACTIVE -> CLOSED proceeds. Postgres row-level locking serializes concurrent
+          // UPDATEs on this row, so if two identical finalize requests race here, the
+          // second one's WHERE re-evaluates against the first's already-committed
+          // status and matches zero rows — a DB-enforced guarantee, not an app lock.
           const closed = await tx.session.updateMany({
-            where: { id: sessionId, creatorId: userId },
+            where: { id: sessionId, creatorId: userId, status: "ACTIVE" },
             data: { status: "CLOSED", total: grandTotal },
           });
-          if (closed.count !== 1) throw new SessionAccessError();
+          if (closed.count !== 1) throw new FinalizeRaceError();
 
           const historyData = {
             sessionName: sessionName || null,
@@ -696,8 +771,12 @@ router.post(
 
       return res.json(responsePayload);
     } catch (err) {
-      if (err instanceof SessionAccessError) {
-        return res.status(403).json({ error: "You do not have access to this session" });
+      if (err instanceof FinalizeRaceError && sessionIdForReplay !== undefined && userIdForReplay !== undefined) {
+        // Lost the race to a concurrent identical request. Its write already committed
+        // (or is about to) — hand back that result rather than erroring or retrying.
+        const replay = await replayFinalizedSession(sessionIdForReplay, userIdForReplay);
+        if (replay) return res.json({ ...replay, idempotentReplay: true });
+        return res.status(409).json({ error: "Session is already closed" });
       }
       if (err instanceof SplitValidationError) {
         return res.status(400).json({ error: err.message, ...(err.details ? { details: err.details } : {}) });

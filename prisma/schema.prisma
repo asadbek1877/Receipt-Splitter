@@ -26,6 +26,33 @@ model User {
   transactions          Transaction[]
   creditorDebts         Debt[]                @relation("CreditorDebts")
   debtorDebts           Debt[]                @relation("DebtorDebts")
+  idempotencyKeys       IdempotencyKey[]
+}
+
+// Records a client-supplied "Idempotency-Key" for a non-idempotent, resource-creating
+// POST (currently only /sessions/scan) so that a retried or duplicated request resolves
+// to the SAME logical result instead of repeating the underlying work. Scoped per user
+// and endpoint so the same key value can't collide across different operations or users.
+model IdempotencyKey {
+  id             Int                  @id @default(autoincrement())
+  key            String
+  userId         Int
+  endpoint       String
+  status         IdempotencyKeyStatus @default(PENDING)
+  responseStatus Int?
+  responseBody   Json?
+  createdAt      DateTime             @default(now())
+  completedAt    DateTime?
+  user           User                 @relation(fields: [userId], references: [id])
+
+  @@unique([userId, endpoint, key])
+  @@index([createdAt])
+}
+
+enum IdempotencyKeyStatus {
+  PENDING
+  COMPLETED
+  FAILED
 }
 
 model Friendship {
