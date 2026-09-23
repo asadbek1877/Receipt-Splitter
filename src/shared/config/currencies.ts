@@ -25,6 +25,19 @@ export function getCurrency(code: string): CurrencyInfo {
 }
 
 export function formatCurrency(amount: number, currencyCode: string): string {
+  // Currencies outside the list are labelled with their own code instead of
+  // silently falling back to another currency's symbol.
+  if (!CURRENCIES.some((c) => c.code === currencyCode)) {
+    let digits = 2;
+    try {
+      digits = new Intl.NumberFormat('en', { style: 'currency', currency: currencyCode }).resolvedOptions()
+        .maximumFractionDigits ?? 2;
+    } catch {
+      digits = 2;
+    }
+    const value = amount.toLocaleString('en-US', { minimumFractionDigits: digits, maximumFractionDigits: digits });
+    return `${value} ${currencyCode}`;
+  }
   const currency = getCurrency(currencyCode);
   const formatted = amount.toLocaleString('en-US', {
     minimumFractionDigits: currencyCode === 'UZS' || currencyCode === 'KZT' ? 0 : 2,

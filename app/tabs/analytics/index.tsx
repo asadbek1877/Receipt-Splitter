@@ -111,10 +111,23 @@ export default function AnalyticsPage() {
     [sessions, period]
   );
 
-  const activeTransactions = useMemo(() => {
+  const selectedTransactions = useMemo(() => {
     if (!selectedTransactionId) return periodTransactions;
     return periodTransactions.filter((entry) => entry.sessionId === selectedTransactionId);
   }, [periodTransactions, selectedTransactionId]);
+
+  // Totals are only ever added up within one currency: the app currency when there are
+  // receipts in it, otherwise the currency of the most recent receipt.
+  const entryCurrency = (entry: SessionHistoryEntry) => entry.currency || 'UNKNOWN';
+  const displayCurrency = useMemo(() => {
+    if (selectedTransactions.some((entry) => entryCurrency(entry) === currency)) return currency;
+    return selectedTransactions[0] ? entryCurrency(selectedTransactions[0]) : currency;
+  }, [selectedTransactions, currency]);
+  const activeTransactions = useMemo(
+    () => selectedTransactions.filter((entry) => entryCurrency(entry) === displayCurrency),
+    [selectedTransactions, displayCurrency]
+  );
+  const excludedCount = selectedTransactions.length - activeTransactions.length;
 
   const analytics = useMemo(() => {
     const categoryTotals: Record<string, number> = {};
@@ -149,19 +162,24 @@ export default function AnalyticsPage() {
     };
   }, [activeTransactions]);
 
+  const displayDebts = useMemo(
+    () => debts.filter((debt) => (debt.currency ?? currency) === displayCurrency),
+    [debts, currency, displayCurrency]
+  );
+
   const moneyIn = useMemo(() => {
-    if (!me?.uniqueId) return debts.reduce((sum, debt) => sum + Number(debt.amount || 0), 0);
-    return debts
+    if (!me?.uniqueId) return displayDebts.reduce((sum, debt) => sum + Number(debt.amount || 0), 0);
+    return displayDebts
       .filter((debt) => debt.toUserId === me.uniqueId)
       .reduce((sum, debt) => sum + Number(debt.amount || 0), 0);
-  }, [debts, me?.uniqueId]);
+  }, [displayDebts, me?.uniqueId]);
 
   const moneyOut = useMemo(() => {
     if (!me?.uniqueId) return 0;
-    return debts
+    return displayDebts
       .filter((debt) => debt.fromUserId === me.uniqueId)
       .reduce((sum, debt) => sum + Number(debt.amount || 0), 0);
-  }, [debts, me?.uniqueId]);
+  }, [displayDebts, me?.uniqueId]);
 
   const barData = useMemo(() => {
     const entries = Object.entries(analytics.categoryTotals).filter(([, amount]) => amount > 0);
@@ -245,7 +263,7 @@ export default function AnalyticsPage() {
                 <Text fontSize={11} color={colors.textSecondary}>{t('analytics.expenses')}</Text>
               </XStack>
               <Text fontSize={18} fontWeight="800" color={colors.text}>
-                {formatCurrency(analytics.total, currency)}
+                {formatCurrency(analytics.total, displayCurrency)}
               </Text>
             </Card>
             <Card>
@@ -254,10 +272,18 @@ export default function AnalyticsPage() {
                 <Text fontSize={11} color={colors.textSecondary}>{t('analytics.debts')}</Text>
               </XStack>
               <Text fontSize={18} fontWeight="800" color={colors.text}>
-                {formatCurrency(moneyIn + moneyOut, currency)}
+                {formatCurrency(moneyIn + moneyOut, displayCurrency)}
               </Text>
             </Card>
           </XStack>
+          {excludedCount > 0 && (
+            <Text fontSize={11} color={colors.textSecondary}>
+              {t('analytics.otherCurrenciesExcluded', {
+                currency: displayCurrency,
+                defaultValue: 'Totals are in {{currency}}. Receipts in other currencies are not included.',
+              })}
+            </Text>
+          )}
 
           <Card>
             <Text fontSize={15} fontWeight="800" color={colors.text} mb="$2">
@@ -304,9 +330,9 @@ export default function AnalyticsPage() {
               {t('analytics.cashflowDebt')}
             </Text>
             <YStack gap="$2">
-              <XStack jc="space-between"><Text color={colors.textSecondary}>{t('analytics.totalExpenses')}</Text><Text color={colors.text} fontWeight="700">{formatCurrency(analytics.total, currency)}</Text></XStack>
-              <XStack jc="space-between"><Text color={colors.textSecondary}>{t('analytics.moneyOwedToMe')}</Text><Text color={colors.primary} fontWeight="700">{formatCurrency(moneyIn, currency)}</Text></XStack>
-              <XStack jc="space-between"><Text color={colors.textSecondary}>{t('analytics.moneyIOwe')}</Text><Text color={colors.danger} fontWeight="700">{formatCurrency(moneyOut, currency)}</Text></XStack>
+              <XStack jc="space-between"><Text color={colors.textSecondary}>{t('analytics.totalExpenses')}</Text><Text color={colors.text} fontWeight="700">{formatCurrency(analytics.total, displayCurrency)}</Text></XStack>
+              <XStack jc="space-between"><Text color={colors.textSecondary}>{t('analytics.moneyOwedToMe')}</Text><Text color={colors.primary} fontWeight="700">{formatCurrency(moneyIn, displayCurrency)}</Text></XStack>
+              <XStack jc="space-between"><Text color={colors.textSecondary}>{t('analytics.moneyIOwe')}</Text><Text color={colors.danger} fontWeight="700">{formatCurrency(moneyOut, displayCurrency)}</Text></XStack>
             </YStack>
           </Card>
 

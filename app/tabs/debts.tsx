@@ -76,23 +76,35 @@ export default function DebtsScreen() {
     }
   }, [debts, filter, me?.uniqueId]);
 
+  // Debts keep the currency of the receipt they came from; totals are grouped per
+  // currency instead of adding different currencies together.
+  const debtCurrency = (d: SplitterDebt) => d.currency ?? currency;
+  const formatTotals = (list: SplitterDebt[]) => {
+    const byCurrency = new Map<string, number>();
+    list.forEach((d) => byCurrency.set(debtCurrency(d), (byCurrency.get(debtCurrency(d)) ?? 0) + d.amount));
+    if (byCurrency.size === 0) return formatCurrency(0, currency);
+    return Array.from(byCurrency, ([code, amount]) => formatCurrency(amount, code)).join(' · ');
+  };
+
   const totalOwedMe = useMemo(
-    () => debts
-      .filter((d) => !me?.uniqueId || !d.ownerUserId || d.ownerUserId === me.uniqueId)
-      .filter((d) => getDebtStatus(d) === 'ACTIVE')
-      .filter((d) => !me?.uniqueId || d.toUserId === me.uniqueId)
-      .reduce((sum, d) => sum + d.amount, 0),
-    [debts, me?.uniqueId]
+    () => formatTotals(
+      debts
+        .filter((d) => !me?.uniqueId || !d.ownerUserId || d.ownerUserId === me.uniqueId)
+        .filter((d) => getDebtStatus(d) === 'ACTIVE')
+        .filter((d) => !me?.uniqueId || d.toUserId === me.uniqueId)
+    ),
+    [debts, me?.uniqueId, currency]
   );
   const totalIOwe = useMemo(
-    () => me?.uniqueId
-      ? debts
-        .filter((d) => !d.ownerUserId || d.ownerUserId === me.uniqueId)
-        .filter((d) => getDebtStatus(d) === 'ACTIVE')
-        .filter((d) => d.fromUserId === me.uniqueId)
-        .reduce((sum, d) => sum + d.amount, 0)
-      : 0,
-    [debts, me?.uniqueId]
+    () => formatTotals(
+      me?.uniqueId
+        ? debts
+          .filter((d) => !d.ownerUserId || d.ownerUserId === me.uniqueId)
+          .filter((d) => getDebtStatus(d) === 'ACTIVE')
+          .filter((d) => d.fromUserId === me.uniqueId)
+        : []
+    ),
+    [debts, me?.uniqueId, currency]
   );
 
   useFocusEffect(
@@ -252,7 +264,7 @@ export default function DebtsScreen() {
             </YStack>
             <YStack ai="flex-end" gap="$2">
               <Text fontSize={18} fontWeight="800" color={isMine ? colors.error : colors.success}>
-                {formatCurrency(debt.amount, currency)}
+                {formatCurrency(debt.amount, debtCurrency(debt))}
               </Text>
               <XStack ai="center" gap="$2">
                 <Pressable onPress={() => openEditDebt(debt)}>
@@ -373,13 +385,13 @@ export default function DebtsScreen() {
                 <YStack>
                   <Text fontSize={11} color={colors.textSecondary}>{t('debts.owedMe')}</Text>
                   <Text fontSize={20} fontWeight="800" color={colors.success}>
-                    {formatCurrency(totalOwedMe, currency)}
+                    {totalOwedMe}
                   </Text>
                 </YStack>
                 <YStack ai="flex-end">
                   <Text fontSize={11} color={colors.textSecondary}>{t('debts.iOwe')}</Text>
                   <Text fontSize={20} fontWeight="800" color={colors.error}>
-                    {formatCurrency(totalIOwe, currency)}
+                    {totalIOwe}
                   </Text>
                 </YStack>
               </XStack>

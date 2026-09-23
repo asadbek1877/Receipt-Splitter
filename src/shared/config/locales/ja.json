@@ -103,7 +103,8 @@
       "week": "Week",
       "month": "Month",
       "all": "All"
-    }
+    },
+    "otherCurrenciesExcluded": "合計は {{currency}} です。他の通貨のレシートは含まれていません。"
   },
   "friends": {
     "title": "友だち",
@@ -353,7 +354,15 @@
     "errPriceReq": "価格は0より大きい必要があります",
     "errQtyReq": "数量は0より大きい必要があります",
     "errReceiptEmpty": "レシートには少なくとも1つの商品が必要です",
-    "itemSubtitle": "{{count}} item(s) ? {{amount}} each"
+    "itemSubtitle": "{{count}} item(s) ? {{amount}} each",
+    "checkItem": "この商品を確認してください",
+    "totalMismatch": "商品の合計は {{computed}} ですが、レシートの合計は {{printed}} です。",
+    "fixHighlighted": "ハイライトされた商品を確認して保存してください。",
+    "discountTooLarge": "割引が商品合計を超えています。",
+    "reviewTitle": "内容をご確認ください",
+    "continueAnyway": "このまま続ける",
+    "subtotal": "小計",
+    "includedInPrices": "価格に含まれています"
   },
   "orders": {
     "title": "Orders",
@@ -377,7 +386,8 @@
     "errors": {
       "sessionRequired": "Session ID is required",
       "finalizeFailed": "Failed to finalize session"
-    }
+    },
+    "assignAllItems": "確定する前にすべての商品を割り当ててください。"
   },
   "billSummary": {
     "title": "Bill Summary",

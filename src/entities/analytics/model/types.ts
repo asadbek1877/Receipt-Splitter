@@ -4,6 +4,8 @@ import type { ExpenseCategory } from '../../receipt';
  * Analytics summary - aggregated expense and debt statistics
  */
 export interface AnalyticsSummary {
+  /** Currency all totals below are expressed in. */
+  currency?: string;
   totalExpenses: number; // Total amount spent across all receipts
   totalOwed: number; // Total amount this user owes to others
   totalDebt: number; // Total amount others owe to this user

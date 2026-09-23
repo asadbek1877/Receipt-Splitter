@@ -103,7 +103,8 @@
       "week": "Haftalik",
       "month": "Oylik",
       "all": "Barchasi"
-    }
+    },
+    "otherCurrenciesExcluded": "Jami {{currency}} da. Boshqa valyutadagi cheklar kiritilmagan."
   },
   "home": {
     "header": {
@@ -447,7 +448,15 @@
     "errPriceReq": "Narx 0 dan katta bo'lishi kerak",
     "errQtyReq": "Miqdor 0 dan katta bo'lishi kerak",
     "errReceiptEmpty": "Chekda kamida bitta mahsulot bo'lishi kerak",
-    "itemSubtitle": "{{count}} dona ? har biri {{amount}}"
+    "itemSubtitle": "{{count}} dona ? har biri {{amount}}",
+    "checkItem": "Ushbu mahsulotni tekshiring",
+    "totalMismatch": "Mahsulotlar jami {{computed}}, lekin chekdagi jami {{printed}}.",
+    "fixHighlighted": "Avval belgilangan mahsulotlarni tekshirib, saqlang.",
+    "discountTooLarge": "Chegirmalar mahsulotlar jamidan katta.",
+    "reviewTitle": "Iltimos, qayta tekshiring",
+    "continueAnyway": "Baribir davom etish",
+    "subtotal": "Oraliq jami",
+    "includedInPrices": "narxlarga kiritilgan"
   },
   "orders": {
     "title": "Buyurtmalar",
@@ -471,7 +480,8 @@
     "errors": {
       "sessionRequired": "Sessiya ID kerak",
       "finalizeFailed": "Sessiyani yakunlab bo'lmadi"
-    }
+    },
+    "assignAllItems": "Tasdiqlashdan oldin barcha mahsulotlarni taqsimlang."
   },
   "billSummary": {
     "title": "Chek yakuni",

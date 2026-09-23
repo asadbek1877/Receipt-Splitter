@@ -103,7 +103,8 @@
       "week": "Week",
       "month": "Month",
       "all": "All"
-    }
+    },
+    "otherCurrenciesExcluded": "Totals are in {{currency}}. Receipts in other currencies are not included."
   },
   "friends": {
     "title": "Friends",
@@ -447,7 +448,15 @@
     "errPriceReq": "Price must be greater than 0",
     "errQtyReq": "Quantity must be greater than 0",
     "errReceiptEmpty": "Receipt must contain at least one product",
-    "itemSubtitle": "{{count}} item(s) ? {{amount}} each"
+    "itemSubtitle": "{{count}} item(s) ? {{amount}} each",
+    "checkItem": "Please check this item",
+    "totalMismatch": "Items add up to {{computed}}, but the receipt total is {{printed}}.",
+    "fixHighlighted": "Please check and save the highlighted items first.",
+    "discountTooLarge": "Discounts are larger than the items total.",
+    "reviewTitle": "Please double-check",
+    "continueAnyway": "Continue anyway",
+    "subtotal": "Subtotal",
+    "includedInPrices": "included in prices"
   },
   "orders": {
     "title": "Orders",
@@ -471,7 +480,8 @@
     "errors": {
       "sessionRequired": "Session ID is required",
       "finalizeFailed": "Failed to finalize session"
-    }
+    },
+    "assignAllItems": "Assign every item before confirming the split."
   },
   "billSummary": {
     "title": "Bill Summary",

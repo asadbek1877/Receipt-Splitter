@@ -571,6 +571,7 @@ export default function FinishScreen() {
         fromUserId: settlement.payer.id,
         toUserId: settlement.receiver.id,
         amount: settlement.amount,
+        currency: settlement.currency,
         receiptId: receiptKey,
         date: new Date(),
         status: settlement.status === 'paid' ? 'PAID' : 'ACTIVE',

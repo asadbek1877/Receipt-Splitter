@@ -13,20 +13,48 @@ export interface ParseReceiptRequest {
 
 export type ParsedReceiptItemKind = 'item' | 'fee' | 'discount' | string;
 
+export type ReceiptAdjustmentType = 'tax' | 'discount' | 'tip' | 'service';
+
+/** Receipt-level tax / discount / tip / service charge. `amount` is always positive. */
+export interface ReceiptAdjustment {
+  id: string;
+  type: ReceiptAdjustmentType;
+  label: string;
+  amount: number;
+  /** Already contained in item prices (e.g. VAT "incl."): shown, never added again. */
+  includedInPrices: boolean;
+}
+
+/** Bounded server-side AI processing (~40s) plus upload time. */
+export const RECEIPT_SCAN_TIMEOUT_MS = 60000;
+
 export interface ParsedReceiptItem {
   id: string;
   name: string;
   unitPrice: number;
   quantity: number;
+  /** Actual printed line total (after any line discount). */
   totalPrice: number;
+  /** Line discount already reflected in totalPrice. */
+  discount?: number;
   imageUrl?: string | null;
   imageUri?: string | null;
   thumbnailUrl?: string | null;
   kind?: ParsedReceiptItemKind;
+  needsReview?: boolean;
+  issues?: string[];
 }
 
 export interface ReceiptSummary {
+  /** Payable total computed from items and adjustments. */
   grandTotal: number;
+  subtotal?: number;
+  printedTotal?: number | null;
+  /** Items + adjustments do not add up to the printed total. */
+  printedTotalMismatch?: boolean;
+  adjustments?: ReceiptAdjustment[];
+  needsReview?: boolean;
+  issues?: string[];
   currency?: string;
   [key: string]: unknown;
 }
@@ -37,7 +65,8 @@ export interface ParseReceiptResponse {
   language: string;
   items: ParsedReceiptItem[];
   summary?: ReceiptSummary;
-  source?: string;
+  /** 'mock' only comes from the backend's explicit development mock mode. */
+  source?: 'gemini' | 'mock' | string;
 }
 
 export type ReceiptParticipant = {
@@ -52,6 +81,8 @@ export interface FinalizeReceiptItemPayload {
   name: string;
   price: number;
   quantity: number;
+  /** Actual line total; the backend uses it instead of price × quantity. */
+  totalPrice: number;
   kind?: ParsedReceiptItemKind;
   splitMode: ReceiptSplitMode;
   assignedTo?: string[];
@@ -63,6 +94,7 @@ export interface FinalizeReceiptRequest {
   sessionName: string;
   participants: ReceiptParticipant[];
   items: FinalizeReceiptItemPayload[];
+  adjustments?: ReceiptAdjustment[];
   currency?: string; // ✅ Добавьте валюту в запрос
 }
 
@@ -76,6 +108,8 @@ export interface FinalizeTotalsByItem {
   itemId: string;
   name: string;
   total: number;
+  /** 'item' or the adjustment type (tax / discount / tip / service). */
+  kind?: string;
 }
 
 export interface ReceiptAllocation {
@@ -93,6 +127,8 @@ export interface FinalizeReceiptResponse {
   createdAt: string;
   totals: {
     grandTotal: number;
+    subtotal?: number;
+    adjustments?: Array<ReceiptAdjustment & { appliedAmount: number }>;
     currency?: string;
     byParticipant?: FinalizeTotalsByParticipant[];
     byItem?: FinalizeTotalsByItem[];
@@ -133,7 +169,7 @@ const normalizeError = (error: unknown): Error => {
     
     // Server errors
     if (msg.includes('503') || msg.includes('Service Unavailable') || msg.includes('not configured')) {
-      return new Error('AI service not configured. Using demo data.');
+      return new Error('AI receipt scanning is not available right now. Please try again later.');
     }
     if (msg.includes('500') || msg.includes('Server error')) {
       return new Error('Server error. Please try again.');
@@ -149,7 +185,9 @@ export const ReceiptApi = {
     try {
       console.log('[ReceiptApi] Parsing receipt:', { sessionName: payload.sessionName, imageSize: payload.image.data.length, frameCropped: true });
 
-      const { data } = await apiClient.post<ParseReceiptResponse>('/sessions/scan', payload);
+      const { data } = await apiClient.post<ParseReceiptResponse>('/sessions/scan', payload, {
+        timeout: RECEIPT_SCAN_TIMEOUT_MS,
+      });
 
       console.log('[ReceiptApi] Parse success:', { 
         sessionId: data.sessionId, 
@@ -169,6 +207,7 @@ export const ReceiptApi = {
     try {
       const { data } = await apiClient.post<ParseReceiptResponse>('/sessions/scan', formData, {
         headers: { 'Content-Type': 'multipart/form-data' },
+        timeout: RECEIPT_SCAN_TIMEOUT_MS,
       });
 
       console.log('[ReceiptApi] Upload parse success:', {

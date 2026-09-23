@@ -59,6 +59,8 @@ function normalizeDebtStatus(status: unknown): NonNullable<Debt['status']> {
 export async function saveReceiptToServer(payload: {
   sessionId?: number;
   totalAmount: number;
+  /** ISO 4217 code; stored as UNKNOWN by the server when omitted. */
+  currency?: string;
   category?: string;
   description?: string;
   allocations: Allocation[];
@@ -102,11 +104,14 @@ export async function fetchSessionsHistoryFromServer() {
   return data;
 }
 
-function buildAnalyticsFromHistory(history: any) {
+function buildAnalyticsFromHistory(history: any, currency: string | null) {
   const expensesByCategory: Record<string, number> = initialCategoryTotals();
   let totalExpenses = 0;
 
-  const entries = Array.isArray(history?.entries) ? history.entries : [];
+  // Only one currency is ever added up; other currencies are never mixed in.
+  const entries = (Array.isArray(history?.entries) ? history.entries : []).filter(
+    (entry: any) => !currency || (entry?.currency ?? entry?.payload?.currency ?? 'UNKNOWN') === currency
+  );
   entries.forEach((entry: any) => {
     const payload = entry?.payload ?? entry;
     const items = payload?.totals?.byItem ?? entry?.items ?? [];
@@ -145,7 +150,8 @@ export async function refreshSplitterStoreFromBackend() {
   // Map analytics.byCategory -> useSplitterStore.analytics.expensesByCategory
   const store = useSplitterStore.getState();
   const currentUserId = useAppStore.getState().user?.uniqueId;
-  const historyAnalytics = buildAnalyticsFromHistory(history);
+  const analyticsCurrency: string | null = analytics.currency ?? history?.entries?.[0]?.currency ?? null;
+  const historyAnalytics = buildAnalyticsFromHistory(history, analyticsCurrency);
   const serverTotalSpent = Number(analytics.totalSpent || 0);
   const shouldUseHistoryAnalytics = historyAnalytics.totalExpenses > serverTotalSpent;
   const mappedExpensesByCategory: any = shouldUseHistoryAnalytics
@@ -168,6 +174,7 @@ export async function refreshSplitterStoreFromBackend() {
     fromUserId: debt.debtor?.uniqueId ?? String(debt.debtorId ?? ''),
     toUserId: debt.creditor?.uniqueId ?? String(debt.creditorId ?? ''),
     amount: Number(debt.amount || 0),
+    currency: debt.currency ?? 'UNKNOWN',
     receiptId: String(debt.transaction?.sessionHistoryId ?? debt.transactionId ?? ''),
     description: debt.description ?? null,
     date: debt.createdAt ? new Date(debt.createdAt) : new Date(),
@@ -180,6 +187,7 @@ export async function refreshSplitterStoreFromBackend() {
 
   useSplitterStore.setState({
     analytics: {
+      currency: analyticsCurrency ?? undefined,
       totalExpenses: shouldUseHistoryAnalytics ? historyAnalytics.totalExpenses : serverTotalSpent,
       totalOwed,
       totalDebt: totalOwed + totalIOwe,

@@ -1,11 +1,12 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'expo-router';
-import { FlatList, Pressable, StyleSheet } from 'react-native';
+import { Alert, FlatList, Pressable, StyleSheet } from 'react-native';
 import { YStack, XStack, Text, Input, Button, Dialog } from 'tamagui';
 import { ChevronLeft, Plus, CheckCircle2 } from '@tamagui/lucide-icons';
 import { useTranslation } from 'react-i18next';
 
 import {
+  defaultSplitMode,
   useReceiptSessionStore,
   type ReceiptSplitItem,
 } from '@/features/receipt/model/receipt-session.store';
@@ -15,6 +16,20 @@ type DraftItem = {
   name: string;
   unitPrice: string;
   quantity: string;
+};
+
+/** Accepts "12.50" and "12,50"; returns NaN for anything else. */
+const parseDecimal = (value: string) => {
+  const compact = value.replace(/\s+/g, '');
+  return /^\d+([.,]\d+)?$/.test(compact) ? Number(compact.replace(',', '.')) : NaN;
+};
+
+const minorDigits = (currency: string) => {
+  try {
+    return new Intl.NumberFormat('en', { style: 'currency', currency }).resolvedOptions().maximumFractionDigits ?? 2;
+  } catch {
+    return 2;
+  }
 };
 
 const INITIAL_DRAFT: DraftItem = {
@@ -41,12 +56,49 @@ export default function ReviewItemsScreen() {
     return () => clearTimeout(timeout);
   }, []);
 
-  const grandTotal = useMemo(
-    () => items.reduce((acc, item) => acc + (item.totalPrice || item.unitPrice * item.quantity), 0),
+  const fmtCurrency = (n: number) => `${currency} ${Math.round(n).toLocaleString('en-US')}`;
+
+  const summary = session?.summary;
+  const adjustments = useMemo(() => summary?.adjustments ?? [], [summary]);
+
+  // Payable total = item line totals + receipt-level adjustments (discounts subtract,
+  // tax/service already included in prices are not added again).
+  const itemsTotal = useMemo(
+    () => items.reduce((acc, item) => acc + (item.totalPrice ?? item.unitPrice * item.quantity), 0),
     [items]
   );
+  const adjustmentsTotal = useMemo(
+    () =>
+      adjustments.reduce((acc, adj) => {
+        if (adj.includedInPrices) return acc;
+        return acc + (adj.type === 'discount' ? -adj.amount : adj.amount);
+      }, 0),
+    [adjustments]
+  );
+  const grandTotal = itemsTotal + adjustmentsTotal;
 
-  const fmtCurrency = (n: number) => `${currency} ${Math.round(n).toLocaleString('en-US')}`;
+  // Re-checked live, so the warning disappears once the user has corrected the items.
+  const printedTotal = typeof summary?.printedTotal === 'number' ? summary.printedTotal : null;
+  const totalMismatch = useMemo(() => {
+    if (printedTotal === null) return false;
+    const factor = 10 ** minorDigits(currency);
+    const toleranceMinor = Math.max(1, Math.ceil(items.length / 2));
+    return Math.abs(Math.round(grandTotal * factor) - Math.round(printedTotal * factor)) > toleranceMinor;
+  }, [printedTotal, grandTotal, currency, items.length]);
+
+  const warnings = useMemo(() => {
+    const list = [...(summary?.issues ?? [])];
+    if (totalMismatch && printedTotal !== null) {
+      list.push(
+        t('receiptReview.totalMismatch', {
+          computed: fmtCurrency(grandTotal),
+          printed: fmtCurrency(printedTotal),
+          defaultValue: 'Items add up to {{computed}}, but the receipt total is {{printed}}.',
+        })
+      );
+    }
+    return list;
+  }, [summary?.issues, totalMismatch, printedTotal, grandTotal, t]);
 
   const updateItem = (itemId: string, updater: (item: ReceiptSplitItem) => ReceiptSplitItem) => {
     setItems(items.map((item) => (item.id === itemId ? updater(item) : item)));
@@ -58,8 +110,8 @@ export default function ReviewItemsScreen() {
 
   const addManualItem = () => {
     const name = draft.name.trim();
-    const unitPrice = Number(draft.unitPrice);
-    const quantity = Math.max(1, Number(draft.quantity));
+    const unitPrice = parseDecimal(draft.unitPrice);
+    const quantity = Number(parseDecimal(draft.quantity).toFixed(3));
 
     if (!name) {
       setError(t('receiptReview.errNameReq'));
@@ -69,7 +121,7 @@ export default function ReviewItemsScreen() {
       setError(t('receiptReview.errPriceReq'));
       return;
     }
-    if (!Number.isFinite(quantity) || quantity <= 0) {
+    if (!Number.isFinite(quantity) || quantity <= 0 || quantity > 1000) {
       setError(t('receiptReview.errQtyReq'));
       return;
     }
@@ -81,7 +133,7 @@ export default function ReviewItemsScreen() {
       unitPrice,
       quantity,
       totalPrice: unitPrice * quantity,
-      splitMode: quantity > 1 ? 'count' : 'equal',
+      splitMode: defaultSplitMode(quantity),
       assignedTo: [],
       perPersonCount: {},
       kind: 'item',
@@ -98,9 +150,30 @@ export default function ReviewItemsScreen() {
       setError(t('receiptReview.errReceiptEmpty'));
       return;
     }
+    // Lines the AI could not read reliably must be corrected (or deleted) first.
+    if (items.some((item) => item.needsReview)) {
+      setError(t('receiptReview.fixHighlighted', 'Please check and save the highlighted items first.'));
+      return;
+    }
+    if (grandTotal < 0) {
+      setError(t('receiptReview.discountTooLarge', 'Discounts are larger than the items total.'));
+      return;
+    }
+    setError(null);
 
-    // Navigate to the next screen (participants selection)
-    router.push('/tabs/sessions/participants' as any);
+    const proceed = () => router.push('/tabs/sessions/participants' as any);
+    if (warnings.length > 0) {
+      Alert.alert(
+        t('receiptReview.reviewTitle', 'Please double-check'),
+        warnings.join('\n\n'),
+        [
+          { text: t('common.cancel', 'Cancel'), style: 'cancel' },
+          { text: t('receiptReview.continueAnyway', 'Continue anyway'), onPress: proceed },
+        ]
+      );
+      return;
+    }
+    proceed();
   };
 
   const skeletonRows = useMemo(
@@ -116,7 +189,7 @@ export default function ReviewItemsScreen() {
         updateItem(item.id, (prev) => ({
           ...prev,
           ...nextItem,
-          splitMode: nextItem.quantity > 1 ? 'count' : 'equal',
+          splitMode: defaultSplitMode(nextItem.quantity),
         }))
       }
       onDelete={() => removeItem(item.id)}
@@ -166,6 +239,39 @@ export default function ReviewItemsScreen() {
             items.length === 0 && styles.emptyListContent,
           ]}
           ItemSeparatorComponent={() => <YStack h={12} />}
+          ListHeaderComponent={
+            warnings.length > 0 ? (
+              <YStack mb="$3" p="$3" br={12} bg="#FEF3C7" borderWidth={1} borderColor="#FCD34D" gap="$1">
+                {warnings.map((warning, index) => (
+                  <Text key={index} fontSize={12} color="#92400E">
+                    {warning}
+                  </Text>
+                ))}
+              </YStack>
+            ) : null
+          }
+          ListFooterComponent={
+            adjustments.length > 0 ? (
+              <YStack mt="$3" gap="$2">
+                <XStack ai="center" jc="space-between">
+                  <Text fontSize={13} color="$gray10">{t('receiptReview.subtotal', 'Subtotal')}</Text>
+                  <Text fontSize={13} color="$gray10">{fmtCurrency(itemsTotal)}</Text>
+                </XStack>
+                {adjustments.map((adj) => (
+                  <XStack key={adj.id} ai="center" jc="space-between">
+                    <Text fontSize={13} color="$gray11">
+                      {adj.label}
+                      {adj.includedInPrices ? ` (${t('receiptReview.includedInPrices', 'included in prices')})` : ''}
+                    </Text>
+                    <Text fontSize={13} color={adj.type === 'discount' ? '#16A34A' : '$gray11'}>
+                      {adj.includedInPrices ? '' : adj.type === 'discount' ? '− ' : '+ '}
+                      {fmtCurrency(adj.amount)}
+                    </Text>
+                  </XStack>
+                ))}
+              </YStack>
+            ) : null
+          }
           ListEmptyComponent={
             <YStack ai="center" py="$8" gap="$2">
               <Text fontSize={14} color="$gray10">{t('receiptReview.noProductsTitle')}</Text>

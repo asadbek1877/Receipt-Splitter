@@ -9,7 +9,7 @@ import { Users as UsersIcon, Check, Plus, Minus, Package as PackageIcon } from '
 import { useTranslation } from 'react-i18next';
 
 import { useAppStore } from '@/shared/lib/stores/app-store';
-import { useReceiptSessionStore } from '@/features/receipt/model/receipt-session.store';
+import { defaultSplitMode, useReceiptSessionStore } from '@/features/receipt/model/receipt-session.store';
 import type { FinishPayload, ReceiptSplitItem } from '@/features/receipt/model/receipt-session.store';
 import { ReceiptApi } from '@/features/receipt/api/receipt.api';
 import type { FinalizeReceiptItemPayload, FinalizeTotalsByItem, FinalizeTotalsByParticipant, ReceiptAllocation } from '@/features/receipt/api/receipt.api';
@@ -60,7 +60,7 @@ const toLocalItems = (source: ReceiptSplitItem[]): Item[] =>
     quantity: item.quantity,
     assignedTo: [...item.assignedTo],
     perPersonCount: item.perPersonCount ? { ...item.perPersonCount } : {},
-    splitMode: item.splitMode ?? (item.quantity > 1 ? 'count' : 'equal'),
+    splitMode: item.splitMode ?? defaultSplitMode(item.quantity),
     kind: item.kind,
     totalPrice: item.totalPrice,
   }));
@@ -359,11 +359,12 @@ export default function ItemsSplitScreen() {
       }, 0),
     [items]
   );
-  const canContinue = assignedCount > 0;
   const unassignedItems = useMemo(
     () => items.filter((item) => !isFullyAssigned(item)),
     [items]
   );
+  // Every item (and every unit of counted items) must be assigned: nothing may silently drop out.
+  const canContinue = totalItems > 0 && unassignedItems.length === 0;
 
   useEffect(() => {
     if (!canContinue && submitError) {
@@ -627,6 +628,7 @@ export default function ItemsSplitScreen() {
         name: item.name,
         price: item.price,
         quantity: item.quantity,
+        totalPrice: computeItemTotal(item),
         kind: item.kind,
         splitMode: mode,
         assignedTo: mode === 'equal' ? (item.assignedTo || []) : undefined,
@@ -663,6 +665,7 @@ export default function ItemsSplitScreen() {
         username: p.username,
       })),
       items: finalizeItems,
+      adjustments: session?.summary?.adjustments ?? [],
       currency: storeCurrency, // ✅ Добавьте эту строку
     });
 
@@ -910,6 +913,11 @@ export default function ItemsSplitScreen() {
               {finalizing ? t('orders.saving') : t('orders.confirmSplit')}
             </Text>
           </Button>
+          {!canContinue && totalItems > 0 && (
+            <Text mt="$2" color="$gray10" fontSize={12} textAlign="center">
+              {t('orders.assignAllItems', 'Assign every item before confirming the split.')}
+            </Text>
+          )}
           {submitError && (
             <Text mt="$2" color="$red10" fontSize={13} textAlign="center">
               {submitError}

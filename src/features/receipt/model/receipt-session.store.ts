@@ -29,8 +29,13 @@ export interface ReceiptSplitItem {
   thumbnailUrl?: string | null;
   unitPrice: number;
   quantity: number;
+  /** Actual line total; never reconstructed from unitPrice × quantity when printed. */
   totalPrice: number;
+  discount?: number;
   kind?: string;
+  /** Set when the AI value could not be read reliably; cleared once the user edits the item. */
+  needsReview?: boolean;
+  issues?: string[];
   splitMode: ReceiptSplitMode;
   assignedTo: string[];
   perPersonCount: Record<string, number>;
@@ -102,6 +107,18 @@ const INITIAL_STATE: Pick<ReceiptSessionStore,
   lastFinishPayload: undefined,
 };
 
+/** Units can only be counted out per person for whole quantities (not e.g. 0.75 kg). */
+export const defaultSplitMode = (quantity: number): ReceiptSplitMode =>
+  Number.isInteger(quantity) && quantity > 1 ? 'count' : 'equal';
+
+/** Mock receipts come only from the backend's explicit dev mode; never accept them in release builds. */
+const assertRealScan = (response: ParseReceiptResponse) => {
+  const isDev = typeof __DEV__ !== 'undefined' && __DEV__;
+  if (response.source !== 'gemini' && !isDev) {
+    throw new Error('Receipt could not be scanned. Please try again.');
+  }
+};
+
 const toSplitItems = (response: ParseReceiptResponse): ReceiptSplitItem[] =>
   response.items.map((item) => ({
     id: item.id,
@@ -112,8 +129,11 @@ const toSplitItems = (response: ParseReceiptResponse): ReceiptSplitItem[] =>
     unitPrice: item.unitPrice,
     quantity: item.quantity,
     totalPrice: item.totalPrice,
+    discount: item.discount,
     kind: item.kind,
-    splitMode: item.quantity > 1 ? 'count' : 'equal',
+    needsReview: item.needsReview,
+    issues: item.issues,
+    splitMode: defaultSplitMode(item.quantity),
     assignedTo: [],
     perPersonCount: {},
   }));
@@ -129,7 +149,7 @@ const toParsedSessionState = (response: ParseReceiptResponse) => ({
   },
   items: toSplitItems(response),
   participants: [],
-  currency: response.summary?.currency || 'UZS',
+  currency: response.summary?.currency || 'UNKNOWN',
   finalized: undefined,
   finalizeError: undefined,
 });
@@ -173,6 +193,7 @@ export const useReceiptSessionStore = create<ReceiptSessionStore>((set, get) => 
     set({ parsing: true, parseError: undefined });
     try {
       const response = await ReceiptApi.parse(payload);
+      assertRealScan(response);
       set(toParsedSessionState(response));
 
       return response;
@@ -187,6 +208,7 @@ export const useReceiptSessionStore = create<ReceiptSessionStore>((set, get) => 
     set({ parsing: true, parseError: undefined });
     try {
       const response = await ReceiptApi.parseUpload(formData);
+      assertRealScan(response);
       set(toParsedSessionState(response));
       return response;
     } catch (error) {
@@ -206,6 +228,7 @@ export const useReceiptSessionStore = create<ReceiptSessionStore>((set, get) => 
       name: item.name,
       price: item.unitPrice,
       quantity: item.quantity,
+      totalPrice: item.totalPrice,
       kind: item.kind,
       splitMode: item.splitMode,
       assignedTo: item.splitMode === 'equal' ? item.assignedTo : undefined,
@@ -219,6 +242,7 @@ export const useReceiptSessionStore = create<ReceiptSessionStore>((set, get) => 
         sessionName: session.sessionName,
         participants,
         items: payloadItems,
+        adjustments: session.summary?.adjustments ?? [],
         currency,
       });
 

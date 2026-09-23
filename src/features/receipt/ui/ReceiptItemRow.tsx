@@ -20,6 +20,9 @@ type ReceiptItemRowValue = {
   unitPrice: number;
   quantity: number;
   totalPrice?: number;
+  discount?: number;
+  needsReview?: boolean;
+  issues?: string[];
 };
 
 type ReceiptItemRowProps = {
@@ -30,6 +33,12 @@ type ReceiptItemRowProps = {
 };
 
 const PRODUCT_IMAGE_SIZE = 50;
+
+/** Accepts "12.50" and "12,50"; returns NaN for anything else. */
+const parseDecimal = (value: string) => {
+  const compact = value.replace(/\s+/g, '');
+  return /^\d+([.,]\d+)?$/.test(compact) ? Number(compact.replace(',', '.')) : NaN;
+};
 
 const formatMoney = (currency: string, value: number) =>
   `${currency} ${Math.round(value).toLocaleString('en-US')}`;
@@ -123,20 +132,34 @@ export function ReceiptItemRow({
 
   const saveDraft = () => {
     const name = draft.name.trim();
-    const unitPrice = Number(draft.unitPrice);
-    const quantity = Math.max(1, Math.floor(Number(draft.quantity)));
+    const unitPrice = parseDecimal(draft.unitPrice);
+    const quantity = Number(parseDecimal(draft.quantity).toFixed(3));
 
-    if (!name || !Number.isFinite(unitPrice) || unitPrice <= 0 || !Number.isFinite(quantity)) {
+    if (
+      !name ||
+      !Number.isFinite(unitPrice) ||
+      unitPrice <= 0 ||
+      !Number.isFinite(quantity) ||
+      quantity <= 0 ||
+      quantity > 1000
+    ) {
       resetDraft();
       return;
     }
 
+    // Keep the printed line total (line discounts, weighed goods) unless price or quantity changed.
+    const pricingChanged = unitPrice !== item.unitPrice || quantity !== item.quantity;
     onChange({
       ...item,
       name,
       unitPrice,
       quantity,
-      totalPrice: unitPrice * quantity,
+      totalPrice: pricingChanged
+        ? unitPrice * quantity
+        : item.totalPrice ?? unitPrice * quantity,
+      discount: pricingChanged ? undefined : item.discount,
+      needsReview: false,
+      issues: undefined,
     });
     setEditing(false);
   };
@@ -195,7 +218,10 @@ export function ReceiptItemRow({
   }
 
   return (
-    <Pressable onPress={() => setEditing(true)} style={({ pressed }) => [styles.card, pressed && styles.pressed]}>
+    <Pressable
+      onPress={() => setEditing(true)}
+      style={({ pressed }) => [styles.card, item.needsReview && { borderColor: '#FCA5A5' }, pressed && styles.pressed]}
+    >
       <View style={styles.row}>
         <View style={styles.imageShell}>
           {imageSource ? (
@@ -215,6 +241,11 @@ export function ReceiptItemRow({
         <View style={styles.copy}>
           <Text numberOfLines={1} style={styles.title}>{item.name}</Text>
           <Text numberOfLines={1} style={styles.meta}>{subtitle}</Text>
+          {item.needsReview && (
+            <Text numberOfLines={2} style={[styles.meta, { color: '#DC2626' }]}>
+              {item.issues?.[0] ?? t('receiptReview.checkItem', 'Please check this item')}
+            </Text>
+          )}
         </View>
 
         <View style={styles.amountColumn}>
