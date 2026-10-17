@@ -14,14 +14,28 @@ const transporter = nodemailer.createTransport({
 const FROM_EMAIL = process.env.SMTP_FROM || process.env.SMTP_USER || "noreply@splitter.app";
 const APP_NAME = "Splitter";
 
-export function isEmailConfigured(): boolean {
+function hasSmtpCredentials(): boolean {
   return !!(process.env.SMTP_USER && process.env.SMTP_PASS);
+}
+
+// Outside production, a missing SMTP setup falls back to printing the code in the
+// server console so registration / password reset can be tested locally.
+function useConsoleFallback(): boolean {
+  return !hasSmtpCredentials() && process.env.NODE_ENV !== "production";
+}
+
+export function isEmailConfigured(): boolean {
+  return hasSmtpCredentials() || useConsoleFallback();
 }
 
 /**
  * Send a verification code email for registration
  */
 export async function sendVerificationCode(to: string, code: string): Promise<boolean> {
+  if (useConsoleFallback()) {
+    console.log(`[Email:DEV] Verification code for ${to}: ${code}`);
+    return true;
+  }
   if (!isEmailConfigured()) {
     console.error("[Email] SMTP not configured; verification code was not sent.");
     return false;
@@ -68,6 +82,10 @@ export async function sendVerificationCode(to: string, code: string): Promise<bo
  * Send a password reset email
  */
 export async function sendPasswordResetCode(to: string, code: string): Promise<boolean> {
+  if (useConsoleFallback()) {
+    console.log(`[Email:DEV] Password reset code for ${to}: ${code}`);
+    return true;
+  }
   if (!isEmailConfigured()) {
     console.error("[Email] SMTP not configured; password reset code was not sent.");
     return false;
