@@ -1,5 +1,5 @@
-import LoginForm from '@/features/auth/ui/LoginForm';
+import AuthFlow from '@/features/auth/ui/AuthFlow';
 
 export default function LoginScreen() {
-  return <LoginForm />;
+  return <AuthFlow initial="login" />;
 }

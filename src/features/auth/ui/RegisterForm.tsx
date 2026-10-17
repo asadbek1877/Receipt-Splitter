@@ -11,7 +11,6 @@ import { register, RegisterRequest, getCurrentUser } from '../api';
 import { saveToken } from '@/shared/lib/utils/token-storage';
 import { useAppStore } from '@/shared/lib/stores/app-store';
 import {
-  AuthScreen,
   ErrorBanner,
   Field,
   FooterLink,
@@ -34,22 +33,8 @@ const schema = z.object({
 
 type FormData = z.infer<typeof schema>;
 
-export default function RegisterForm() {
-  const { t } = useTranslation();
-  return (
-    <AuthScreen
-      variant="register"
-      eyebrow={t('auth.joinUs', 'Join us')}
-      title={t('auth.newAccount', 'New account')}
-      backFallback="/login"
-      subtitle={t('auth.fillDetails', 'Fill in your details to get started')}
-    >
-      <RegisterBody />
-    </AuthScreen>
-  );
-}
-
-function RegisterBody() {
+/** Registration form; rendered inside <AuthFlow>. */
+export function RegisterBody({ onSwitch }: { onSwitch: () => void }) {
   const { t } = useTranslation();
   const { p } = useAuthTheme();
   const { control, handleSubmit, formState: { errors } } = useForm<FormData>({
@@ -153,7 +138,7 @@ function RegisterBody() {
       <SocialRow />
 
       <FooterLink
-        href="/login"
+        onPress={onSwitch}
         icon={LogIn}
         text={t('auth.haveAccount', 'Already have an account?')}
         linkText={t('auth.signIn', 'Sign In')}

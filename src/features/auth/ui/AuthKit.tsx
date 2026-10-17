@@ -18,6 +18,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, {
   Easing,
   FadeIn,
+  FadeOut,
   type SharedValue,
   interpolate,
   useAnimatedProps,
@@ -58,7 +59,7 @@ const AnimatedRect = Animated.createAnimatedComponent(Rect);
 // ---------------------------------------------------------------------------
 // Palettes
 //   login    — light: green,        dark: blue → violet  (matches the mock)
-//   register — light: teal → sky,   dark: violet → pink
+//   register — same colours, different background shape + hero
 // ---------------------------------------------------------------------------
 type Pair = readonly [string, string];
 
@@ -204,48 +205,8 @@ const DARK_BASE: Palette = {
 
 export const PALETTES: Record<AuthVariant, { light: Palette; dark: Palette }> = {
   login: { light: LIGHT_BASE, dark: DARK_BASE },
-  register: {
-    light: {
-      ...LIGHT_BASE,
-      bg: ['#ECFEFF', '#FFFFFF'],
-      link: '#0D9488',
-      gradient: ['#14B8A6', '#0EA5E9'],
-      gradientText: ['#0D9488', '#0284C7'],
-      inputFocus: '#14B8A6',
-      inputBg: 'rgba(240,253,250,0.55)',
-      footerBg: 'rgba(204,251,241,0.5)',
-      footerIcon: '#0D9488',
-      blob: ['#5EEAD4', '#0EA5E9'],
-      blobSoft: '#A5F3FC',
-      sparkle: '#0EA5E9',
-      topShape: ['#A5F3FC', '#5EEAD4'],
-      cornerA: ['#99F6E4', '#2DD4BF'],
-      cornerB: ['#BAE6FD', '#38BDF8'],
-      orbA: '#5EEAD4',
-      orbB: '#7DD3FC',
-    },
-    dark: {
-      ...DARK_BASE,
-      bg: ['#12091F', '#1B0F30'],
-      link: '#F0ABFC',
-      gradient: ['#A855F7', '#EC4899'],
-      gradientText: ['#C084FC', '#F472B6'],
-      inputFocus: '#EC4899',
-      footerBg: 'rgba(236,72,153,0.14)',
-      footerIcon: '#F0ABFC',
-      blob: ['#8B5CF6', '#EC4899'],
-      blobSoft: '#D946EF',
-      sparkle: '#F9A8D4',
-      glassCaustic: 'rgba(244,114,182,0.14)',
-      glassOpaque: '#1F1330',
-      topShape: ['#3B1A5C', '#24123D'],
-      cornerA: ['#DB2777', '#9D174D'],
-      cornerB: ['#A855F7', '#6D28D9'],
-      orbA: '#A855F7',
-      orbB: '#EC4899',
-      avatarBg: '#2A1840',
-    },
-  },
+  // Same colours on both screens; they differ by background shape, hero and copy.
+  register: { light: LIGHT_BASE, dark: DARK_BASE },
 };
 
 // ---------------------------------------------------------------------------
@@ -1039,6 +1000,7 @@ export function AuthScreen({
   title = APP_TITLE,
   subtitle,
   backFallback,
+  onBack,
   children,
 }: {
   variant: AuthVariant;
@@ -1047,6 +1009,8 @@ export function AuthScreen({
   subtitle: string;
   /** Where the back button goes when there is no screen to go back to. */
   backFallback: Href;
+  /** Overrides the back button (e.g. register → login inside the same screen). */
+  onBack?: () => void;
   children: React.ReactNode;
 }) {
   const theme = useAppStore((s) => s.theme);
@@ -1062,7 +1026,8 @@ export function AuthScreen({
   const titleSize = Math.min(34, Math.floor(contentWidth / 9.6));
 
   const goBack = () => {
-    if (router.canGoBack()) router.back();
+    if (onBack) onBack();
+    else if (router.canGoBack()) router.back();
     else router.replace(backFallback);
   };
 
@@ -1075,7 +1040,9 @@ export function AuthScreen({
               {/* Everything the glass blurs lives inside this target (required on Android) */}
               <BlurTargetView ref={blurTargetRef} style={StyleSheet.absoluteFill}>
                 <LinearGradient colors={p.bg} style={StyleSheet.absoluteFill} />
-                <BackgroundDecor variant={variant} isDark={isDark} p={p} width={width} height={height} />
+                <Animated.View key={variant} entering={FadeIn.duration(320)} exiting={FadeOut.duration(320)} style={StyleSheet.absoluteFill}>
+                  <BackgroundDecor variant={variant} isDark={isDark} p={p} width={width} height={height} />
+                </Animated.View>
               </BlurTargetView>
 
               <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
@@ -1087,7 +1054,9 @@ export function AuthScreen({
                   <View style={styles.inner}>
                     {/* Hero sits behind the header/title so it can be large */}
                     <View style={styles.illustrationWrap} pointerEvents="none">
-                      {variant === 'login' ? <ReceiptIllustration p={p} isDark={isDark} /> : <SplitIllustration p={p} />}
+                      <Animated.View key={variant} entering={FadeIn.duration(320)} exiting={FadeOut.duration(240)} style={styles.heroLayer}>
+                        {variant === 'login' ? <ReceiptIllustration p={p} isDark={isDark} /> : <SplitIllustration p={p} />}
+                      </Animated.View>
                     </View>
 
                     <View style={styles.headerRow}>
@@ -1103,14 +1072,16 @@ export function AuthScreen({
                       </Pressable>
                     </View>
 
-                    <View style={styles.titleBlock}>
+                    <Animated.View key={variant} entering={FadeIn.duration(260)} style={styles.titleBlock}>
                       <Text style={[styles.welcome, { color: p.text, fontSize: titleSize * 0.82 }]}>{eyebrow}</Text>
                       <GradientTitle p={p} text={title} fontSize={titleSize} width={contentWidth} />
                       <Swoosh p={p} />
                       <Text style={[styles.subtitle, { color: p.muted }]}>{subtitle}</Text>
-                    </View>
+                    </Animated.View>
 
-                    {children}
+                    <Animated.View key={variant} entering={FadeIn.duration(260)}>
+                      {children}
+                    </Animated.View>
                   </View>
                 </ScrollView>
               </KeyboardAvoidingView>
@@ -1185,25 +1156,24 @@ export function SocialRow() {
 }
 
 /**
- * Glass pill at the bottom that switches to the sibling auth screen.
- * Uses `replace` so login ⇄ register cross-fade instead of stacking up.
+ * Glass pill at the bottom that switches to the sibling auth form.
+ * Switching happens in place (no navigation), so there is no flash or stutter.
  */
 export function FooterLink({
-  href,
+  onPress,
   icon: Icon,
   text,
   linkText,
 }: {
-  href: Href;
+  onPress: () => void;
   icon: React.ComponentType<{ size?: number; color?: string }>;
   text: string;
   linkText: string;
 }) {
   const { p } = useAuthTheme();
-  const router = useRouter();
   return (
     <Pressable
-      onPress={() => router.replace(href)}
+      onPress={onPress}
       accessibilityRole="link"
       style={StyleSheet.flatten([styles.footer, styles.glass, { borderColor: p.backBorder }])}
     >
@@ -1241,7 +1211,8 @@ export const authStyles = StyleSheet.create({
     shadowOffset: { width: 0, height: 2 },
     elevation: 2,
   },
-  illustrationWrap: { position: 'absolute', top: -14, right: -30 },
+  illustrationWrap: { position: 'absolute', top: -14, right: -30, width: 210, height: 196 },
+  heroLayer: { position: 'absolute', top: 0, left: 0 },
   illustration: { width: 210, height: 196 },
   titleBlock: { marginTop: 4, marginBottom: 22 },
   welcome: { fontWeight: '800', letterSpacing: -0.5 },

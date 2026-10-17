@@ -1,5 +1,5 @@
-import RegisterForm from '@/features/auth/ui/RegisterForm';
+import AuthFlow from '@/features/auth/ui/AuthFlow';
 
 export default function RegisterScreen() {
-  return <RegisterForm />;
+  return <AuthFlow initial="register" />;
 }

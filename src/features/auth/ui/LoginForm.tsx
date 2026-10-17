@@ -11,7 +11,6 @@ import { login, LoginRequest, getCurrentUser } from '../api';
 import { saveToken } from '@/shared/lib/utils/token-storage';
 import { useAppStore } from '@/shared/lib/stores/app-store';
 import {
-  AuthScreen,
   ErrorBanner,
   Field,
   FooterLink,
@@ -31,21 +30,8 @@ const schema = z.object({
 
 type FormData = z.infer<typeof schema>;
 
-export default function LoginForm() {
-  const { t } = useTranslation();
-  return (
-    <AuthScreen
-      variant="login"
-      eyebrow={t('auth.welcomeTo', 'Welcome to')}
-      backFallback="/onboarding"
-      subtitle={t('auth.enterCredentials', 'Enter your credentials to continue')}
-    >
-      <LoginBody />
-    </AuthScreen>
-  );
-}
-
-function LoginBody() {
+/** Login form; rendered inside <AuthFlow>. */
+export function LoginBody({ onSwitch }: { onSwitch: () => void }) {
   const { t } = useTranslation();
   const { p } = useAuthTheme();
   const { control, handleSubmit, formState: { errors } } = useForm<FormData>({
@@ -142,7 +128,7 @@ function LoginBody() {
       <SocialRow />
 
       <FooterLink
-        href="/register"
+        onPress={onSwitch}
         icon={UserPlus}
         text={t('auth.noAccount', "Don't have an account?")}
         linkText={t('auth.signUp', 'Sign Up')}
