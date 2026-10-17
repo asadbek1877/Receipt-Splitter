@@ -644,7 +644,7 @@ export default function LoginForm() {
             <View style={styles.headerRow}>
               <Animated.View entering={FadeIn.delay(80)}>
                 <Link href="/" asChild>
-                  <Pressable style={[styles.back, { backgroundColor: p.backBg, borderColor: p.backBorder }]}>
+                  <Pressable style={StyleSheet.flatten([styles.back, { backgroundColor: p.backBg, borderColor: p.backBorder }])}>
                     <ChevronLeft size={20} color={p.text} />
                   </Pressable>
                 </Link>
@@ -761,7 +761,7 @@ export default function LoginForm() {
             {/* Footer */}
             <Animated.View entering={FadeInUp.delay(700).duration(500)}>
               <Link href="/register" asChild>
-                <Pressable style={[styles.footer, { backgroundColor: p.footerBg }]}>
+                <Pressable style={StyleSheet.flatten([styles.footer, { backgroundColor: p.footerBg }])}>
                   <UserPlus size={18} color={p.footerIcon} />
                   <Text style={[styles.footerText, { color: p.muted }]}>
                     {t('auth.noAccount', "Don't have an account?")}
