@@ -1,6 +1,5 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useFocusEffect } from '@react-navigation/native';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Pressable } from 'react-native';
 import { useSharedValue } from 'react-native-reanimated';
@@ -236,6 +235,17 @@ export default function ItemsSplitScreen() {
   const [showSuccess, setShowSuccess] = useState(false);
   const [finalizing, setFinalizing] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  // Synchronous re-entrancy lock: React state updates from setFinalizing() are not
+  // guaranteed to have applied before a second tap/invocation runs, so a ref (which
+  // updates immediately) is what actually prevents two finalize requests from firing.
+  // This is a UX safeguard only — the server's status-guarded finalize transaction is
+  // what makes duplicate/concurrent requests safe even if this guard is bypassed.
+  const finalizingRef = useRef(false);
+  const navigateTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => () => {
+    if (navigateTimeoutRef.current) clearTimeout(navigateTimeoutRef.current);
+  }, []);
   const dropZoneRects = useSharedValue<DropZoneRects>([]);
   const activeDropIndex = useSharedValue(-1);
 
@@ -612,7 +622,8 @@ export default function ItemsSplitScreen() {
 
   // --- finalize and navigate ---
   const onContinue = useCallback(async () => {
-  if (!canContinue || finalizing) return;
+  if (!canContinue || finalizing || finalizingRef.current) return;
+  finalizingRef.current = true;
 
   setSubmitError(null);
   setFinalizing(true);
@@ -721,9 +732,11 @@ export default function ItemsSplitScreen() {
       }
       setShowSuccess(true);
 
-      setTimeout(() => {
+      navigateTimeoutRef.current = setTimeout(() => {
+        navigateTimeoutRef.current = null;
         setShowSuccess(false);
         setFinalizing(false);
+        finalizingRef.current = false;
 
         try {
           const q = encodeURIComponent(JSON.stringify(finishPayload));
@@ -740,6 +753,7 @@ export default function ItemsSplitScreen() {
     } catch (error) {
       setShowSuccess(false);
       setFinalizing(false);
+      finalizingRef.current = false;
 
       const message = error instanceof Error ? error.message : t('orders.errors.finalizeFailed');
       setSubmitError(message);

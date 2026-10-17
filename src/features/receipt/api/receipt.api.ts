@@ -181,12 +181,20 @@ const normalizeError = (error: unknown): Error => {
 };
 
 export const ReceiptApi = {
-  async parse(payload: ParseReceiptRequest): Promise<ParseReceiptResponse> {
+  /**
+   * @param idempotencyKey Identifies this logical scan attempt to the server. Reusing the
+   * same key on a retry (after a timeout, or the user tapping "scan" again for the same
+   * captured photo) makes the server return the original result instead of calling the
+   * AI and creating a session a second time. Pass a fresh key only for a genuinely new
+   * scan (a new photo).
+   */
+  async parse(payload: ParseReceiptRequest, idempotencyKey?: string): Promise<ParseReceiptResponse> {
     try {
       console.log('[ReceiptApi] Parsing receipt:', { sessionName: payload.sessionName, imageSize: payload.image.data.length, frameCropped: true });
 
       const { data } = await apiClient.post<ParseReceiptResponse>('/sessions/scan', payload, {
         timeout: RECEIPT_SCAN_TIMEOUT_MS,
+        headers: idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : undefined,
       });
 
       console.log('[ReceiptApi] Parse success:', { 
@@ -203,10 +211,13 @@ export const ReceiptApi = {
     }
   },
 
-  async parseUpload(formData: FormData): Promise<ParseReceiptResponse> {
+  async parseUpload(formData: FormData, idempotencyKey?: string): Promise<ParseReceiptResponse> {
     try {
       const { data } = await apiClient.post<ParseReceiptResponse>('/sessions/scan', formData, {
-        headers: { 'Content-Type': 'multipart/form-data' },
+        headers: {
+          'Content-Type': 'multipart/form-data',
+          ...(idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : {}),
+        },
         timeout: RECEIPT_SCAN_TIMEOUT_MS,
       });
 

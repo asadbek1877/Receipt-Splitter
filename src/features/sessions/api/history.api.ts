@@ -107,11 +107,11 @@ export interface SessionHistoryResponseRaw {
 }
 
 const HISTORY_ENDPOINT = '/sessions/history';
-const MAX_LIMIT = 100;
+// The backend rejects limit > 50 with HTTP 400 (GET /sessions/history), so never ask for more.
+const MAX_LIMIT = 50;
 const DEFAULT_LIMIT = 5;
 
 let currentRequest: AbortController | null = null;
-let isLoading = false;
 
 /** ===== Debug helpers ===== */
 const DEBUG_HISTORY =
@@ -134,10 +134,12 @@ const logReq = (msg: string, extra?: any) => {
   console.log(`HISTORY ⟶ ${msg}`, extra ? `\n${safeStringify(extra)}` : '');
 };
 
+// Summary only: stringifying the whole history (up to 50 full payloads) on every fetch
+// blocked the JS thread and flooded the Metro log.
 const logRes = (msg: string, data?: any) => {
   if (!DEBUG_HISTORY) return;
   // eslint-disable-next-line no-console
-  console.log(`HISTORY ⟵ ${msg}`, data ? `\n${safeStringify(data)}` : '');
+  console.log(`HISTORY ⟵ ${msg}`, data ? { count: data?.count, limit: data?.limit, scope: data?.scope } : '');
 };
 
 const logErr = (msg: string, error: any) => {
@@ -155,14 +157,8 @@ export const SessionsHistoryApi = {
     limit?: number;
     all?: boolean;
   }): Promise<SessionHistoryResponseRaw> {
-    if (isLoading) {
-      throw new Error('Request already in progress');
-    }
-
-    if (currentRequest) {
-      currentRequest.abort();
-    }
-
+    // Callers are serialized by the history store, so requests never overlap here and
+    // nothing needs to be rejected or aborted.
     const all = options?.all ?? false;
     const limit = options?.limit;
 
@@ -172,7 +168,6 @@ export const SessionsHistoryApi = {
         : DEFAULT_LIMIT;
 
     currentRequest = new AbortController();
-    isLoading = true;
 
     const reqMeta = {
       url: HISTORY_ENDPOINT,
@@ -209,20 +204,18 @@ export const SessionsHistoryApi = {
       }
       throw error;
     } finally {
-      isLoading = false;
       currentRequest = null;
     }
   },
 
   isRequestInProgress(): boolean {
-    return isLoading;
+    return currentRequest !== null;
   },
 
   cancelCurrentRequest(): void {
     if (currentRequest) {
       currentRequest.abort();
       currentRequest = null;
-      isLoading = false;
       logReq('cancelCurrentRequest() called');
     }
   },

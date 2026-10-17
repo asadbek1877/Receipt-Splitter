@@ -6,7 +6,7 @@ import Animated, { FadeIn, FadeInDown } from 'react-native-reanimated';
 import { Check, DollarSign, Pencil, RotateCcw, Wallet } from '@tamagui/lucide-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useFocusEffect } from '@react-navigation/native';
+import { useFocusEffect } from 'expo-router';
 
 import { useSplitterStore } from '@/shared/store/useSplitterStore';
 import { useAppStore } from '@/shared/lib/stores/app-store';

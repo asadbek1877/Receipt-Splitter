@@ -360,7 +360,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#DFF7EE',
   },
   imageSkeleton: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     overflow: 'hidden',
     backgroundColor: '#EEF2F7',
   },

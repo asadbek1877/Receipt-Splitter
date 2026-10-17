@@ -44,6 +44,17 @@ const MAX_RETRIES = 1;
 const RETRY_DELAY = 800;
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 
+// Only requests whose HTTP method is safe to repeat may be auto-retried. A timeout or
+// dropped connection gives no guarantee the server didn't already act on the original
+// request, so retrying a POST/PATCH/PUT/DELETE here could resend a non-idempotent write
+// (e.g. POST /sessions/scan, POST /sessions/finalize) and duplicate its side effects.
+// This is a client-side convenience only — the backend does not rely on it for
+// correctness (see the server-side idempotency key on /sessions/scan and the
+// status-guarded finalize transaction).
+const RETRY_SAFE_METHODS = new Set(['get', 'head', 'options']);
+const isRetrySafeRequest = (config: any): boolean =>
+  RETRY_SAFE_METHODS.has(String(config?.method || '').toLowerCase());
+
 // Custom error class to mark errors that have already been formatted
 class ApiError extends Error {
   /** Already formatted by the interceptor — do not wrap again */
@@ -61,9 +72,10 @@ apiClient.interceptors.response.use(undefined, async (error: AxiosError) => {
   const config = error.config as any;
   if (!config) return Promise.reject(error);
   config.__retryCount = config.__retryCount || 0;
-  // Only retry on actual network errors (no response at all), NOT on 500s
+  // Only retry on actual network errors (no response at all), NOT on 500s, and only for
+  // methods that are safe to repeat.
   const isNetworkError = !error.response && (String(error.message).toLowerCase().includes('network') || error.code === 'ECONNABORTED');
-  if (isNetworkError && config.__retryCount < MAX_RETRIES) {
+  if (isNetworkError && isRetrySafeRequest(config) && config.__retryCount < MAX_RETRIES) {
     config.__retryCount += 1;
     await sleep(RETRY_DELAY * config.__retryCount);
     return apiClient(config);

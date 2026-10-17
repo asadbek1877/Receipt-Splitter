@@ -1,8 +1,7 @@
 // app/tabs/index.tsx - Japanese-style Home Page with liquid glass effects
 import React, { useEffect, useMemo, useRef, useCallback, useState } from 'react';
 import { Pressable, StyleSheet, Dimensions, RefreshControl } from 'react-native';
-import { useRouter } from 'expo-router';
-import { useFocusEffect } from '@react-navigation/native';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { YStack, XStack, Text, View, ScrollView } from 'tamagui';
 import { 
   QrCode, 

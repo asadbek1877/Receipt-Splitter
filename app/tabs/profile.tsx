@@ -18,7 +18,7 @@ import { useAppStore } from '@/shared/lib/stores/app-store';
 import { changePassword, resetAvatar, updateAvatar, updateEmail, updateUsername, uploadAvatar } from '@/features/auth/api';
 
 const PICKER_OPTIONS: ImagePicker.ImagePickerOptions = {
-  mediaTypes: ImagePicker.MediaTypeOptions.Images,
+  mediaTypes: ["images"],
   allowsEditing: true,
   aspect: [1, 1],
   quality: 0.9,

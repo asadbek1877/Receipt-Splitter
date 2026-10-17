@@ -2,10 +2,10 @@ import React, { useCallback, useMemo, useState } from 'react';
 import { Dimensions, Pressable } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { BarChart, PieChart } from 'react-native-chart-kit';
-import { useFocusEffect } from '@react-navigation/native';
 import { YStack, XStack, Text, View, ScrollView } from 'tamagui';
 import { CalendarDays, TrendingDown, TrendingUp, Wallet } from '@tamagui/lucide-icons';
 import { useTranslation } from 'react-i18next';
+import { useFocusEffect } from 'expo-router';
 
 import { useAppStore } from '@/shared/lib/stores/app-store';
 import { formatCurrency } from '@/shared/config/currencies';

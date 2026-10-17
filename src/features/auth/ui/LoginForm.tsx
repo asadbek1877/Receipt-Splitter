@@ -196,7 +196,7 @@ export default function LoginForm() {
       {/* Header */}
       <Animated.View entering={FadeIn.delay(100)} style={[styles.header, { paddingTop: insets.top + 16 }]}>
         <Link href="/" asChild>
-          <Pressable style={[styles.backButton, { backgroundColor: colors.glass, borderColor: colors.glassBorder }]}>
+          <Pressable style={StyleSheet.flatten([styles.backButton, { backgroundColor: colors.glass, borderColor: colors.glassBorder }])}>
             <ChevronLeft size={20} color={colors.text} />
           </Pressable>
         </Link>

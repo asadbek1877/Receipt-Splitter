@@ -1,14 +1,13 @@
 // app/tabs/_layout.tsx
 
 import React, { useCallback, useEffect } from 'react';
-import { Tabs, useRouter } from 'expo-router';
+import { Tabs, useRouter, useFocusEffect } from 'expo-router';
 import { Pressable } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { YStack, XStack, Text, View } from 'tamagui';
 import { Home, Settings, Bell, ChevronLeft, Flower2 } from '@tamagui/lucide-icons';
 import { useTranslation } from 'react-i18next';
 import { AppState } from 'react-native';
-import { useFocusEffect } from '@react-navigation/native';
 import { LinearGradient } from 'expo-linear-gradient';
 import Animated, { FadeIn } from 'react-native-reanimated';
 
@@ -175,7 +174,7 @@ export default function TabLayout() {
           href: null,
           title: homeTitle,
           tabBarLabel: homeLabel,
-          tabBarIcon: ({ color, size }) => <Home size={size} color={color} />,
+          tabBarIcon: ({ color, size }) => <Home size={size} color={color as string} />,
         }}
       />
       <Tabs.Screen
@@ -184,7 +183,7 @@ export default function TabLayout() {
           href: null,
           title: settingsTitle,
           tabBarLabel: settingsTitle,
-          tabBarIcon: ({ color, size }) => <Settings size={size} color={color} />,
+          tabBarIcon: ({ color, size }) => <Settings size={size} color={color as string} />,
         }}
       />
 

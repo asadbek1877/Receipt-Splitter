@@ -5,9 +5,8 @@ import {
   Animated as RNAnimated, Pressable, Dimensions,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
-import { useFocusEffect, useIsFocused } from '@react-navigation/native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect, useIsFocused } from 'expo-router';
 import { YStack, XStack, Button, Paragraph, Input, Text, Spinner, Circle } from 'tamagui';
 import {
   ChevronLeft, AlertTriangle, Camera as CameraIcon,
@@ -316,7 +315,7 @@ export default function ScanReceiptScreen() {
     if (!hasPermission) return;
 
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      mediaTypes: ["images"],
       allowsEditing: true,
       quality: 0.9,
       selectionLimit: 1,
@@ -702,7 +701,7 @@ const S = StyleSheet.create({
 
   // Scan overlay
   scanOverlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     flexDirection: 'column',
   },
   overlayTop: {
@@ -816,7 +815,7 @@ const S = StyleSheet.create({
 
   // Processing
   processingOverlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: 'rgba(15,23,42,0.92)',
     alignItems: 'center', justifyContent: 'center',
   },
@@ -929,7 +928,7 @@ const S = StyleSheet.create({
 
   // Photo confirmation overlay
   confirmOverlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     zIndex: 30,
     backgroundColor: '#0f172a',
   },

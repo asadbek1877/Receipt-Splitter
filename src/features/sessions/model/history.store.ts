@@ -102,58 +102,75 @@ const normalizeEntry = (raw: SessionHistoryEntryRaw): SessionHistoryEntry => {
   };
 };
 
+// Several screens (home, history list, detail, analytics, finalize) ask for history at the
+// same time and all share this one list. Requests are coalesced here: an identical request
+// that is already running is shared, a different one waits for it. Nothing is dropped, so a
+// finalize-time refresh can no longer be silently lost while another fetch is in flight.
+let inFlightHistory: { key: string; promise: Promise<SessionHistoryResponseRaw | undefined> } | null = null;
+// After a failure the same request is not retried for a few seconds: screens re-run their
+// fetch effect when `loading` flips back, which would otherwise hammer an unreachable server.
+const RETRY_COOLDOWN_MS = 5000;
+let lastFailure: { key: string; at: number } | null = null;
+
 export const useSessionsHistoryStore = create<State & Actions>((set, get) => ({
   ...initialState,
 
-  async fetchHistory(requestedLimit, all = false) {
-    const { loading } = get();
-
-    if (loading) {
-      console.warn('History fetch already in progress');
-      return undefined;
+  fetchHistory(requestedLimit, all = false) {
+    // The shared list never shrinks: a screen that needs 10 items is served by a list that
+    // was already loaded with 50, so screens no longer overwrite each other's limits.
+    const effectiveLimit = Math.max(requestedLimit ?? 0, get().limit ?? 0) || undefined;
+    const key = `${effectiveLimit ?? ''}|${all}`;
+    if (inFlightHistory && inFlightHistory.key === key) return inFlightHistory.promise;
+    if (lastFailure && lastFailure.key === key && Date.now() - lastFailure.at < RETRY_COOLDOWN_MS) {
+      return Promise.resolve(undefined);
     }
 
-    set({ loading: true, error: undefined });
+    const run = async (): Promise<SessionHistoryResponseRaw | undefined> => {
+      set({ loading: true, error: undefined });
+      try {
+        const response = await SessionsHistoryApi.listLatest({
+          limit: effectiveLimit,
+          all,
+        });
 
-    try {
-      const response = await SessionsHistoryApi.listLatest({
-        limit: requestedLimit,
-        all,
-      });
+        const normalized = (response.entries ?? []).map(normalizeEntry);
 
-      const normalized = (response.entries ?? []).map(normalizeEntry);
+        set({
+          sessions: normalized,
+          count: response.count ?? 0,
+          limit: Math.max(response.limit ?? 0, get().limit ?? 0),
+          initialized: true,
+          loading: false,
+          lastFetchedAt: Date.now(),
+        });
+        lastFailure = null;
 
-      set({
-        sessions: normalized,
-        count: response.count ?? 0,
-        limit: response.limit,
-        initialized: true,
-        loading: false,
-        lastFetchedAt: Date.now(),
-      });
+        return response;
+      } catch (error: any) {
+        const errorMessage =
+          error?.message === 'Request cancelled'
+            ? 'Request was cancelled'
+            : error?.message ?? 'Failed to load sessions history';
 
-      return response;
-    } catch (error: any) {
-      const errorMessage =
-        error?.message === 'Request cancelled'
-          ? 'Request was cancelled'
-          : error?.message ?? 'Failed to load sessions history';
+        // Keep the previous limit: a failed request must not make screens think the
+        // larger list was loaded.
+        set({ error: errorMessage, initialized: true, loading: false });
+        lastFailure = { key, at: Date.now() };
+        return undefined;
+      }
+    };
 
-      set({
-        error: errorMessage,
-        limit: requestedLimit,
-        initialized: true,
-        loading: false,
-      });
-
-      // Suppress console errors
-      // console.error('Failed to fetch history:', error);
-      return undefined;
-    }
+    const previous = inFlightHistory?.promise ?? Promise.resolve(undefined);
+    const promise: Promise<SessionHistoryResponseRaw | undefined> = previous.then(run, run).finally(() => {
+      if (inFlightHistory?.promise === promise) inFlightHistory = null;
+    });
+    inFlightHistory = { key, promise };
+    return promise;
   },
 
   async forceRefresh(limit, all = false) {
-    // просто делегируем в fetchHistory (можно было бы игнорировать loading, но у нас уже защита есть)
+    // Explicit refresh (pull-to-refresh, after finalize) bypasses the retry cooldown.
+    lastFailure = null;
     return get().fetchHistory(limit, all);
   },
 

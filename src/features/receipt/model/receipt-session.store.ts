@@ -12,6 +12,7 @@ import type {
   ReceiptAllocation,
 } from '@/features/receipt/api/receipt.api';
 import { ReceiptApi } from '@/features/receipt/api/receipt.api';
+import { v4 as uuid } from 'uuid';
 
 export type CapturedReceiptImage = {
   uri?: string;
@@ -65,6 +66,14 @@ export type FinishPayload = {
 
 interface ReceiptSessionStore {
   capture?: CapturedReceiptImage;
+  /**
+   * Identifies the current in-progress scan attempt to the server (sent as the
+   * Idempotency-Key header). Generated once per captured photo, not per HTTP call, so a
+   * retry of the SAME captured photo — including a duplicate request the client did not
+   * intend to send — resolves to the same server-side result instead of a second AI call
+   * and a second session. A genuinely new photo gets a new key.
+   */
+  scanIdempotencyKey?: string;
   parsing: boolean;
   parseError?: string;
   session?: ReceiptSessionMeta;
@@ -85,6 +94,10 @@ interface ReceiptSessionStore {
   setItems: (items: ReceiptSplitItem[]) => void;
   setLastFinishPayload: (payload?: FinishPayload) => void;
 
+  /** Client-side safeguard only: while a scan is in flight, a re-entrant call (e.g. a
+   * double-tap) is joined to the same request instead of firing a second one. The
+   * server-side idempotency key above is what makes this safe even if this guard is
+   * ever bypassed. */
   parseReceipt: (payload: ParseReceiptRequest) => Promise<ParseReceiptResponse>;
   parseReceiptUpload: (formData: FormData) => Promise<ParseReceiptResponse>;
   finalizeSession: () => Promise<FinalizeReceiptResponse>;
@@ -92,9 +105,10 @@ interface ReceiptSessionStore {
 }
 
 const INITIAL_STATE: Pick<ReceiptSessionStore,
-  'capture' | 'parsing' | 'parseError' | 'session' | 'items' | 'participants' | 'currency' | 'finalizing' | 'finalizeError' | 'finalized' | 'lastFinishPayload'
+  'capture' | 'scanIdempotencyKey' | 'parsing' | 'parseError' | 'session' | 'items' | 'participants' | 'currency' | 'finalizing' | 'finalizeError' | 'finalized' | 'lastFinishPayload'
 > = {
   capture: undefined,
+  scanIdempotencyKey: undefined,
   parsing: false,
   parseError: undefined,
   session: undefined,
@@ -154,11 +168,15 @@ const toParsedSessionState = (response: ParseReceiptResponse) => ({
   finalizeError: undefined,
 });
 
+// Module-level, not store state: a Promise is not serializable state and this is a
+// process-local dedupe guard, not a correctness mechanism (the server is authoritative).
+let inFlightScan: Promise<ParseReceiptResponse> | null = null;
+
 export const useReceiptSessionStore = create<ReceiptSessionStore>((set, get) => ({
   ...INITIAL_STATE,
 
-  setCapture: (capture) => set({ capture }),
-  clearCapture: () => set({ capture: undefined }),
+  setCapture: (capture) => set({ capture, scanIdempotencyKey: capture ? uuid() : undefined }),
+  clearCapture: () => set({ capture: undefined, scanIdempotencyKey: undefined }),
 
   setSessionName: (sessionName) => {
     set((state) => {
@@ -190,32 +208,47 @@ export const useReceiptSessionStore = create<ReceiptSessionStore>((set, get) => 
   setLastFinishPayload: (payload) => set({ lastFinishPayload: payload }),
 
   parseReceipt: async (payload) => {
-    set({ parsing: true, parseError: undefined });
-    try {
-      const response = await ReceiptApi.parse(payload);
-      assertRealScan(response);
-      set(toParsedSessionState(response));
-
-      return response;
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Failed to parse receipt';
-      set({ parsing: false, parseError: message });
-      throw error;
-    }
+    if (inFlightScan) return inFlightScan; // join the already-running attempt instead of duplicating it
+    const key = get().scanIdempotencyKey ?? uuid();
+    const run = (async () => {
+      set({ parsing: true, parseError: undefined });
+      try {
+        const response = await ReceiptApi.parse(payload, key);
+        assertRealScan(response);
+        set(toParsedSessionState(response));
+        return response;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Failed to parse receipt';
+        set({ parsing: false, parseError: message });
+        throw error;
+      } finally {
+        inFlightScan = null;
+      }
+    })();
+    inFlightScan = run;
+    return run;
   },
 
   parseReceiptUpload: async (formData) => {
-    set({ parsing: true, parseError: undefined });
-    try {
-      const response = await ReceiptApi.parseUpload(formData);
-      assertRealScan(response);
-      set(toParsedSessionState(response));
-      return response;
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Failed to parse receipt';
-      set({ parsing: false, parseError: message });
-      throw error;
-    }
+    if (inFlightScan) return inFlightScan;
+    const key = get().scanIdempotencyKey ?? uuid();
+    const run = (async () => {
+      set({ parsing: true, parseError: undefined });
+      try {
+        const response = await ReceiptApi.parseUpload(formData, key);
+        assertRealScan(response);
+        set(toParsedSessionState(response));
+        return response;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Failed to parse receipt';
+        set({ parsing: false, parseError: message });
+        throw error;
+      } finally {
+        inFlightScan = null;
+      }
+    })();
+    inFlightScan = run;
+    return run;
   },
 
   finalizeSession: async () => {

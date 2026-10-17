@@ -9,8 +9,7 @@ import {
   Spinner,
   Text,
 } from 'tamagui';
-import { useRouter } from 'expo-router';
-import { useFocusEffect } from '@react-navigation/native';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { Plus, Check, X as IconX, Crown, Flower2 } from '@tamagui/lucide-icons';
 import { useTranslation } from 'react-i18next';
 import Animated, { FadeIn, FadeInDown } from 'react-native-reanimated';

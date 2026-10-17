@@ -23,7 +23,9 @@ module.exports = function (api) {
       [
         'module-resolver',
         {
-          root: ['./'],
+          // NOTE: no `root` option. `root: ['./']` makes this plugin rewrite a bare
+          // `require(".")` (used inside expo-router 57 itself) to the project root
+          // (index.ts), which breaks expo-router at runtime. Only the '@' alias is needed.
           alias: {
             '@': './src'
           },
