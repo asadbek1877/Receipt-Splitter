@@ -18,7 +18,6 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, {
   Easing,
   FadeIn,
-  FadeOut,
   type SharedValue,
   interpolate,
   useAnimatedProps,
@@ -109,7 +108,7 @@ export type Palette = {
   appleFill: string;
 };
 
-export type AuthVariant = 'login' | 'register';
+export type AuthVariant = 'login' | 'register' | 'forgot';
 
 const LIGHT_BASE: Palette = {
   bg: ['#FFFFFF', '#FFFFFF'],
@@ -207,6 +206,7 @@ export const PALETTES: Record<AuthVariant, { light: Palette; dark: Palette }> = 
   login: { light: LIGHT_BASE, dark: DARK_BASE },
   // Same colours on both screens; they differ by background shape, hero and copy.
   register: { light: LIGHT_BASE, dark: DARK_BASE },
+  forgot: { light: LIGHT_BASE, dark: DARK_BASE },
 };
 
 // ---------------------------------------------------------------------------
@@ -407,9 +407,9 @@ function BackgroundDecor({
 
   return (
     <View pointerEvents="none" style={StyleSheet.absoluteFill}>
-      <DriftingOrbs p={p} width={width} height={height} />
+      {variant !== 'forgot' && <DriftingOrbs p={p} width={width} height={height} />}
 
-      {variant === 'login' ? (
+      {variant !== 'register' ? (
         <>
           {/* top-right blob */}
           <Animated.View style={[{ position: 'absolute', top: -90, right: -110 }, shapeStyle]}>
@@ -427,12 +427,16 @@ function BackgroundDecor({
               />
             </Svg>
           </Animated.View>
-          <Animated.View style={[{ position: 'absolute', left: -70, top: height * 0.6 }, circleA]}>
-            <SolidCircle id="lgA" colors={p.cornerA} size={140} opacity={p.cornerOpacity} />
-          </Animated.View>
-          <Animated.View style={[{ position: 'absolute', right: -90, top: height * 0.76 }, circleB]}>
-            <SolidCircle id="lgB" colors={p.cornerB} size={190} opacity={p.cornerOpacity} />
-          </Animated.View>
+          {variant === 'login' && (
+            <>
+              <Animated.View style={[{ position: 'absolute', left: -70, top: height * 0.6 }, circleA]}>
+                <SolidCircle id="lgA" colors={p.cornerA} size={140} opacity={p.cornerOpacity} />
+              </Animated.View>
+              <Animated.View style={[{ position: 'absolute', right: -90, top: height * 0.76 }, circleB]}>
+                <SolidCircle id="lgB" colors={p.cornerB} size={190} opacity={p.cornerOpacity} />
+              </Animated.View>
+            </>
+          )}
         </>
       ) : (
         <>
@@ -689,9 +693,91 @@ function SplitIllustration({ p }: { p: Palette }) {
 }
 
 // ---------------------------------------------------------------------------
+// Forgot-password hero: a padlock with a slowly turning dashed ring
+// ---------------------------------------------------------------------------
+function LockIllustration({ p }: { p: Palette }) {
+  const spin = useSharedValue(0);
+  const float = useLoop(2800);
+  const glow = useLoop(2000, 400);
+
+  useEffect(() => {
+    spin.value = withRepeat(withTiming(1, { duration: 18000, easing: Easing.linear }), -1, false);
+  }, []);
+
+  const ringStyle = useAnimatedStyle(() => ({ transform: [{ rotate: `${spin.value * 360}deg` }] }));
+  const lockStyle = useAnimatedStyle(() => ({
+    transform: [
+      { translateY: interpolate(float.value, [0, 1], [-6, 6]) },
+      { rotate: `${interpolate(float.value, [0, 1], [-4, 4])}deg` },
+    ],
+  }));
+  const glowStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(glow.value, [0, 1], [0.35, 0.7]),
+    transform: [{ scale: interpolate(glow.value, [0, 1], [0.92, 1.08]) }],
+  }));
+
+  return (
+    <View pointerEvents="none" style={styles.illustration}>
+      <Animated.View style={[{ position: 'absolute', left: 50, top: 26 }, glowStyle]}>
+        <Svg width={140} height={140}>
+          <Circle cx={70} cy={70} r={58} fill={p.blob[0]} opacity={0.35} />
+        </Svg>
+      </Animated.View>
+
+      <Animated.View style={[{ position: 'absolute', left: 45, top: 21 }, ringStyle]}>
+        <Svg width={150} height={150}>
+          <Circle
+            cx={75}
+            cy={75}
+            r={68}
+            stroke={p.gradient[1]}
+            strokeWidth={3}
+            strokeDasharray="10 12"
+            strokeLinecap="round"
+            fill="none"
+            opacity={0.7}
+          />
+        </Svg>
+      </Animated.View>
+
+      <Animated.View style={[{ position: 'absolute', left: 76, top: 44 }, lockStyle]}>
+        <Svg width={88} height={104} viewBox="0 0 88 104">
+          <Defs>
+            <SvgLinearGradient id="lockBody" x1="0" y1="0" x2="1" y2="1">
+              <Stop offset="0%" stopColor={p.gradient[0]} />
+              <Stop offset="100%" stopColor={p.gradient[1]} />
+            </SvgLinearGradient>
+          </Defs>
+          {/* shackle */}
+          <Path
+            d="M22 46V32a22 22 0 0 1 44 0v14"
+            stroke={p.paperLine}
+            strokeWidth={9}
+            strokeLinecap="round"
+            fill="none"
+          />
+          {/* body */}
+          <Rect x={8} y={42} width={72} height={58} rx={16} fill="url(#lockBody)" />
+          <Rect x={8} y={42} width={72} height={18} rx={9} fill="#FFFFFF" opacity={0.18} />
+          {/* keyhole */}
+          <Circle cx={44} cy={66} r={7} fill="#FFFFFF" />
+          <Rect x={41} y={68} width={6} height={16} rx={3} fill="#FFFFFF" />
+        </Svg>
+      </Animated.View>
+
+      <Sparkle x={30} y={40} size={14} delay={0} color={p.sparkle} />
+      <Sparkle x={178} y={70} size={11} delay={900} color={p.sparkle} />
+      <Sparkle x={60} y={160} size={10} delay={1600} color={p.sparkle} />
+    </View>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Gradient title + animated swoosh underline
 // ---------------------------------------------------------------------------
-function GradientTitle({ p, text, fontSize, width }: { p: Palette; text: string; fontSize: number; width: number }) {
+function GradientTitle({ p, text, fontSize: maxSize, width }: { p: Palette; text: string; fontSize: number; width: number }) {
+  // shrink long titles (other languages) so they never clip
+  const fontSize = Math.min(maxSize, Math.floor(width / Math.max(1, text.length * 0.6)));
   const height = Math.round(fontSize * 1.3);
   return (
     <Svg width={width} height={height}>
@@ -955,6 +1041,28 @@ export function useAuthTheme() {
   return useContext(AuthThemeContext);
 }
 
+/**
+ * Swap content in place without layout animations: fade out, run the change,
+ * fade back in. Pass `style` to <AuthScreen contentStyle>.
+ */
+export function useCrossfade() {
+  const opacity = useSharedValue(1);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => {
+    if (timer.current) clearTimeout(timer.current);
+  }, []);
+  const style = useAnimatedStyle(() => ({ opacity: opacity.value }));
+  const run = (change: () => void) => {
+    if (timer.current) clearTimeout(timer.current);
+    opacity.value = withTiming(0, { duration: 140, easing: Easing.out(Easing.quad) });
+    timer.current = setTimeout(() => {
+      change();
+      opacity.value = withTiming(1, { duration: 240, easing: Easing.out(Easing.quad) });
+    }, 150);
+  };
+  return { style, run };
+}
+
 /** Error message state with a shake animation for the banner. */
 export function useAuthError() {
   const [message, setMessage] = useState<string | null>(null);
@@ -1001,6 +1109,7 @@ export function AuthScreen({
   subtitle,
   backFallback,
   onBack,
+  contentStyle,
   children,
 }: {
   variant: AuthVariant;
@@ -1011,6 +1120,8 @@ export function AuthScreen({
   backFallback: Href;
   /** Overrides the back button (e.g. register → login inside the same screen). */
   onBack?: () => void;
+  /** Animated opacity for swapping content in place (see useCrossfade). */
+  contentStyle?: ReturnType<typeof useCrossfade>['style'];
   children: React.ReactNode;
 }) {
   const theme = useAppStore((s) => s.theme);
@@ -1040,7 +1151,7 @@ export function AuthScreen({
               {/* Everything the glass blurs lives inside this target (required on Android) */}
               <BlurTargetView ref={blurTargetRef} style={StyleSheet.absoluteFill}>
                 <LinearGradient colors={p.bg} style={StyleSheet.absoluteFill} />
-                <Animated.View key={variant} entering={FadeIn.duration(320)} exiting={FadeOut.duration(320)} style={StyleSheet.absoluteFill}>
+                <Animated.View style={[StyleSheet.absoluteFill, contentStyle]}>
                   <BackgroundDecor variant={variant} isDark={isDark} p={p} width={width} height={height} />
                 </Animated.View>
               </BlurTargetView>
@@ -1054,8 +1165,14 @@ export function AuthScreen({
                   <View style={styles.inner}>
                     {/* Hero sits behind the header/title so it can be large */}
                     <View style={styles.illustrationWrap} pointerEvents="none">
-                      <Animated.View key={variant} entering={FadeIn.duration(320)} exiting={FadeOut.duration(240)} style={styles.heroLayer}>
-                        {variant === 'login' ? <ReceiptIllustration p={p} isDark={isDark} /> : <SplitIllustration p={p} />}
+                      <Animated.View style={[styles.heroLayer, contentStyle]}>
+                        {variant === 'login' ? (
+                          <ReceiptIllustration p={p} isDark={isDark} />
+                        ) : variant === 'register' ? (
+                          <SplitIllustration p={p} />
+                        ) : (
+                          <LockIllustration p={p} />
+                        )}
                       </Animated.View>
                     </View>
 
@@ -1072,14 +1189,14 @@ export function AuthScreen({
                       </Pressable>
                     </View>
 
-                    <Animated.View key={variant} entering={FadeIn.duration(260)} style={styles.titleBlock}>
+                    <Animated.View style={[styles.titleBlock, contentStyle]}>
                       <Text style={[styles.welcome, { color: p.text, fontSize: titleSize * 0.82 }]}>{eyebrow}</Text>
                       <GradientTitle p={p} text={title} fontSize={titleSize} width={contentWidth} />
                       <Swoosh p={p} />
                       <Text style={[styles.subtitle, { color: p.muted }]}>{subtitle}</Text>
                     </Animated.View>
 
-                    <Animated.View key={variant} entering={FadeIn.duration(260)}>
+                    <Animated.View style={contentStyle}>
                       {children}
                     </Animated.View>
                   </View>

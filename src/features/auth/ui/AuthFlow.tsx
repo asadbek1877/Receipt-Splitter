@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { BackHandler } from 'react-native';
 import { useTranslation } from 'react-i18next';
 
-import { AuthScreen, type AuthVariant } from './AuthKit';
+import { AuthScreen, useCrossfade, type AuthVariant } from './AuthKit';
 import { LoginBody } from './LoginForm';
 import { RegisterBody } from './RegisterForm';
 
@@ -14,19 +14,20 @@ import { RegisterBody } from './RegisterForm';
 export default function AuthFlow({ initial }: { initial: AuthVariant }) {
   const { t } = useTranslation();
   const [mode, setMode] = useState<AuthVariant>(initial);
+  const fade = useCrossfade();
 
   // Android back from the "other" form returns to the one the screen opened with.
   useEffect(() => {
     if (mode === initial) return;
     const sub = BackHandler.addEventListener('hardwareBackPress', () => {
-      setMode(initial);
+      fade.run(() => setMode(initial));
       return true;
     });
     return () => sub.remove();
   }, [mode, initial]);
 
-  const toLogin = () => setMode('login');
-  const toRegister = () => setMode('register');
+  const toLogin = () => fade.run(() => setMode('login'));
+  const toRegister = () => fade.run(() => setMode('register'));
 
   if (mode === 'login') {
     return (
@@ -36,6 +37,7 @@ export default function AuthFlow({ initial }: { initial: AuthVariant }) {
         subtitle={t('auth.enterCredentials', 'Enter your credentials to continue')}
         backFallback="/onboarding"
         onBack={initial === 'register' ? toRegister : undefined}
+        contentStyle={fade.style}
       >
         <LoginBody onSwitch={toRegister} />
       </AuthScreen>
@@ -50,6 +52,7 @@ export default function AuthFlow({ initial }: { initial: AuthVariant }) {
       subtitle={t('auth.fillDetails', 'Fill in your details to get started')}
       backFallback="/login"
       onBack={initial === 'login' ? toLogin : undefined}
+      contentStyle={fade.style}
     >
       <RegisterBody onSwitch={toLogin} />
     </AuthScreen>
