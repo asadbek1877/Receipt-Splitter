@@ -1,9 +1,10 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
 import { useRouter, Link } from 'expo-router';
 import { useForm, Controller } from 'react-hook-form';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
 import {
+  AccessibilityInfo,
   Alert,
   KeyboardAvoidingView,
   Platform,
@@ -34,6 +35,7 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 import { LinearGradient } from 'expo-linear-gradient';
+import { BlurTargetView, BlurView } from 'expo-blur';
 import Svg, {
   Circle,
   Defs,
@@ -77,16 +79,16 @@ const PALETTES = {
     link: '#16A34A',
     gradient: ['#34D27B', '#16A34A'] as const,
     gradientText: ['#22C55E', '#15803D'] as const,
-    inputBg: '#F3F5F8',
+    inputBg: 'rgba(241,245,249,0.72)',
     inputBorder: '#F3F5F8',
     inputFocus: '#22C55E',
     divider: '#E5E7EB',
-    socialBg: '#FFFFFF',
+    socialBg: 'rgba(255,255,255,0.55)',
     socialBorder: '#E8ECF1',
     socialText: '#1F2937',
-    footerBg: '#EDFBF2',
+    footerBg: 'rgba(220,252,231,0.62)',
     footerIcon: '#16A34A',
-    backBg: '#FFFFFF',
+    backBg: 'rgba(255,255,255,0.6)',
     backBorder: '#EEF1F4',
     blob: ['#4ADE80', '#16A34A'] as const,
     blobSoft: '#BBF7D0',
@@ -96,6 +98,13 @@ const PALETTES = {
     barcode: '#334155',
     roll: ['#E2E8F0', '#FFFFFF'] as const,
     arrowBg: 'rgba(255,255,255,0.25)',
+    glassTint: 'light' as const,
+    glassHighlight: ['rgba(255,255,255,0.9)', 'rgba(255,255,255,0)'] as const,
+    glassCaustic: 'rgba(255,255,255,0.35)',
+    glassOpaque: '#F3F5F8',
+    cornerA: ['#BBF7D0', '#4ADE80'] as const,
+    cornerB: ['#A7F3D0', '#22C55E'] as const,
+    cornerOpacity: 0.55,
     githubFill: '#111827',
     appleFill: '#111827',
   },
@@ -128,6 +137,13 @@ const PALETTES = {
     barcode: 'rgba(255,255,255,0.9)',
     roll: ['#2E3CB0', '#4F46E5'] as const,
     arrowBg: 'rgba(255,255,255,0.22)',
+    glassTint: 'dark' as const,
+    glassHighlight: ['rgba(255,255,255,0.18)', 'rgba(255,255,255,0)'] as const,
+    glassCaustic: 'rgba(167,139,250,0.10)',
+    glassOpaque: '#161D33',
+    cornerA: ['#7C3AED', '#4338CA'] as const,
+    cornerB: ['#8B5CF6', '#5B21B6'] as const,
+    cornerOpacity: 0.85,
     githubFill: '#FFFFFF',
     appleFill: '#FFFFFF',
   },
@@ -147,6 +163,77 @@ function useLoop(duration: number, delay = 0) {
     );
   }, []);
   return v;
+}
+
+// ---------------------------------------------------------------------------
+// Liquid Glass (functional layer only: back button, fields, social, footer).
+// Real backdrop blur on iOS and Android (Android blurs the BlurTargetView
+// that holds the background), translucent fill, specular top highlight and
+// a hairline rim. Reduce Transparency → opaque fill, no blur.
+// ---------------------------------------------------------------------------
+const BlurTargetContext = createContext<React.RefObject<View | null> | null>(null);
+const ReduceTransparencyContext = createContext(false);
+
+function useReduceTransparency() {
+  const [enabled, setEnabled] = useState(false);
+  useEffect(() => {
+    let mounted = true;
+    AccessibilityInfo.isReduceTransparencyEnabled()
+      .then((v) => mounted && setEnabled(v))
+      .catch(() => {});
+    const sub = AccessibilityInfo.addEventListener('reduceTransparencyChanged', setEnabled);
+    return () => {
+      mounted = false;
+      sub.remove();
+    };
+  }, []);
+  return enabled;
+}
+
+function GlassLayers({
+  p,
+  fill,
+  intensity = 28,
+  highlight = 1,
+}: {
+  p: Palette;
+  fill: string;
+  intensity?: number;
+  highlight?: number;
+}) {
+  const blurTarget = useContext(BlurTargetContext);
+  const reduceTransparency = useContext(ReduceTransparencyContext);
+
+  if (reduceTransparency) {
+    return <View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: p.glassOpaque }]} />;
+  }
+
+  return (
+    <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+      <BlurView
+        intensity={intensity}
+        tint={p.glassTint}
+        blurMethod="dimezisBlurViewSdk31Plus"
+        blurTarget={blurTarget ?? undefined}
+        style={StyleSheet.absoluteFill}
+      />
+      <View style={[StyleSheet.absoluteFill, { backgroundColor: fill }]} />
+      {/* specular highlight: bright top edge fading down */}
+      <LinearGradient
+        colors={p.glassHighlight}
+        start={{ x: 0.5, y: 0 }}
+        end={{ x: 0.5, y: 0.6 }}
+        style={[StyleSheet.absoluteFill, { opacity: highlight }]}
+      />
+      {/* faint bottom caustic so the edge reads as thick glass */}
+      <LinearGradient
+        colors={['rgba(255,255,255,0)', p.glassCaustic]}
+        start={{ x: 0.5, y: 0.55 }}
+        end={{ x: 0.5, y: 1 }}
+        style={StyleSheet.absoluteFill}
+      />
+    </View>
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -195,18 +282,17 @@ function BackgroundDecor({ isDark, p, height }: { isDark: boolean; p: Palette; h
         </Svg>
       </Animated.View>
 
-      {isDark && (
         <>
           {/* Bottom-left solid circle */}
           <Animated.View style={[{ position: 'absolute', left: -70, top: height * 0.6 }, bottomLeft]}>
             <Svg width={140} height={140}>
               <Defs>
                 <SvgLinearGradient id="blCircle" x1="0" y1="0" x2="1" y2="1">
-                  <Stop offset="0%" stopColor="#7C3AED" />
-                  <Stop offset="100%" stopColor="#4338CA" />
+                  <Stop offset="0%" stopColor={p.cornerA[0]} />
+                  <Stop offset="100%" stopColor={p.cornerA[1]} />
                 </SvgLinearGradient>
               </Defs>
-              <Circle cx={70} cy={70} r={70} fill="url(#blCircle)" opacity={0.85} />
+              <Circle cx={70} cy={70} r={70} fill="url(#blCircle)" opacity={p.cornerOpacity} />
             </Svg>
           </Animated.View>
           {/* Bottom-right solid circle */}
@@ -214,15 +300,14 @@ function BackgroundDecor({ isDark, p, height }: { isDark: boolean; p: Palette; h
             <Svg width={190} height={190}>
               <Defs>
                 <SvgLinearGradient id="brCircle" x1="0" y1="0" x2="1" y2="1">
-                  <Stop offset="0%" stopColor="#8B5CF6" />
-                  <Stop offset="100%" stopColor="#5B21B6" />
+                  <Stop offset="0%" stopColor={p.cornerB[0]} />
+                  <Stop offset="100%" stopColor={p.cornerB[1]} />
                 </SvgLinearGradient>
               </Defs>
-              <Circle cx={95} cy={95} r={95} fill="url(#brCircle)" opacity={0.85} />
+              <Circle cx={95} cy={95} r={95} fill="url(#brCircle)" opacity={p.cornerOpacity} />
             </Svg>
           </Animated.View>
         </>
-      )}
     </View>
   );
 }
@@ -467,8 +552,9 @@ function Field({ p, icon, value, placeholder, onChangeText, secure, keyboardType
     <View>
       <Pressable
         onPress={() => inputRef.current?.focus()}
-        style={StyleSheet.flatten([styles.field, { backgroundColor: p.inputBg, borderColor }])}
+        style={StyleSheet.flatten([styles.field, styles.glass, { borderColor }])}
       >
+        <GlassLayers p={p} fill={p.inputBg} />
         <View style={styles.fieldIcon}>{icon}</View>
         <TextInput
           ref={inputRef}
@@ -543,6 +629,13 @@ function PrimaryButton({ p, label, onPress, loading }: { p: Palette; label: stri
               style={StyleSheet.absoluteFill}
             />
           </Animated.View>
+          <LinearGradient
+            pointerEvents="none"
+            colors={['rgba(255,255,255,0.32)', 'rgba(255,255,255,0)']}
+            start={{ x: 0.5, y: 0 }}
+            end={{ x: 0.5, y: 0.55 }}
+            style={[StyleSheet.absoluteFill, styles.primaryGloss]}
+          />
           <Text style={styles.primaryText}>{label}</Text>
           <Animated.View style={[styles.primaryArrow, { backgroundColor: p.arrowBg }, arrowStyle]}>
             <ArrowRight size={16} color="#FFFFFF" />
@@ -598,8 +691,9 @@ function SocialButton({ p, label, icon, onPress }: { p: Palette; label: string; 
         onPress={onPress}
         onPressIn={() => (scale.value = withTiming(0.95, { duration: 90 }))}
         onPressOut={() => (scale.value = withTiming(1, { duration: 140 }))}
-        style={[styles.social, { backgroundColor: p.socialBg, borderColor: p.socialBorder }]}
+        style={StyleSheet.flatten([styles.social, styles.glass, { borderColor: p.socialBorder }])}
       >
+        <GlassLayers p={p} fill={p.socialBg} />
         {icon}
         <Text style={[styles.socialText, { color: p.socialText }]}>{label}</Text>
       </Pressable>
@@ -623,6 +717,8 @@ export default function LoginForm() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { width, height } = useWindowDimensions();
+  const blurTargetRef = useRef<View>(null);
+  const reduceTransparency = useReduceTransparency();
   const contentWidth = Math.min(width, 480) - 48;
   const titleSize = Math.min(34, Math.floor(contentWidth / 9.6));
 
@@ -672,9 +768,14 @@ export default function LoginForm() {
     Alert.alert(provider, t('auth.socialComingSoon', 'Sign in with {{provider}} is coming soon.', { provider }));
 
   return (
+    <BlurTargetContext.Provider value={blurTargetRef}>
+    <ReduceTransparencyContext.Provider value={reduceTransparency}>
     <View style={styles.container}>
-      <LinearGradient colors={p.bg} style={StyleSheet.absoluteFill} />
-      <BackgroundDecor isDark={isDark} p={p} height={height} />
+      {/* Everything the glass blurs lives inside this target (required on Android) */}
+      <BlurTargetView ref={blurTargetRef} style={StyleSheet.absoluteFill}>
+        <LinearGradient colors={p.bg} style={StyleSheet.absoluteFill} />
+        <BackgroundDecor isDark={isDark} p={p} height={height} />
+      </BlurTargetView>
 
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
         <ScrollView
@@ -692,7 +793,8 @@ export default function LoginForm() {
             <View style={styles.headerRow}>
               <Animated.View entering={FadeIn.delay(80)}>
                 <Link href="/" asChild>
-                  <Pressable style={StyleSheet.flatten([styles.back, { backgroundColor: p.backBg, borderColor: p.backBorder }])}>
+                  <Pressable style={StyleSheet.flatten([styles.back, styles.glass, { borderColor: p.backBorder }])}>
+                    <GlassLayers p={p} fill={p.backBg} intensity={36} />
                     <ChevronLeft size={20} color={p.text} />
                   </Pressable>
                 </Link>
@@ -806,7 +908,8 @@ export default function LoginForm() {
             {/* Footer */}
             <Animated.View entering={FadeInUp.delay(700).duration(500)}>
               <Link href="/register" asChild>
-                <Pressable style={StyleSheet.flatten([styles.footer, { backgroundColor: p.footerBg }])}>
+                <Pressable style={StyleSheet.flatten([styles.footer, styles.glass, { borderColor: p.backBorder }])}>
+                  <GlassLayers p={p} fill={p.footerBg} intensity={32} />
                   <UserPlus size={18} color={p.footerIcon} />
                   <Text style={[styles.footerText, { color: p.muted }]}>
                     {t('auth.noAccount', "Don't have an account?")}
@@ -820,11 +923,15 @@ export default function LoginForm() {
         </ScrollView>
       </KeyboardAvoidingView>
     </View>
+    </ReduceTransparencyContext.Provider>
+    </BlurTargetContext.Provider>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
+  glass: { backgroundColor: 'transparent', overflow: 'hidden' },
+  primaryGloss: { borderTopLeftRadius: 16, borderTopRightRadius: 16 },
   scroll: { flexGrow: 1, paddingHorizontal: 24 },
   inner: { width: '100%', maxWidth: 432, alignSelf: 'center' },
   headerRow: {
@@ -904,6 +1011,7 @@ const styles = StyleSheet.create({
     marginTop: 22,
     height: 50,
     borderRadius: 14,
+    borderWidth: 1,
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 16,
