@@ -41,7 +41,10 @@
     "noAccount": "Hisobingiz yo'qmi?",
     "haveAccount": "Hisobingiz bormi?",
     "loginError": "An error occurred during login",
-    "registerError": "An error occurred during registration"
+    "registerError": "An error occurred during registration",
+    "joinUs": "Bizga qo'shiling",
+    "newAccount": "Yangi hisob",
+    "fillDetails": "Boshlash uchun ma'lumotlaringizni kiriting"
   },
   "common": {
     "welcome": "Xush kelibsiz",

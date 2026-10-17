@@ -3,9 +3,8 @@ import { useRouter, Link } from 'expo-router';
 import { useForm, Controller } from 'react-hook-form';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { Pressable, Text } from 'react-native';
+import { Pressable, Text, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
-import Animated, { FadeIn, FadeInUp } from 'react-native-reanimated';
 import { Lock, Mail, UserPlus } from '@tamagui/lucide-icons';
 
 import { login, LoginRequest, getCurrentUser } from '../api';
@@ -36,7 +35,9 @@ export default function LoginForm() {
   const { t } = useTranslation();
   return (
     <AuthScreen
-      welcome={t('auth.welcomeTo', 'Welcome to')}
+      variant="login"
+      eyebrow={t('auth.welcomeTo', 'Welcome to')}
+      backFallback="/onboarding"
       subtitle={t('auth.enterCredentials', 'Enter your credentials to continue')}
     >
       <LoginBody />
@@ -84,7 +85,7 @@ function LoginBody() {
     <>
       <ErrorBanner error={error} />
 
-      <Animated.View entering={FadeInUp.delay(320).duration(500)} style={{ gap: 14 }}>
+      <View style={{ gap: 14 }}>
         <Controller
           control={control}
           name="email"
@@ -116,9 +117,9 @@ function LoginBody() {
             />
           )}
         />
-      </Animated.View>
+      </View>
 
-      <Animated.View entering={FadeIn.delay(420)} style={styles.forgot}>
+      <View style={styles.forgot}>
         <Link href="/forgot-password" asChild>
           <Pressable hitSlop={8}>
             <Text style={[styles.forgotText, { color: p.link }]}>
@@ -126,16 +127,16 @@ function LoginBody() {
             </Text>
           </Pressable>
         </Link>
-      </Animated.View>
+      </View>
 
-      <Animated.View entering={FadeInUp.delay(480).duration(500)} style={{ marginTop: 16 }}>
+      <View style={{ marginTop: 16 }}>
         <PrimaryButton
           p={p}
           loading={isLoading}
           label={isLoading ? t('common.loading', 'Loading...') : t('auth.signIn', 'Sign In')}
           onPress={handleSubmit(onSubmit)}
         />
-      </Animated.View>
+      </View>
 
       <OrDivider />
       <SocialRow />

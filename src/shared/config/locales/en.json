@@ -41,7 +41,10 @@
     "noAccount": "Don't have an account?",
     "haveAccount": "Already have an account?",
     "loginError": "An error occurred during login",
-    "registerError": "An error occurred during registration"
+    "registerError": "An error occurred during registration",
+    "joinUs": "Join us",
+    "newAccount": "New account",
+    "fillDetails": "Fill in your details to get started"
   },
   "common": {
     "welcome": "Welcome",

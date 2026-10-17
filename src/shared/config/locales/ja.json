@@ -41,7 +41,10 @@
     "noAccount": "アカウントをお持ちでないですか？",
     "haveAccount": "すでにアカウントをお持ちですか？",
     "loginError": "ログイン中にエラーが発生しました",
-    "registerError": "登録中にエラーが発生しました"
+    "registerError": "登録中にエラーが発生しました",
+    "joinUs": "ようこそ",
+    "newAccount": "新規アカウント",
+    "fillDetails": "情報を入力して始めましょう"
   },
   "common": {
     "welcome": "ようこそ",

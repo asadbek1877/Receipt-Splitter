@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
-import { Link, type Href } from 'expo-router';
+import { useNavigation, useRouter, type Href } from 'expo-router';
 import {
   AccessibilityInfo,
   Alert,
@@ -18,9 +18,6 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, {
   Easing,
   FadeIn,
-  FadeInDown,
-  FadeInUp,
-  ZoomIn,
   type SharedValue,
   interpolate,
   useAnimatedProps,
@@ -39,7 +36,6 @@ import Svg, {
   G,
   LinearGradient as SvgLinearGradient,
   Path,
-  RadialGradient,
   Rect,
   Stop,
   Text as SvgText,
@@ -60,90 +56,197 @@ const AnimatedRect = Animated.createAnimatedComponent(Rect);
  */
 
 // ---------------------------------------------------------------------------
-// Palettes — light = green, dark = blue → violet (matches the design mock)
+// Palettes
+//   login    — light: green,        dark: blue → violet  (matches the mock)
+//   register — light: teal → sky,   dark: violet → pink
 // ---------------------------------------------------------------------------
-export const PALETTES = {
-  light: {
-    bg: ['#FFFFFF', '#FFFFFF'] as const,
-    text: '#0F172A',
-    muted: '#64748B',
-    placeholder: '#8A94A6',
-    icon: '#475569',
-    accent: '#16A34A',
-    link: '#16A34A',
-    gradient: ['#34D27B', '#16A34A'] as const,
-    gradientText: ['#22C55E', '#15803D'] as const,
-    inputBg: 'rgba(241,245,249,0.72)',
-    inputBorder: '#F3F5F8',
-    inputFocus: '#22C55E',
-    divider: '#E5E7EB',
-    socialBg: 'rgba(255,255,255,0.55)',
-    socialBorder: '#E8ECF1',
-    socialText: '#1F2937',
-    footerBg: 'rgba(220,252,231,0.62)',
-    footerIcon: '#16A34A',
-    backBg: 'rgba(255,255,255,0.6)',
-    backBorder: '#EEF1F4',
-    blob: ['#4ADE80', '#16A34A'] as const,
-    blobSoft: '#BBF7D0',
-    drop: ['#86EFAC', '#22C55E'] as const,
-    paper: ['#FFFFFF', '#F1F5F9'] as const,
-    paperLine: '#CBD5E1',
-    barcode: '#334155',
-    roll: ['#E2E8F0', '#FFFFFF'] as const,
-    arrowBg: 'rgba(255,255,255,0.25)',
-    glassTint: 'light' as const,
-    glassHighlight: ['rgba(255,255,255,0.9)', 'rgba(255,255,255,0)'] as const,
-    glassCaustic: 'rgba(255,255,255,0.35)',
-    glassOpaque: '#F3F5F8',
-    cornerA: ['#BBF7D0', '#4ADE80'] as const,
-    cornerB: ['#A7F3D0', '#22C55E'] as const,
-    cornerOpacity: 0.55,
-    githubFill: '#111827',
-    appleFill: '#111827',
-  },
-  dark: {
-    bg: ['#0A0F1E', '#0E1430'] as const,
-    text: '#FFFFFF',
-    muted: '#94A3B8',
-    placeholder: '#8A93A8',
-    icon: '#AAB3C5',
-    accent: '#8B5CF6',
-    link: '#A78BFA',
-    gradient: ['#4F8BFF', '#A855F7'] as const,
-    gradientText: ['#60A5FA', '#A855F7'] as const,
-    inputBg: 'rgba(255,255,255,0.04)',
-    inputBorder: 'rgba(255,255,255,0.09)',
-    inputFocus: '#8B5CF6',
-    divider: 'rgba(255,255,255,0.10)',
-    socialBg: 'rgba(255,255,255,0.03)',
-    socialBorder: 'rgba(255,255,255,0.09)',
-    socialText: '#E2E8F0',
-    footerBg: 'rgba(124,92,246,0.14)',
-    footerIcon: '#A78BFA',
-    backBg: 'rgba(255,255,255,0.06)',
-    backBorder: 'rgba(255,255,255,0.10)',
-    blob: ['#3B82F6', '#7C3AED'] as const,
-    blobSoft: '#6366F1',
-    drop: ['#818CF8', '#7C3AED'] as const,
-    paper: ['#3B4FD8', '#5B3FD6'] as const,
-    paperLine: 'rgba(255,255,255,0.45)',
-    barcode: 'rgba(255,255,255,0.9)',
-    roll: ['#2E3CB0', '#4F46E5'] as const,
-    arrowBg: 'rgba(255,255,255,0.22)',
-    glassTint: 'dark' as const,
-    glassHighlight: ['rgba(255,255,255,0.18)', 'rgba(255,255,255,0)'] as const,
-    glassCaustic: 'rgba(167,139,250,0.10)',
-    glassOpaque: '#161D33',
-    cornerA: ['#7C3AED', '#4338CA'] as const,
-    cornerB: ['#8B5CF6', '#5B21B6'] as const,
-    cornerOpacity: 0.85,
-    githubFill: '#FFFFFF',
-    appleFill: '#FFFFFF',
-  },
+type Pair = readonly [string, string];
+
+export type Palette = {
+  bg: Pair;
+  text: string;
+  muted: string;
+  placeholder: string;
+  icon: string;
+  link: string;
+  gradient: Pair;
+  gradientText: Pair;
+  inputBg: string;
+  inputBorder: string;
+  inputFocus: string;
+  divider: string;
+  socialBg: string;
+  socialBorder: string;
+  socialText: string;
+  footerBg: string;
+  footerIcon: string;
+  backBg: string;
+  backBorder: string;
+  blob: Pair;
+  blobSoft: string;
+  paper: Pair;
+  paperLine: string;
+  barcode: string;
+  roll: Pair;
+  arrowBg: string;
+  sparkle: string;
+  glassTint: 'light' | 'dark';
+  glassHighlight: Pair;
+  glassCaustic: string;
+  glassRim: string;
+  glassRimSoft: string;
+  glassOpaque: string;
+  topShape: Pair;
+  cornerA: Pair;
+  cornerB: Pair;
+  cornerOpacity: number;
+  orbA: string;
+  orbB: string;
+  orbOpacity: number;
+  avatarBg: string;
+  githubFill: string;
+  appleFill: string;
 };
 
-export type Palette = (typeof PALETTES)['light'] | (typeof PALETTES)['dark'];
+export type AuthVariant = 'login' | 'register';
+
+const LIGHT_BASE: Palette = {
+  bg: ['#FFFFFF', '#FFFFFF'],
+  text: '#0F172A',
+  muted: '#64748B',
+  placeholder: '#7C8798',
+  icon: '#475569',
+  link: '#16A34A',
+  gradient: ['#34D27B', '#16A34A'],
+  gradientText: ['#22C55E', '#15803D'],
+  inputBg: 'rgba(241,245,249,0.55)',
+  inputBorder: 'rgba(15,23,42,0.06)',
+  inputFocus: '#22C55E',
+  divider: '#E5E7EB',
+  socialBg: 'rgba(255,255,255,0.45)',
+  socialBorder: 'rgba(15,23,42,0.08)',
+  socialText: '#1F2937',
+  footerBg: 'rgba(220,252,231,0.5)',
+  footerIcon: '#16A34A',
+  backBg: 'rgba(255,255,255,0.45)',
+  backBorder: 'rgba(15,23,42,0.08)',
+  blob: ['#4ADE80', '#16A34A'],
+  blobSoft: '#BBF7D0',
+  paper: ['#FFFFFF', '#F1F5F9'],
+  paperLine: '#CBD5E1',
+  barcode: '#334155',
+  roll: ['#E2E8F0', '#FFFFFF'],
+  arrowBg: 'rgba(255,255,255,0.25)',
+  sparkle: '#22C55E',
+  glassTint: 'light',
+  glassHighlight: ['rgba(255,255,255,0.85)', 'rgba(255,255,255,0)'],
+  glassCaustic: 'rgba(255,255,255,0.45)',
+  glassRim: 'rgba(255,255,255,1)',
+  glassRimSoft: 'rgba(255,255,255,0.55)',
+  glassOpaque: '#F3F5F8',
+  topShape: ['#BBF7D0', '#4ADE80'],
+  cornerA: ['#BBF7D0', '#4ADE80'],
+  cornerB: ['#A7F3D0', '#22C55E'],
+  cornerOpacity: 0.55,
+  orbA: '#86EFAC',
+  orbB: '#FDE68A',
+  orbOpacity: 0.35,
+  avatarBg: '#FFFFFF',
+  githubFill: '#111827',
+  appleFill: '#111827',
+};
+
+const DARK_BASE: Palette = {
+  bg: ['#0A0F1E', '#0E1430'],
+  text: '#FFFFFF',
+  muted: '#94A3B8',
+  placeholder: '#8A93A8',
+  icon: '#AAB3C5',
+  link: '#A78BFA',
+  gradient: ['#4F8BFF', '#A855F7'],
+  gradientText: ['#60A5FA', '#A855F7'],
+  inputBg: 'rgba(255,255,255,0.06)',
+  inputBorder: 'rgba(255,255,255,0.08)',
+  inputFocus: '#8B5CF6',
+  divider: 'rgba(255,255,255,0.10)',
+  socialBg: 'rgba(255,255,255,0.05)',
+  socialBorder: 'rgba(255,255,255,0.08)',
+  socialText: '#E2E8F0',
+  footerBg: 'rgba(124,92,246,0.16)',
+  footerIcon: '#A78BFA',
+  backBg: 'rgba(255,255,255,0.07)',
+  backBorder: 'rgba(255,255,255,0.10)',
+  blob: ['#3B82F6', '#7C3AED'],
+  blobSoft: '#6366F1',
+  paper: ['#3B4FD8', '#5B3FD6'],
+  paperLine: 'rgba(255,255,255,0.45)',
+  barcode: 'rgba(255,255,255,0.9)',
+  roll: ['#2E3CB0', '#4F46E5'],
+  arrowBg: 'rgba(255,255,255,0.22)',
+  sparkle: '#C4B5FD',
+  glassTint: 'dark',
+  glassHighlight: ['rgba(255,255,255,0.22)', 'rgba(255,255,255,0)'],
+  glassCaustic: 'rgba(167,139,250,0.14)',
+  glassRim: 'rgba(255,255,255,0.38)',
+  glassRimSoft: 'rgba(255,255,255,0.12)',
+  glassOpaque: '#161D33',
+  topShape: ['#1E2A5C', '#141B3D'],
+  cornerA: ['#7C3AED', '#4338CA'],
+  cornerB: ['#8B5CF6', '#5B21B6'],
+  cornerOpacity: 0.85,
+  orbA: '#3B82F6',
+  orbB: '#8B5CF6',
+  orbOpacity: 0.28,
+  avatarBg: '#1B2240',
+  githubFill: '#FFFFFF',
+  appleFill: '#FFFFFF',
+};
+
+export const PALETTES: Record<AuthVariant, { light: Palette; dark: Palette }> = {
+  login: { light: LIGHT_BASE, dark: DARK_BASE },
+  register: {
+    light: {
+      ...LIGHT_BASE,
+      bg: ['#ECFEFF', '#FFFFFF'],
+      link: '#0D9488',
+      gradient: ['#14B8A6', '#0EA5E9'],
+      gradientText: ['#0D9488', '#0284C7'],
+      inputFocus: '#14B8A6',
+      inputBg: 'rgba(240,253,250,0.55)',
+      footerBg: 'rgba(204,251,241,0.5)',
+      footerIcon: '#0D9488',
+      blob: ['#5EEAD4', '#0EA5E9'],
+      blobSoft: '#A5F3FC',
+      sparkle: '#0EA5E9',
+      topShape: ['#A5F3FC', '#5EEAD4'],
+      cornerA: ['#99F6E4', '#2DD4BF'],
+      cornerB: ['#BAE6FD', '#38BDF8'],
+      orbA: '#5EEAD4',
+      orbB: '#7DD3FC',
+    },
+    dark: {
+      ...DARK_BASE,
+      bg: ['#12091F', '#1B0F30'],
+      link: '#F0ABFC',
+      gradient: ['#A855F7', '#EC4899'],
+      gradientText: ['#C084FC', '#F472B6'],
+      inputFocus: '#EC4899',
+      footerBg: 'rgba(236,72,153,0.14)',
+      footerIcon: '#F0ABFC',
+      blob: ['#8B5CF6', '#EC4899'],
+      blobSoft: '#D946EF',
+      sparkle: '#F9A8D4',
+      glassCaustic: 'rgba(244,114,182,0.14)',
+      glassOpaque: '#1F1330',
+      topShape: ['#3B1A5C', '#24123D'],
+      cornerA: ['#DB2777', '#9D174D'],
+      cornerB: ['#A855F7', '#6D28D9'],
+      orbA: '#A855F7',
+      orbB: '#EC4899',
+      avatarBg: '#2A1840',
+    },
+  },
+};
 
 // ---------------------------------------------------------------------------
 // Animation helpers
@@ -161,12 +264,16 @@ export function useLoop(duration: number, delay = 0) {
 
 // ---------------------------------------------------------------------------
 // Liquid Glass (functional layer only: back button, fields, social, footer).
-// Real backdrop blur on iOS and Android (Android blurs the BlurTargetView
-// that holds the background), translucent fill, specular top highlight and
-// a hairline rim. Reduce Transparency → opaque fill, no blur.
+//  - real backdrop blur on iOS and Android (Android blurs the BlurTargetView
+//    that holds the background, see AuthScreen)
+//  - translucent fill + diagonal specular sheen + bottom caustic glow
+//  - light rim that is bright on top and fades down the sides
+//  - blur mounts only after the screen transition finishes, so navigation
+//    stays smooth; Reduce Transparency → opaque fill, no blur
 // ---------------------------------------------------------------------------
 const BlurTargetContext = createContext<React.RefObject<View | null> | null>(null);
 const ReduceTransparencyContext = createContext(false);
+const GlassReadyContext = createContext(true);
 
 function useReduceTransparency() {
   const [enabled, setEnabled] = useState(false);
@@ -187,70 +294,150 @@ function useReduceTransparency() {
 export function GlassLayers({
   p,
   fill,
-  intensity = 28,
-  highlight = 1,
+  radius = 14,
+  intensity = 45,
 }: {
   p: Palette;
   fill: string;
+  radius?: number;
   intensity?: number;
-  highlight?: number;
 }) {
   const blurTarget = useContext(BlurTargetContext);
   const reduceTransparency = useContext(ReduceTransparencyContext);
+  const ready = useContext(GlassReadyContext);
 
   if (reduceTransparency) {
     return <View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: p.glassOpaque }]} />;
   }
 
+  const innerRadius = Math.max(0, radius - 1);
+
   return (
     <View pointerEvents="none" style={StyleSheet.absoluteFill}>
-      <BlurView
-        intensity={intensity}
-        tint={p.glassTint}
-        blurMethod="dimezisBlurViewSdk31Plus"
-        blurTarget={blurTarget ?? undefined}
-        style={StyleSheet.absoluteFill}
-      />
+      {ready && (
+        <Animated.View entering={FadeIn.duration(220)} style={StyleSheet.absoluteFill}>
+          <BlurView
+            intensity={intensity}
+            tint={p.glassTint}
+            blurMethod="dimezisBlurViewSdk31Plus"
+            blurReductionFactor={3}
+            blurTarget={blurTarget ?? undefined}
+            style={StyleSheet.absoluteFill}
+          />
+        </Animated.View>
+      )}
       <View style={[StyleSheet.absoluteFill, { backgroundColor: fill }]} />
-      {/* specular highlight: bright top edge fading down */}
+      {/* diagonal specular sheen from the top-left */}
       <LinearGradient
         colors={p.glassHighlight}
-        start={{ x: 0.5, y: 0 }}
-        end={{ x: 0.5, y: 0.6 }}
-        style={[StyleSheet.absoluteFill, { opacity: highlight }]}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 0.65, y: 0.9 }}
+        style={StyleSheet.absoluteFill}
       />
-      {/* faint bottom caustic so the edge reads as thick glass */}
+      {/* caustic glow along the bottom edge */}
       <LinearGradient
         colors={['rgba(255,255,255,0)', p.glassCaustic]}
-        start={{ x: 0.5, y: 0.55 }}
+        start={{ x: 0.5, y: 0.5 }}
         end={{ x: 0.5, y: 1 }}
         style={StyleSheet.absoluteFill}
+      />
+      {/* rim light: bright top edge, softer sides, none at the bottom */}
+      <View
+        style={[
+          StyleSheet.absoluteFill,
+          {
+            borderRadius: innerRadius,
+            borderWidth: 1,
+            borderTopColor: p.glassRim,
+            borderLeftColor: p.glassRimSoft,
+            borderRightColor: p.glassRimSoft,
+            borderBottomColor: 'transparent',
+          },
+        ]}
       />
     </View>
   );
 }
 
 // ---------------------------------------------------------------------------
-// Background decoration: solid corner shapes (match the mock)
+// Background decoration (lives inside the blur target, so glass refracts it)
 // ---------------------------------------------------------------------------
-function BackgroundDecor({ isDark, p, height }: { isDark: boolean; p: Palette; height: number }) {
+function DriftingOrbs({ p, width, height }: { p: Palette; width: number; height: number }) {
+  const a = useLoop(9000);
+  const b = useLoop(11000, 1200);
+  const orbA = useAnimatedStyle(() => ({
+    transform: [
+      { translateX: interpolate(a.value, [0, 1], [-20, 40]) },
+      { translateY: interpolate(b.value, [0, 1], [0, 50]) },
+    ],
+  }));
+  const orbB = useAnimatedStyle(() => ({
+    transform: [
+      { translateX: interpolate(b.value, [0, 1], [30, -40]) },
+      { translateY: interpolate(a.value, [0, 1], [20, -40]) },
+    ],
+  }));
+  return (
+    <>
+      <Animated.View style={[{ position: 'absolute', left: -60, top: height * 0.4 }, orbA]}>
+        <Svg width={230} height={230}>
+          <Circle cx={115} cy={115} r={115} fill={p.orbA} opacity={p.orbOpacity} />
+        </Svg>
+      </Animated.View>
+      <Animated.View style={[{ position: 'absolute', left: width - 170, top: height * 0.52 }, orbB]}>
+        <Svg width={200} height={200}>
+          <Circle cx={100} cy={100} r={100} fill={p.orbB} opacity={p.orbOpacity} />
+        </Svg>
+      </Animated.View>
+    </>
+  );
+}
+
+function SolidCircle({ id, colors, size, opacity }: { id: string; colors: Pair; size: number; opacity: number }) {
+  const r = size / 2;
+  return (
+    <Svg width={size} height={size}>
+      <Defs>
+        <SvgLinearGradient id={id} x1="0" y1="0" x2="1" y2="1">
+          <Stop offset="0%" stopColor={colors[0]} />
+          <Stop offset="100%" stopColor={colors[1]} />
+        </SvgLinearGradient>
+      </Defs>
+      <Circle cx={r} cy={r} r={r} fill={`url(#${id})`} opacity={opacity} />
+    </Svg>
+  );
+}
+
+function BackgroundDecor({
+  variant,
+  isDark,
+  p,
+  width,
+  height,
+}: {
+  variant: AuthVariant;
+  isDark: boolean;
+  p: Palette;
+  width: number;
+  height: number;
+}) {
   const t1 = useLoop(5200);
   const t2 = useLoop(6400, 700);
 
-  const topRight = useAnimatedStyle(() => ({
+  const shapeStyle = useAnimatedStyle(() => ({
     transform: [
       { translateY: interpolate(t1.value, [0, 1], [0, 10]) },
-      { rotate: `${interpolate(t1.value, [0, 1], [0, 8])}deg` },
+      { rotate: `${interpolate(t1.value, [0, 1], [0, variant === 'login' ? 8 : -4])}deg` },
       { scale: interpolate(t1.value, [0, 1], [1, 1.04]) },
     ],
   }));
-  const bottomLeft = useAnimatedStyle(() => ({
+  const circleA = useAnimatedStyle(() => ({
     transform: [
       { translateY: interpolate(t2.value, [0, 1], [0, -14]) },
       { scale: interpolate(t2.value, [0, 1], [1, 1.06]) },
     ],
   }));
-  const bottomRight = useAnimatedStyle(() => ({
+  const circleB = useAnimatedStyle(() => ({
     transform: [
       { translateY: interpolate(t1.value, [0, 1], [0, -12]) },
       { translateX: interpolate(t2.value, [0, 1], [0, -8]) },
@@ -259,49 +446,59 @@ function BackgroundDecor({ isDark, p, height }: { isDark: boolean; p: Palette; h
 
   return (
     <View pointerEvents="none" style={StyleSheet.absoluteFill}>
-      {/* Top-right corner shape */}
-      <Animated.View style={[{ position: 'absolute', top: -90, right: -110 }, topRight]}>
-        <Svg width={280} height={280} viewBox="0 0 280 280">
-          <Defs>
-            <SvgLinearGradient id="trShape" x1="0" y1="0" x2="1" y2="1">
-              <Stop offset="0%" stopColor={isDark ? '#1E2A5C' : '#BBF7D0'} />
-              <Stop offset="100%" stopColor={isDark ? '#141B3D' : '#4ADE80'} />
-            </SvgLinearGradient>
-          </Defs>
-          <Path
-            d="M196 22c44 20 76 66 70 120-6 56-50 106-108 112-54 6-104-26-120-76-16-50 6-102 48-132 38-28 70-40 110-24z"
-            fill="url(#trShape)"
-            opacity={isDark ? 0.9 : 0.75}
-          />
-        </Svg>
-      </Animated.View>
+      <DriftingOrbs p={p} width={width} height={height} />
 
+      {variant === 'login' ? (
         <>
-          {/* Bottom-left solid circle */}
-          <Animated.View style={[{ position: 'absolute', left: -70, top: height * 0.6 }, bottomLeft]}>
-            <Svg width={140} height={140}>
+          {/* top-right blob */}
+          <Animated.View style={[{ position: 'absolute', top: -90, right: -110 }, shapeStyle]}>
+            <Svg width={280} height={280} viewBox="0 0 280 280">
               <Defs>
-                <SvgLinearGradient id="blCircle" x1="0" y1="0" x2="1" y2="1">
-                  <Stop offset="0%" stopColor={p.cornerA[0]} />
-                  <Stop offset="100%" stopColor={p.cornerA[1]} />
+                <SvgLinearGradient id="trShape" x1="0" y1="0" x2="1" y2="1">
+                  <Stop offset="0%" stopColor={p.topShape[0]} />
+                  <Stop offset="100%" stopColor={p.topShape[1]} />
                 </SvgLinearGradient>
               </Defs>
-              <Circle cx={70} cy={70} r={70} fill="url(#blCircle)" opacity={p.cornerOpacity} />
+              <Path
+                d="M196 22c44 20 76 66 70 120-6 56-50 106-108 112-54 6-104-26-120-76-16-50 6-102 48-132 38-28 70-40 110-24z"
+                fill="url(#trShape)"
+                opacity={isDark ? 0.9 : 0.75}
+              />
             </Svg>
           </Animated.View>
-          {/* Bottom-right solid circle */}
-          <Animated.View style={[{ position: 'absolute', right: -90, top: height * 0.76 }, bottomRight]}>
-            <Svg width={190} height={190}>
-              <Defs>
-                <SvgLinearGradient id="brCircle" x1="0" y1="0" x2="1" y2="1">
-                  <Stop offset="0%" stopColor={p.cornerB[0]} />
-                  <Stop offset="100%" stopColor={p.cornerB[1]} />
-                </SvgLinearGradient>
-              </Defs>
-              <Circle cx={95} cy={95} r={95} fill="url(#brCircle)" opacity={p.cornerOpacity} />
-            </Svg>
+          <Animated.View style={[{ position: 'absolute', left: -70, top: height * 0.6 }, circleA]}>
+            <SolidCircle id="lgA" colors={p.cornerA} size={140} opacity={p.cornerOpacity} />
+          </Animated.View>
+          <Animated.View style={[{ position: 'absolute', right: -90, top: height * 0.76 }, circleB]}>
+            <SolidCircle id="lgB" colors={p.cornerB} size={190} opacity={p.cornerOpacity} />
           </Animated.View>
         </>
+      ) : (
+        <>
+          {/* top wave band across the whole width */}
+          <Animated.View style={[{ position: 'absolute', top: -40, left: -30 }, shapeStyle]}>
+            <Svg width={width + 60} height={260} viewBox="0 0 420 260" preserveAspectRatio="none">
+              <Defs>
+                <SvgLinearGradient id="rgWave" x1="0" y1="0" x2="1" y2="0.6">
+                  <Stop offset="0%" stopColor={p.topShape[0]} />
+                  <Stop offset="100%" stopColor={p.topShape[1]} />
+                </SvgLinearGradient>
+              </Defs>
+              <Path
+                d="M0 0h420v150c-50 40-110 52-170 30S120 120 60 150C30 165 12 190 0 200z"
+                fill="url(#rgWave)"
+                opacity={isDark ? 0.85 : 0.6}
+              />
+            </Svg>
+          </Animated.View>
+          <Animated.View style={[{ position: 'absolute', right: -50, top: height * 0.46 }, circleB]}>
+            <SolidCircle id="rgB" colors={p.cornerB} size={110} opacity={p.cornerOpacity} />
+          </Animated.View>
+          <Animated.View style={[{ position: 'absolute', left: -80, top: height * 0.8 }, circleA]}>
+            <SolidCircle id="rgA" colors={p.cornerA} size={230} opacity={p.cornerOpacity} />
+          </Animated.View>
+        </>
+      )}
     </View>
   );
 }
@@ -443,9 +640,97 @@ function ReceiptIllustration({ p, isDark }: { p: Palette; isDark: boolean }) {
   );
 }
 // ---------------------------------------------------------------------------
+// Register hero: a spinning "split" donut with friends orbiting around it
+// ---------------------------------------------------------------------------
+const DONUT_R = 46;
+const DONUT_C = 2 * Math.PI * DONUT_R;
+
+function Avatar({ x, y, color, bg, delay }: { x: number; y: number; color: string; bg: string; delay: number }) {
+  const bob = useLoop(2400, delay);
+  const style = useAnimatedStyle(() => ({
+    transform: [{ translateY: interpolate(bob.value, [0, 1], [-5, 5]) }],
+  }));
+  return (
+    <Animated.View style={[{ position: 'absolute', left: x, top: y }, style]}>
+      <Svg width={40} height={40} viewBox="0 0 40 40">
+        <Circle cx={20} cy={20} r={18} fill={bg} stroke={color} strokeWidth={2.5} />
+        <Circle cx={20} cy={16} r={5.5} fill={color} />
+        <Path d="M10.5 30c1.6-5 5.3-7.5 9.5-7.5s7.9 2.5 9.5 7.5" fill={color} />
+      </Svg>
+    </Animated.View>
+  );
+}
+
+function SplitIllustration({ p }: { p: Palette }) {
+  const spin = useSharedValue(0);
+  const pulse = useLoop(3200);
+
+  useEffect(() => {
+    spin.value = withRepeat(withTiming(1, { duration: 24000, easing: Easing.linear }), -1, false);
+  }, []);
+
+  const donutStyle = useAnimatedStyle(() => ({ transform: [{ rotate: `${spin.value * 360}deg` }] }));
+  const coinStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: interpolate(pulse.value, [0, 1], [0.94, 1.06]) }],
+  }));
+
+  const gap = 6;
+  const seg = DONUT_C / 3 - gap;
+  const segColors = [p.gradient[0], p.gradient[1], p.blobSoft];
+
+  return (
+    <View pointerEvents="none" style={styles.illustration}>
+      <Animated.View style={[{ position: 'absolute', left: 50, top: 30 }, donutStyle]}>
+        <Svg width={130} height={130} viewBox="0 0 130 130">
+          <G rotation={-90} origin="65, 65">
+            {segColors.map((c, i) => (
+              <Circle
+                key={i}
+                cx={65}
+                cy={65}
+                r={DONUT_R}
+                stroke={c}
+                strokeWidth={18}
+                strokeLinecap="round"
+                fill="none"
+                strokeDasharray={`${seg} ${DONUT_C - seg}`}
+                strokeDashoffset={-i * (DONUT_C / 3)}
+              />
+            ))}
+          </G>
+        </Svg>
+      </Animated.View>
+
+      <Animated.View style={[{ position: 'absolute', left: 87, top: 67 }, coinStyle]}>
+        <Svg width={56} height={56} viewBox="0 0 56 56">
+          <Defs>
+            <SvgLinearGradient id="coin" x1="0" y1="0" x2="1" y2="1">
+              <Stop offset="0%" stopColor={p.gradientText[0]} />
+              <Stop offset="100%" stopColor={p.gradientText[1]} />
+            </SvgLinearGradient>
+          </Defs>
+          <Circle cx={28} cy={28} r={26} fill={p.avatarBg} />
+          {/* ÷ split glyph */}
+          <Circle cx={28} cy={18} r={3.6} fill="url(#coin)" />
+          <Rect x={15} y={25.5} width={26} height={5} rx={2.5} fill="url(#coin)" />
+          <Circle cx={28} cy={38} r={3.6} fill="url(#coin)" />
+        </Svg>
+      </Animated.View>
+
+      <Avatar x={22} y={18} color={p.gradient[0]} bg={p.avatarBg} delay={0} />
+      <Avatar x={162} y={36} color={p.gradient[1]} bg={p.avatarBg} delay={700} />
+      <Avatar x={120} y={150} color={p.blobSoft} bg={p.avatarBg} delay={1400} />
+
+      <Sparkle x={36} y={130} size={13} delay={300} color={p.sparkle} />
+      <Sparkle x={182} y={130} size={11} delay={1200} color={p.sparkle} />
+    </View>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Gradient title + animated swoosh underline
 // ---------------------------------------------------------------------------
-function GradientTitle({ p, fontSize, width }: { p: Palette; fontSize: number; width: number }) {
+function GradientTitle({ p, text, fontSize, width }: { p: Palette; text: string; fontSize: number; width: number }) {
   const height = Math.round(fontSize * 1.3);
   return (
     <Svg width={width} height={height}>
@@ -463,7 +748,7 @@ function GradientTitle({ p, fontSize, width }: { p: Palette; fontSize: number; w
         fontWeight="800"
         letterSpacing={-0.5}
       >
-        {APP_TITLE}
+        {text}
       </SvgText>
     </Svg>
   );
@@ -696,14 +981,13 @@ export function SocialButton({ p, label, icon, onPress }: { p: Palette; label: s
 }
 
 // ---------------------------------------------------------------------------
-// Screen
-// ---------------------------------------------------------------------------
-
-// ---------------------------------------------------------------------------
 // Screen shell shared by every auth screen (login, register, ...)
+//
+// No entrance animations here on purpose: the stack's fade transition does the
+// work, and the hero stays put instead of re-popping on every navigation.
 // ---------------------------------------------------------------------------
 type AuthTheme = { p: Palette; isDark: boolean };
-const AuthThemeContext = createContext<AuthTheme>({ p: PALETTES.light, isDark: false });
+const AuthThemeContext = createContext<AuthTheme>({ p: PALETTES.login.light, isDark: false });
 
 /** Palette of the surrounding <AuthScreen>. */
 export function useAuthTheme() {
@@ -732,81 +1016,106 @@ export function useAuthError() {
   return { message, show, clear, shakeStyle };
 }
 
+/** True once the screen's enter transition has finished (or after a short fallback). */
+function useTransitionDone() {
+  const navigation = useNavigation();
+  const [done, setDone] = useState(false);
+  useEffect(() => {
+    const fallback = setTimeout(() => setDone(true), 450);
+    const unsub = navigation.addListener('transitionEnd' as any, (e: any) => {
+      if (!e?.data?.closing) setDone(true);
+    });
+    return () => {
+      clearTimeout(fallback);
+      unsub?.();
+    };
+  }, [navigation]);
+  return done;
+}
+
 export function AuthScreen({
-  welcome,
+  variant,
+  eyebrow,
+  title = APP_TITLE,
   subtitle,
-  backHref = '/',
+  backFallback,
   children,
 }: {
-  welcome: string;
+  variant: AuthVariant;
+  eyebrow: string;
+  title?: string;
   subtitle: string;
-  backHref?: Href;
+  /** Where the back button goes when there is no screen to go back to. */
+  backFallback: Href;
   children: React.ReactNode;
 }) {
   const theme = useAppStore((s) => s.theme);
   const isDark = theme === 'dark';
-  const p: Palette = isDark ? PALETTES.dark : PALETTES.light;
+  const p = PALETTES[variant][isDark ? 'dark' : 'light'];
+  const router = useRouter();
   const insets = useSafeAreaInsets();
   const { width, height } = useWindowDimensions();
   const blurTargetRef = useRef<View>(null);
   const reduceTransparency = useReduceTransparency();
+  const glassReady = useTransitionDone();
   const contentWidth = Math.min(width, 480) - 48;
   const titleSize = Math.min(34, Math.floor(contentWidth / 9.6));
+
+  const goBack = () => {
+    if (router.canGoBack()) router.back();
+    else router.replace(backFallback);
+  };
 
   return (
     <AuthThemeContext.Provider value={{ p, isDark }}>
       <BlurTargetContext.Provider value={blurTargetRef}>
         <ReduceTransparencyContext.Provider value={reduceTransparency}>
-          <View style={styles.container}>
-            {/* Everything the glass blurs lives inside this target (required on Android) */}
-            <BlurTargetView ref={blurTargetRef} style={StyleSheet.absoluteFill}>
-              <LinearGradient colors={p.bg} style={StyleSheet.absoluteFill} />
-              <BackgroundDecor isDark={isDark} p={p} height={height} />
-            </BlurTargetView>
+          <GlassReadyContext.Provider value={glassReady}>
+            <View style={styles.container}>
+              {/* Everything the glass blurs lives inside this target (required on Android) */}
+              <BlurTargetView ref={blurTargetRef} style={StyleSheet.absoluteFill}>
+                <LinearGradient colors={p.bg} style={StyleSheet.absoluteFill} />
+                <BackgroundDecor variant={variant} isDark={isDark} p={p} width={width} height={height} />
+              </BlurTargetView>
 
-            <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-              <ScrollView
-                contentContainerStyle={[styles.scroll, { paddingTop: insets.top + 12, paddingBottom: insets.bottom + 24 }]}
-                keyboardShouldPersistTaps="handled"
-                showsVerticalScrollIndicator={false}
-              >
-                <View style={styles.inner}>
-                  {/* Illustration sits behind the header/title so it can be large */}
-                  <Animated.View
-                    entering={ZoomIn.delay(150).springify().damping(14)}
-                    style={styles.illustrationWrap}
-                    pointerEvents="none"
-                  >
-                    <ReceiptIllustration p={p} isDark={isDark} />
-                  </Animated.View>
+              <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+                <ScrollView
+                  contentContainerStyle={[styles.scroll, { paddingTop: insets.top + 12, paddingBottom: insets.bottom + 24 }]}
+                  keyboardShouldPersistTaps="handled"
+                  showsVerticalScrollIndicator={false}
+                >
+                  <View style={styles.inner}>
+                    {/* Hero sits behind the header/title so it can be large */}
+                    <View style={styles.illustrationWrap} pointerEvents="none">
+                      {variant === 'login' ? <ReceiptIllustration p={p} isDark={isDark} /> : <SplitIllustration p={p} />}
+                    </View>
 
-                  <View style={styles.headerRow}>
-                    <Animated.View entering={FadeIn.delay(80)}>
-                      <Link href={backHref} asChild>
-                        <Pressable
-                          accessibilityRole="button"
-                          accessibilityLabel="Back"
-                          style={StyleSheet.flatten([styles.back, styles.glass, { borderColor: p.backBorder }])}
-                        >
-                          <GlassLayers p={p} fill={p.backBg} intensity={36} />
-                          <ChevronLeft size={20} color={p.text} />
-                        </Pressable>
-                      </Link>
-                    </Animated.View>
+                    <View style={styles.headerRow}>
+                      <Pressable
+                        onPress={goBack}
+                        accessibilityRole="button"
+                        accessibilityLabel="Back"
+                        hitSlop={6}
+                        style={StyleSheet.flatten([styles.back, styles.glass, { borderColor: p.backBorder }])}
+                      >
+                        <GlassLayers p={p} fill={p.backBg} radius={21} />
+                        <ChevronLeft size={20} color={p.text} />
+                      </Pressable>
+                    </View>
+
+                    <View style={styles.titleBlock}>
+                      <Text style={[styles.welcome, { color: p.text, fontSize: titleSize * 0.82 }]}>{eyebrow}</Text>
+                      <GradientTitle p={p} text={title} fontSize={titleSize} width={contentWidth} />
+                      <Swoosh p={p} />
+                      <Text style={[styles.subtitle, { color: p.muted }]}>{subtitle}</Text>
+                    </View>
+
+                    {children}
                   </View>
-
-                  <Animated.View entering={FadeInDown.delay(220).springify().damping(16)} style={styles.titleBlock}>
-                    <Text style={[styles.welcome, { color: p.text, fontSize: titleSize * 0.82 }]}>{welcome}</Text>
-                    <GradientTitle p={p} fontSize={titleSize} width={contentWidth} />
-                    <Swoosh p={p} />
-                    <Text style={[styles.subtitle, { color: p.muted }]}>{subtitle}</Text>
-                  </Animated.View>
-
-                  {children}
-                </View>
-              </ScrollView>
-            </KeyboardAvoidingView>
-          </View>
+                </ScrollView>
+              </KeyboardAvoidingView>
+            </View>
+          </GlassReadyContext.Provider>
         </ReduceTransparencyContext.Provider>
       </BlurTargetContext.Provider>
     </AuthThemeContext.Provider>
@@ -849,59 +1158,61 @@ export function PasswordToggle({ visible, onToggle }: { visible: boolean; onTogg
   );
 }
 
-export function OrDivider({ delay = 560 }: { delay?: number }) {
+export function OrDivider() {
   const { t } = useTranslation();
   const { p } = useAuthTheme();
   return (
-    <Animated.View entering={FadeIn.delay(delay)} style={styles.dividerRow}>
+    <View style={styles.dividerRow}>
       <View style={[styles.divider, { backgroundColor: p.divider }]} />
       <Text style={[styles.dividerText, { color: p.muted }]}>{t('auth.or', 'or')}</Text>
       <View style={[styles.divider, { backgroundColor: p.divider }]} />
-    </Animated.View>
+    </View>
   );
 }
 
-export function SocialRow({ delay = 620 }: { delay?: number }) {
+export function SocialRow() {
   const { t } = useTranslation();
   const { p } = useAuthTheme();
   const onSocial = (provider: string) =>
     Alert.alert(provider, t('auth.socialComingSoon', 'Sign in with {{provider}} is coming soon.', { provider }));
   return (
-    <Animated.View entering={FadeInUp.delay(delay).duration(500)} style={styles.socialRow}>
+    <View style={styles.socialRow}>
       <SocialButton p={p} label="Google" icon={<GoogleIcon />} onPress={() => onSocial('Google')} />
       <SocialButton p={p} label="GitHub" icon={<GitHubIcon color={p.githubFill} />} onPress={() => onSocial('GitHub')} />
       <SocialButton p={p} label="Apple" icon={<AppleIcon color={p.appleFill} />} onPress={() => onSocial('Apple')} />
-    </Animated.View>
+    </View>
   );
 }
 
-/** Glass pill at the bottom linking to the sibling auth screen. */
+/**
+ * Glass pill at the bottom that switches to the sibling auth screen.
+ * Uses `replace` so login ⇄ register cross-fade instead of stacking up.
+ */
 export function FooterLink({
   href,
   icon: Icon,
   text,
   linkText,
-  delay = 700,
 }: {
   href: Href;
   icon: React.ComponentType<{ size?: number; color?: string }>;
   text: string;
   linkText: string;
-  delay?: number;
 }) {
   const { p } = useAuthTheme();
+  const router = useRouter();
   return (
-    <Animated.View entering={FadeInUp.delay(delay).duration(500)}>
-      <Link href={href} asChild>
-        <Pressable style={StyleSheet.flatten([styles.footer, styles.glass, { borderColor: p.backBorder }])}>
-          <GlassLayers p={p} fill={p.footerBg} intensity={32} />
-          <Icon size={18} color={p.footerIcon} />
-          <Text style={[styles.footerText, { color: p.muted }]}>{text}</Text>
-          <Text style={[styles.footerLink, { color: p.link }]}>{linkText}</Text>
-          <ChevronRight size={14} color={p.link} />
-        </Pressable>
-      </Link>
-    </Animated.View>
+    <Pressable
+      onPress={() => router.replace(href)}
+      accessibilityRole="link"
+      style={StyleSheet.flatten([styles.footer, styles.glass, { borderColor: p.backBorder }])}
+    >
+      <GlassLayers p={p} fill={p.footerBg} />
+      <Icon size={18} color={p.footerIcon} />
+      <Text style={[styles.footerText, { color: p.muted }]}>{text}</Text>
+      <Text style={[styles.footerLink, { color: p.link }]}>{linkText}</Text>
+      <ChevronRight size={14} color={p.link} />
+    </Pressable>
   );
 }
 

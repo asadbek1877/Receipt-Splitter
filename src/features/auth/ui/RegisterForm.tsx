@@ -4,7 +4,7 @@ import { useForm, Controller } from 'react-hook-form';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useTranslation } from 'react-i18next';
-import Animated, { FadeInUp } from 'react-native-reanimated';
+import { View } from 'react-native';
 import { Lock, LogIn, Mail, User } from '@tamagui/lucide-icons';
 
 import { register, RegisterRequest, getCurrentUser } from '../api';
@@ -38,7 +38,10 @@ export default function RegisterForm() {
   const { t } = useTranslation();
   return (
     <AuthScreen
-      welcome={t('auth.joinUs', 'Join us')}
+      variant="register"
+      eyebrow={t('auth.joinUs', 'Join us')}
+      title={t('auth.newAccount', 'New account')}
+      backFallback="/login"
       subtitle={t('auth.fillDetails', 'Fill in your details to get started')}
     >
       <RegisterBody />
@@ -89,7 +92,7 @@ function RegisterBody() {
     <>
       <ErrorBanner error={error} />
 
-      <Animated.View entering={FadeInUp.delay(320).duration(500)} style={{ gap: 14 }}>
+      <View style={{ gap: 14 }}>
         <Controller
           control={control}
           name="username"
@@ -135,16 +138,16 @@ function RegisterBody() {
             />
           )}
         />
-      </Animated.View>
+      </View>
 
-      <Animated.View entering={FadeInUp.delay(480).duration(500)} style={{ marginTop: 22 }}>
+      <View style={{ marginTop: 22 }}>
         <PrimaryButton
           p={p}
           loading={isLoading}
           label={isLoading ? t('common.loading', 'Loading...') : t('auth.createAccount', 'Create Account')}
           onPress={handleSubmit(onSubmit)}
         />
-      </Animated.View>
+      </View>
 
       <OrDivider />
       <SocialRow />
