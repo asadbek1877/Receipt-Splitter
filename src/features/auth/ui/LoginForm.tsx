@@ -1,38 +1,55 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useRouter, Link } from 'expo-router';
 import { useForm, Controller } from 'react-hook-form';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { YStack, XStack, Text, View } from 'tamagui';
-import { StyleSheet, Pressable, Dimensions, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
+import {
+  Alert,
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+  useWindowDimensions,
+} from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, {
+  Easing,
   FadeIn,
   FadeInDown,
   FadeInUp,
-  SlideInDown,
-  useSharedValue,
+  interpolate,
+  useAnimatedProps,
   useAnimatedStyle,
+  useSharedValue,
+  withDelay,
   withRepeat,
-  withTiming,
   withSequence,
-  Easing,
+  withTiming,
 } from 'react-native-reanimated';
 import { LinearGradient } from 'expo-linear-gradient';
-import Svg, { Circle, Defs, RadialGradient, Stop, Ellipse } from 'react-native-svg';
+import Svg, {
+  Circle,
+  Defs,
+  G,
+  LinearGradient as SvgLinearGradient,
+  Path,
+  RadialGradient,
+  Rect,
+  Stop,
+  Text as SvgText,
+} from 'react-native-svg';
+import { ArrowRight, ChevronLeft, ChevronRight, Eye, EyeOff, Lock, Mail, UserPlus } from '@tamagui/lucide-icons';
 
-import { Button } from '@/shared/ui/Button';
-import { Input } from '@/shared/ui/Input';
-import PasswordInput from '@/shared/ui/PasswordInput';
-import { getJapaneseColors, borderRadius, shadows } from '@/shared/ui/JapaneseTheme';
 import { login, LoginRequest, getCurrentUser } from '../api';
 import { saveToken } from '@/shared/lib/utils/token-storage';
 import { useAppStore } from '@/shared/lib/stores/app-store';
-import { useThemeColors } from '@/shared/lib/stores/theme-store';
-import { Mail, Lock, ChevronLeft } from '@tamagui/lucide-icons';
 
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
+const APP_TITLE = 'Receipt Splitter';
 
 const schema = z.object({
   email: z.string().email('Please enter a valid email'),
@@ -41,74 +58,515 @@ const schema = z.object({
 
 type FormData = z.infer<typeof schema>;
 
-// Floating Leaf Particle
-const FloatingLeaf = ({ delay, startX }: { delay: number; startX: number }) => {
-  const translateY = useSharedValue(-20);
-  const translateX = useSharedValue(0);
-  const rotate = useSharedValue(0);
-  const opacity = useSharedValue(0);
+const AnimatedPath = Animated.createAnimatedComponent(Path);
 
+// ---------------------------------------------------------------------------
+// Palettes — light = green, dark = blue → violet (matches the design mock)
+// ---------------------------------------------------------------------------
+const PALETTES = {
+  light: {
+    bg: ['#FFFFFF', '#FFFFFF'] as const,
+    text: '#0F172A',
+    muted: '#64748B',
+    placeholder: '#8A94A6',
+    icon: '#475569',
+    accent: '#16A34A',
+    link: '#16A34A',
+    gradient: ['#34D27B', '#16A34A'] as const,
+    gradientText: ['#22C55E', '#15803D'] as const,
+    inputBg: '#F3F5F8',
+    inputBorder: '#F3F5F8',
+    inputFocus: '#22C55E',
+    divider: '#E5E7EB',
+    socialBg: '#FFFFFF',
+    socialBorder: '#E8ECF1',
+    socialText: '#1F2937',
+    footerBg: '#EDFBF2',
+    footerIcon: '#16A34A',
+    backBg: '#FFFFFF',
+    backBorder: '#EEF1F4',
+    blob: ['#4ADE80', '#16A34A'] as const,
+    blobSoft: '#BBF7D0',
+    drop: ['#86EFAC', '#22C55E'] as const,
+    paper: ['#FFFFFF', '#F1F5F9'] as const,
+    paperLine: '#CBD5E1',
+    barcode: '#334155',
+    roll: ['#E2E8F0', '#FFFFFF'] as const,
+    arrowBg: 'rgba(255,255,255,0.25)',
+    githubFill: '#111827',
+    appleFill: '#111827',
+  },
+  dark: {
+    bg: ['#0A0F1E', '#0E1430'] as const,
+    text: '#FFFFFF',
+    muted: '#94A3B8',
+    placeholder: '#8A93A8',
+    icon: '#AAB3C5',
+    accent: '#8B5CF6',
+    link: '#A78BFA',
+    gradient: ['#4F8BFF', '#A855F7'] as const,
+    gradientText: ['#60A5FA', '#A855F7'] as const,
+    inputBg: 'rgba(255,255,255,0.04)',
+    inputBorder: 'rgba(255,255,255,0.09)',
+    inputFocus: '#8B5CF6',
+    divider: 'rgba(255,255,255,0.10)',
+    socialBg: 'rgba(255,255,255,0.03)',
+    socialBorder: 'rgba(255,255,255,0.09)',
+    socialText: '#E2E8F0',
+    footerBg: 'rgba(124,92,246,0.14)',
+    footerIcon: '#A78BFA',
+    backBg: 'rgba(255,255,255,0.06)',
+    backBorder: 'rgba(255,255,255,0.10)',
+    blob: ['#3B82F6', '#7C3AED'] as const,
+    blobSoft: '#6366F1',
+    drop: ['#818CF8', '#7C3AED'] as const,
+    paper: ['#3B4FD8', '#5B3FD6'] as const,
+    paperLine: 'rgba(255,255,255,0.45)',
+    barcode: 'rgba(255,255,255,0.9)',
+    roll: ['#2E3CB0', '#4F46E5'] as const,
+    arrowBg: 'rgba(255,255,255,0.22)',
+    githubFill: '#FFFFFF',
+    appleFill: '#FFFFFF',
+  },
+};
+
+type Palette = (typeof PALETTES)['light'] | (typeof PALETTES)['dark'];
+
+// ---------------------------------------------------------------------------
+// Animation helpers
+// ---------------------------------------------------------------------------
+function useLoop(duration: number, delay = 0) {
+  const v = useSharedValue(0);
   useEffect(() => {
-    translateY.value = withRepeat(
-      withTiming(400, { duration: 8000 + Math.random() * 4000, easing: Easing.linear }),
-      -1, false
+    v.value = withDelay(
+      delay,
+      withRepeat(withTiming(1, { duration, easing: Easing.inOut(Easing.sin) }), -1, true),
     );
-    translateX.value = withRepeat(
-      withTiming(Math.random() * 50 - 25, { duration: 3000, easing: Easing.inOut(Easing.ease) }),
-      -1, true
-    );
-    rotate.value = withRepeat(
-      withTiming(360, { duration: 5000, easing: Easing.linear }),
-      -1, false
-    );
-    opacity.value = withTiming(0.5, { duration: 600 });
   }, []);
+  return v;
+}
 
-  const style = useAnimatedStyle(() => ({
+// ---------------------------------------------------------------------------
+// Background decoration (blobs / glows)
+// ---------------------------------------------------------------------------
+function BackgroundDecor({ isDark, p, height }: { isDark: boolean; p: Palette; height: number }) {
+  const t1 = useLoop(5200);
+  const t2 = useLoop(6800, 600);
+
+  const topRight = useAnimatedStyle(() => ({
     transform: [
-      { translateY: translateY.value },
-      { translateX: translateX.value },
-      { rotate: `${rotate.value}deg` },
+      { translateX: interpolate(t1.value, [0, 1], [0, -10]) },
+      { translateY: interpolate(t1.value, [0, 1], [0, 8]) },
+      { scale: interpolate(t1.value, [0, 1], [1, 1.05]) },
     ],
-    opacity: opacity.value,
+  }));
+  const bottomLeft = useAnimatedStyle(() => ({
+    transform: [
+      { translateX: interpolate(t2.value, [0, 1], [0, 14]) },
+      { translateY: interpolate(t2.value, [0, 1], [0, -10]) },
+    ],
+  }));
+  const bottomRight = useAnimatedStyle(() => ({
+    transform: [
+      { translateX: interpolate(t1.value, [0, 1], [0, -12]) },
+      { translateY: interpolate(t2.value, [0, 1], [0, -8]) },
+    ],
   }));
 
   return (
-    <Animated.View style={[{ position: 'absolute', top: 0, left: startX, zIndex: 1 }, style]}>
-      <Svg width={14} height={14} viewBox="0 0 14 14">
-        <Ellipse cx="7" cy="7" rx="5" ry="3" fill="#86EFAC" opacity={0.7} />
-      </Svg>
-    </Animated.View>
-  );
-};
+    <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+      {/* Top-right corner blob */}
+      <Animated.View style={[{ position: 'absolute', top: -70, right: -90 }, topRight]}>
+        <Svg width={260} height={260} viewBox="0 0 260 260">
+          <Defs>
+            <RadialGradient id="trBlob" cx="40%" cy="60%" r="60%">
+              <Stop offset="0%" stopColor={p.blob[0]} stopOpacity={isDark ? 0.45 : 0.55} />
+              <Stop offset="100%" stopColor={p.blob[1]} stopOpacity={isDark ? 0.05 : 0.2} />
+            </RadialGradient>
+          </Defs>
+          <Path
+            d="M180 20c40 18 70 60 64 110-6 52-46 98-100 104-50 6-96-24-112-70-16-46 6-94 44-122 36-26 66-38 104-22z"
+            fill="url(#trBlob)"
+          />
+        </Svg>
+      </Animated.View>
 
-// Jade Orb
-const JadeOrb = () => {
-  const scale = useSharedValue(1);
-  useEffect(() => {
-    scale.value = withRepeat(
-      withTiming(1.04, { duration: 3500, easing: Easing.inOut(Easing.ease) }),
-      -1, true
-    );
-  }, []);
-  const animated = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
+      {isDark && (
+        <>
+          <Animated.View style={[{ position: 'absolute', left: -110, top: height * 0.62 }, bottomLeft]}>
+            <Svg width={240} height={240}>
+              <Defs>
+                <RadialGradient id="blGlow" cx="50%" cy="50%" r="50%">
+                  <Stop offset="0%" stopColor="#7C3AED" stopOpacity={0.55} />
+                  <Stop offset="100%" stopColor="#4F46E5" stopOpacity={0} />
+                </RadialGradient>
+              </Defs>
+              <Circle cx={120} cy={120} r={120} fill="url(#blGlow)" />
+            </Svg>
+          </Animated.View>
+          <Animated.View style={[{ position: 'absolute', right: -120, top: height * 0.72 }, bottomRight]}>
+            <Svg width={260} height={260}>
+              <Defs>
+                <RadialGradient id="brGlow" cx="50%" cy="50%" r="50%">
+                  <Stop offset="0%" stopColor="#8B5CF6" stopOpacity={0.6} />
+                  <Stop offset="100%" stopColor="#6D28D9" stopOpacity={0} />
+                </RadialGradient>
+              </Defs>
+              <Circle cx={130} cy={130} r={130} fill="url(#brGlow)" />
+            </Svg>
+          </Animated.View>
+        </>
+      )}
+    </View>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Hero illustration: floating receipt with blob + droplets
+// ---------------------------------------------------------------------------
+function ReceiptIllustration({ p }: { p: Palette }) {
+  const float = useLoop(2600);
+  const pulse = useLoop(3800, 300);
+  const drop1 = useLoop(2200, 200);
+  const drop2 = useLoop(2800, 900);
+
+  const receiptStyle = useAnimatedStyle(() => ({
+    transform: [
+      { translateY: interpolate(float.value, [0, 1], [-6, 6]) },
+      { rotate: `${interpolate(float.value, [0, 1], [-3, 2])}deg` },
+    ],
+  }));
+  const blobStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: interpolate(pulse.value, [0, 1], [0.96, 1.06]) }],
+  }));
+  const drop1Style = useAnimatedStyle(() => ({
+    transform: [
+      { translateY: interpolate(drop1.value, [0, 1], [0, -8]) },
+      { rotate: `${interpolate(drop1.value, [0, 1], [-10, 10])}deg` },
+    ],
+  }));
+  const drop2Style = useAnimatedStyle(() => ({
+    transform: [
+      { translateY: interpolate(drop2.value, [0, 1], [0, 7]) },
+      { rotate: `${interpolate(drop2.value, [0, 1], [8, -8])}deg` },
+    ],
+  }));
 
   return (
-    <Animated.View style={[{ marginTop: 4 }, animated]}>
-      <Svg width={70} height={70} viewBox="0 0 100 100">
-        <Defs>
-          <RadialGradient id="jadeGradL" cx="50%" cy="50%" r="50%">
-            <Stop offset="0%" stopColor="#A7F3D0" />
-            <Stop offset="60%" stopColor="#34D399" />
-            <Stop offset="100%" stopColor="#059669" />
-          </RadialGradient>
-        </Defs>
-        <Circle cx="50" cy="50" r="42" fill="url(#jadeGradL)" opacity={0.85} />
-      </Svg>
-    </Animated.View>
+    <View pointerEvents="none" style={styles.illustration}>
+      {/* soft blob behind the receipt */}
+      <Animated.View style={[{ position: 'absolute', right: 0, top: 34 }, blobStyle]}>
+        <Svg width={130} height={110} viewBox="0 0 130 110">
+          <Defs>
+            <SvgLinearGradient id="heroBlob" x1="0" y1="0" x2="1" y2="1">
+              <Stop offset="0%" stopColor={p.blob[0]} />
+              <Stop offset="100%" stopColor={p.blob[1]} />
+            </SvgLinearGradient>
+          </Defs>
+          <Path
+            d="M70 6c26-4 54 12 58 40 4 26-10 52-36 60-28 8-62 2-80-18C-4 70 2 44 20 28 34 14 48 9 70 6z"
+            fill="url(#heroBlob)"
+            opacity={0.9}
+          />
+          <Circle cx={30} cy={88} r={14} fill={p.blobSoft} opacity={0.55} />
+        </Svg>
+      </Animated.View>
+
+      {/* floating droplets */}
+      <Animated.View style={[{ position: 'absolute', left: 16, top: 6 }, drop1Style]}>
+        <Svg width={22} height={30} viewBox="0 0 22 30">
+          <Defs>
+            <SvgLinearGradient id="d1" x1="0" y1="0" x2="1" y2="1">
+              <Stop offset="0%" stopColor={p.drop[0]} />
+              <Stop offset="100%" stopColor={p.drop[1]} />
+            </SvgLinearGradient>
+          </Defs>
+          <Path d="M11 1C16 8 21 14 21 20a10 10 0 0 1-20 0C1 14 6 8 11 1z" fill="url(#d1)" />
+        </Svg>
+      </Animated.View>
+      <Animated.View style={[{ position: 'absolute', left: 4, top: 40 }, drop2Style]}>
+        <Svg width={12} height={16} viewBox="0 0 22 30">
+          <Path d="M11 1C16 8 21 14 21 20a10 10 0 0 1-20 0C1 14 6 8 11 1z" fill={p.drop[0]} opacity={0.8} />
+        </Svg>
+      </Animated.View>
+
+      {/* receipt */}
+      <Animated.View style={[{ position: 'absolute', left: 34, top: 2 }, receiptStyle]}>
+        <Svg width={110} height={128} viewBox="0 0 110 128">
+          <Defs>
+            <SvgLinearGradient id="paper" x1="0" y1="0" x2="1" y2="1">
+              <Stop offset="0%" stopColor={p.paper[0]} />
+              <Stop offset="100%" stopColor={p.paper[1]} />
+            </SvgLinearGradient>
+            <SvgLinearGradient id="roll" x1="0" y1="0" x2="0" y2="1">
+              <Stop offset="0%" stopColor={p.roll[0]} />
+              <Stop offset="100%" stopColor={p.roll[1]} />
+            </SvgLinearGradient>
+          </Defs>
+          <G rotation={-14} origin="55, 64">
+            {/* shadow */}
+            <Path d="M24 22h62v84l-6 6-6-6-6 6-6-6-6 6-6-6-6 6-6-6-6 6-8-6z" fill="#000" opacity={0.08} transform="translate(4 5)" />
+            {/* paper with zig-zag bottom */}
+            <Path d="M24 18h62v88l-6 6-6-6-6 6-6-6-6 6-6-6-6 6-6-6-6 6-8-6z" fill="url(#paper)" />
+            {/* top roll curl */}
+            <Rect x={18} y={10} width={74} height={14} rx={7} fill="url(#roll)" />
+            <Rect x={18} y={10} width={74} height={5} rx={2.5} fill="#FFFFFF" opacity={0.35} />
+            {/* text lines */}
+            <Rect x={34} y={36} width={42} height={4} rx={2} fill={p.paperLine} />
+            <Rect x={34} y={46} width={34} height={4} rx={2} fill={p.paperLine} />
+            <Rect x={34} y={56} width={40} height={4} rx={2} fill={p.paperLine} />
+            <Rect x={34} y={66} width={28} height={4} rx={2} fill={p.paperLine} />
+            {/* barcode */}
+            {[0, 3, 5, 9, 11, 14, 18, 20, 23, 27, 29, 33, 36, 38].map((x, i) => (
+              <Rect key={i} x={34 + x} y={80} width={i % 3 === 0 ? 2.4 : 1.4} height={16} fill={p.barcode} />
+            ))}
+          </G>
+        </Svg>
+      </Animated.View>
+    </View>
   );
+}
+
+// ---------------------------------------------------------------------------
+// Gradient title + animated swoosh underline
+// ---------------------------------------------------------------------------
+function GradientTitle({ p, fontSize, width }: { p: Palette; fontSize: number; width: number }) {
+  const height = Math.round(fontSize * 1.3);
+  return (
+    <Svg width={width} height={height}>
+      <Defs>
+        <SvgLinearGradient id="titleGrad" x1="0" y1="0" x2="1" y2="0">
+          <Stop offset="0%" stopColor={p.gradientText[0]} />
+          <Stop offset="100%" stopColor={p.gradientText[1]} />
+        </SvgLinearGradient>
+      </Defs>
+      <SvgText
+        x={0}
+        y={fontSize}
+        fill="url(#titleGrad)"
+        fontSize={fontSize}
+        fontWeight="800"
+        letterSpacing={-0.5}
+      >
+        {APP_TITLE}
+      </SvgText>
+    </Svg>
+  );
+}
+
+const SWOOSH_LENGTH = 70;
+
+function Swoosh({ p }: { p: Palette }) {
+  const progress = useSharedValue(0);
+  useEffect(() => {
+    progress.value = withDelay(
+      500,
+      withRepeat(
+        withSequence(
+          withTiming(1, { duration: 900, easing: Easing.out(Easing.cubic) }),
+          withDelay(2600, withTiming(0, { duration: 0 })),
+        ),
+        -1,
+        false,
+      ),
+    );
+  }, []);
+  const props1 = useAnimatedProps(() => ({ strokeDashoffset: SWOOSH_LENGTH * (1 - progress.value) }));
+  const props2 = useAnimatedProps(() => ({ strokeDashoffset: SWOOSH_LENGTH * (1 - progress.value) }));
+
+  return (
+    <Svg width={64} height={14} viewBox="0 0 64 14" style={{ marginTop: 2 }}>
+      <Defs>
+        <SvgLinearGradient id="swoosh" x1="0" y1="0" x2="1" y2="0">
+          <Stop offset="0%" stopColor={p.gradientText[0]} />
+          <Stop offset="100%" stopColor={p.gradientText[1]} />
+        </SvgLinearGradient>
+      </Defs>
+      <AnimatedPath
+        d="M2 7 C 20 2, 40 2, 60 5"
+        stroke="url(#swoosh)"
+        strokeWidth={3.5}
+        strokeLinecap="round"
+        fill="none"
+        strokeDasharray={SWOOSH_LENGTH}
+        animatedProps={props1}
+      />
+      <AnimatedPath
+        d="M10 12 C 24 9, 38 9, 50 10"
+        stroke="url(#swoosh)"
+        strokeWidth={2.5}
+        strokeLinecap="round"
+        fill="none"
+        opacity={0.7}
+        strokeDasharray={SWOOSH_LENGTH}
+        animatedProps={props2}
+      />
+    </Svg>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Inputs
+// ---------------------------------------------------------------------------
+type FieldProps = {
+  p: Palette;
+  icon: React.ReactNode;
+  value: string;
+  placeholder: string;
+  onChangeText: (v: string) => void;
+  secure?: boolean;
+  keyboardType?: 'email-address' | 'default';
+  error?: string;
+  right?: React.ReactNode;
 };
 
+function Field({ p, icon, value, placeholder, onChangeText, secure, keyboardType = 'default', error, right }: FieldProps) {
+  const [focused, setFocused] = useState(false);
+  const borderColor = error ? '#EF4444' : focused ? p.inputFocus : p.inputBorder;
+  return (
+    <View>
+      <View
+        style={[
+          styles.field,
+          { backgroundColor: p.inputBg, borderColor },
+          focused && { shadowColor: p.inputFocus, shadowOpacity: 0.18, shadowRadius: 10, elevation: 2 },
+        ]}
+      >
+        <View style={styles.fieldIcon}>{icon}</View>
+        <TextInput
+          value={value}
+          onChangeText={onChangeText}
+          placeholder={placeholder}
+          placeholderTextColor={p.placeholder}
+          secureTextEntry={secure}
+          keyboardType={keyboardType}
+          autoCapitalize="none"
+          autoCorrect={false}
+          onFocus={() => setFocused(true)}
+          onBlur={() => setFocused(false)}
+          style={[styles.fieldInput, { color: p.text }]}
+        />
+        {right}
+      </View>
+      {error ? <Text style={styles.fieldError}>{error}</Text> : null}
+    </View>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Primary button with shimmer + arrow nudge
+// ---------------------------------------------------------------------------
+function PrimaryButton({ p, label, onPress, loading }: { p: Palette; label: string; onPress: () => void; loading: boolean }) {
+  const shimmer = useSharedValue(0);
+  const nudge = useLoop(900);
+  const press = useSharedValue(1);
+  const [w, setW] = useState(320);
+
+  useEffect(() => {
+    shimmer.value = withRepeat(
+      withSequence(
+        withTiming(1, { duration: 1400, easing: Easing.inOut(Easing.quad) }),
+        withDelay(1600, withTiming(0, { duration: 0 })),
+      ),
+      -1,
+      false,
+    );
+  }, []);
+
+  const shimmerStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: interpolate(shimmer.value, [0, 1], [-120, w + 40]) }, { skewX: '-20deg' }],
+  }));
+  const arrowStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: interpolate(nudge.value, [0, 1], [0, 3]) }],
+  }));
+  const pressStyle = useAnimatedStyle(() => ({ transform: [{ scale: press.value }] }));
+
+  return (
+    <Animated.View style={[styles.primaryShadow, { shadowColor: p.gradient[1] }, pressStyle]}>
+      <Pressable
+        onPress={onPress}
+        disabled={loading}
+        onPressIn={() => (press.value = withTiming(0.97, { duration: 90 }))}
+        onPressOut={() => (press.value = withTiming(1, { duration: 140 }))}
+        onLayout={(e) => setW(e.nativeEvent.layout.width)}
+        style={styles.primaryWrap}
+      >
+        <LinearGradient colors={p.gradient} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.primary}>
+          <Animated.View pointerEvents="none" style={[styles.shimmer, shimmerStyle]}>
+            <LinearGradient
+              colors={['rgba(255,255,255,0)', 'rgba(255,255,255,0.35)', 'rgba(255,255,255,0)']}
+              start={{ x: 0, y: 0.5 }}
+              end={{ x: 1, y: 0.5 }}
+              style={StyleSheet.absoluteFill}
+            />
+          </Animated.View>
+          <Text style={styles.primaryText}>{label}</Text>
+          <Animated.View style={[styles.primaryArrow, { backgroundColor: p.arrowBg }, arrowStyle]}>
+            <ArrowRight size={16} color="#FFFFFF" />
+          </Animated.View>
+        </LinearGradient>
+      </Pressable>
+    </Animated.View>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Social brand icons
+// ---------------------------------------------------------------------------
+function GoogleIcon() {
+  return (
+    <Svg width={22} height={22} viewBox="0 0 24 24">
+      <Path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
+      <Path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
+      <Path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" />
+      <Path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" />
+    </Svg>
+  );
+}
+
+function GitHubIcon({ color }: { color: string }) {
+  return (
+    <Svg width={22} height={22} viewBox="0 0 24 24">
+      <Path
+        fill={color}
+        d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12"
+      />
+    </Svg>
+  );
+}
+
+function AppleIcon({ color }: { color: string }) {
+  return (
+    <Svg width={22} height={22} viewBox="0 0 24 24">
+      <Path
+        fill={color}
+        d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701"
+      />
+    </Svg>
+  );
+}
+
+function SocialButton({ p, label, icon, onPress }: { p: Palette; label: string; icon: React.ReactNode; onPress: () => void }) {
+  const scale = useSharedValue(1);
+  const style = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
+  return (
+    <Animated.View style={[{ flex: 1 }, style]}>
+      <Pressable
+        onPress={onPress}
+        onPressIn={() => (scale.value = withTiming(0.95, { duration: 90 }))}
+        onPressOut={() => (scale.value = withTiming(1, { duration: 140 }))}
+        style={[styles.social, { backgroundColor: p.socialBg, borderColor: p.socialBorder }]}
+      >
+        {icon}
+        <Text style={[styles.socialText, { color: p.socialText }]}>{label}</Text>
+      </Pressable>
+    </Animated.View>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Screen
+// ---------------------------------------------------------------------------
 export default function LoginForm() {
   const { t } = useTranslation();
   const { control, handleSubmit, formState: { errors } } = useForm<FormData>({
@@ -118,40 +576,31 @@ export default function LoginForm() {
   const setAuth = useAppStore((s) => s.setAuth);
   const theme = useAppStore((s) => s.theme);
   const isDark = theme === 'dark';
-  const colors = useThemeColors();
+  const p: Palette = isDark ? PALETTES.dark : PALETTES.light;
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { width, height } = useWindowDimensions();
+  const contentWidth = Math.min(width, 480) - 48;
+  const titleSize = Math.min(34, Math.floor(contentWidth / 9.6));
+
   const [isLoading, setIsLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  // Shake animation for error
   const shakeX = useSharedValue(0);
-  const errorOpacity = useSharedValue(0);
+  const errorStyle = useAnimatedStyle(() => ({ transform: [{ translateX: shakeX.value }] }));
 
   const triggerError = (msg: string) => {
     setErrorMessage(msg);
-    errorOpacity.value = withTiming(1, { duration: 300 });
     shakeX.value = withSequence(
       withTiming(-10, { duration: 50 }),
       withTiming(10, { duration: 50 }),
-      withTiming(-8, { duration: 50 }),
-      withTiming(8, { duration: 50 }),
-      withTiming(-4, { duration: 50 }),
+      withTiming(-6, { duration: 50 }),
+      withTiming(6, { duration: 50 }),
       withTiming(0, { duration: 50 }),
     );
   };
-
-  const clearError = () => {
-    if (errorMessage) {
-      errorOpacity.value = withTiming(0, { duration: 200 });
-      setTimeout(() => setErrorMessage(null), 200);
-    }
-  };
-
-  const errorAnimatedStyle = useAnimatedStyle(() => ({
-    opacity: errorOpacity.value,
-    transform: [{ translateX: shakeX.value }],
-  }));
+  const clearError = () => errorMessage && setErrorMessage(null);
 
   const onSubmit = async (values: LoginRequest) => {
     clearError();
@@ -170,178 +619,159 @@ export default function LoginForm() {
       await setAuth(res.token, profile);
       router.replace('/tabs');
     } catch (error: any) {
-      const msg = error?.message || t('auth.loginError', 'An error occurred during login');
-      triggerError(msg);
+      triggerError(error?.message || t('auth.loginError', 'An error occurred during login'));
     } finally {
       setIsLoading(false);
     }
   };
 
+  const onSocial = (provider: string) =>
+    Alert.alert(provider, t('auth.socialComingSoon', 'Sign in with {{provider}} is coming soon.', { provider }));
+
   return (
-    <View style={[styles.container, { backgroundColor: colors.background }]}>
-      {/* Background Gradient */}
-      <LinearGradient
-        colors={isDark
-          ? [colors.bgGradientStart, colors.bgGradientEnd]
-          : ['#ECFDF5', '#D1FAE5', '#F0FDFA']
-        }
-        style={StyleSheet.absoluteFill}
-      />
+    <View style={styles.container}>
+      <LinearGradient colors={p.bg} style={StyleSheet.absoluteFill} />
+      <BackgroundDecor isDark={isDark} p={p} height={height} />
 
-      {/* Floating Leaves */}
-      {[60, 160, 280, 120, 220].map((x, i) => (
-        <FloatingLeaf key={i} delay={i * 500} startX={x} />
-      ))}
-
-      {/* Header */}
-      <Animated.View entering={FadeIn.delay(100)} style={[styles.header, { paddingTop: insets.top + 16 }]}>
-        <Link href="/" asChild>
-          <Pressable style={StyleSheet.flatten([styles.backButton, { backgroundColor: colors.glass, borderColor: colors.glassBorder }])}>
-            <ChevronLeft size={20} color={colors.text} />
-          </Pressable>
-        </Link>
-        <View style={styles.headerContent}>
-          <Text fontSize={24} fontWeight="600" color={colors.text} letterSpacing={-0.3}>
-            {t('auth.welcomeTo', 'Welcome')}
-          </Text>
-          <Text fontSize={24} fontWeight="700" color={colors.primary} letterSpacing={-0.3}>
-            {t('app.name', 'Splitter')}
-          </Text>
-        </View>
-        <JadeOrb />
-      </Animated.View>
-
-      {/* Form */}
-      <KeyboardAvoidingView style={styles.formWrapper} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-        <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
-          <Animated.View
-            entering={SlideInDown.delay(300).springify()}
-            style={[styles.formCard, {
-              backgroundColor: colors.card,
-              borderColor: colors.glassBorder,
-              shadowColor: colors.shadow,
-            }]}
-          >
-            {/* Form Header */}
-            <View style={styles.formHeader}>
-              <Text fontSize={20} fontWeight="600" color={colors.text}>
-                {t('auth.signIn', 'Sign In')}
-              </Text>
-              <Text fontSize={13} color={colors.textMuted} marginTop={6}>
-                {t('auth.enterCredentials', 'Enter your credentials to continue')}
-              </Text>
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <ScrollView
+          contentContainerStyle={[styles.scroll, { paddingTop: insets.top + 12, paddingBottom: insets.bottom + 24 }]}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
+          <View style={styles.inner}>
+            {/* Header: back + illustration */}
+            <View style={styles.headerRow}>
+              <Animated.View entering={FadeIn.delay(80)}>
+                <Link href="/" asChild>
+                  <Pressable style={[styles.back, { backgroundColor: p.backBg, borderColor: p.backBorder }]}>
+                    <ChevronLeft size={20} color={p.text} />
+                  </Pressable>
+                </Link>
+              </Animated.View>
+              <Animated.View entering={FadeIn.delay(150).duration(700)}>
+                <ReceiptIllustration p={p} />
+              </Animated.View>
             </View>
 
-            {/* Error Banner */}
+            {/* Title */}
+            <Animated.View entering={FadeInDown.delay(200).duration(600)} style={styles.titleBlock}>
+              <Text style={[styles.welcome, { color: p.text, fontSize: titleSize * 0.82 }]}>
+                {t('auth.welcomeTo', 'Welcome to')}
+              </Text>
+              <GradientTitle p={p} fontSize={titleSize} width={contentWidth} />
+              <Swoosh p={p} />
+              <Text style={[styles.subtitle, { color: p.muted }]}>
+                {t('auth.enterCredentials', 'Enter your credentials to continue')}
+              </Text>
+            </Animated.View>
+
+            {/* Error */}
             {errorMessage && (
-              <Animated.View style={[{
-                backgroundColor: isDark ? 'rgba(239,68,68,0.15)' : '#FEF2F2',
-                borderWidth: 1,
-                borderColor: isDark ? 'rgba(239,68,68,0.3)' : '#FECACA',
-                borderRadius: 12,
-                padding: 14,
-                marginBottom: 20,
-                flexDirection: 'row',
-                alignItems: 'center',
-                gap: 10,
-              }, errorAnimatedStyle]}>
-                <View style={{
-                  width: 32, height: 32, borderRadius: 16,
-                  backgroundColor: isDark ? 'rgba(239,68,68,0.2)' : '#FEE2E2',
-                  alignItems: 'center', justifyContent: 'center',
-                }}>
-                  <Text fontSize={16}>⚠️</Text>
-                </View>
-                <Text fontSize={13} color={isDark ? '#FCA5A5' : '#DC2626'} flex={1} lineHeight={18}>
+              <Animated.View
+                entering={FadeIn}
+                style={[
+                  styles.errorBox,
+                  {
+                    backgroundColor: isDark ? 'rgba(239,68,68,0.12)' : '#FEF2F2',
+                    borderColor: isDark ? 'rgba(239,68,68,0.3)' : '#FECACA',
+                  },
+                  errorStyle,
+                ]}
+              >
+                <Text style={{ color: isDark ? '#FCA5A5' : '#DC2626', fontSize: 13, lineHeight: 18 }}>
                   {errorMessage}
                 </Text>
               </Animated.View>
             )}
 
-            {/* Email */}
-            <Animated.View entering={FadeInUp.delay(400)}>
-              <Controller control={control} name="email"
+            {/* Fields */}
+            <Animated.View entering={FadeInUp.delay(320).duration(500)} style={{ gap: 14 }}>
+              <Controller
+                control={control}
+                name="email"
                 render={({ field: { onChange, value } }) => (
-                  <Input label={t('auth.email', 'Email')} placeholder={t('auth.emailPlaceholder', 'your@email.com')}
-                    value={value} onChangeText={(v: string) => { onChange(v); clearError(); }} keyboardType="email-address" autoCapitalize="none"
-                    error={errors.email?.message} />
-                )} />
+                  <Field
+                    p={p}
+                    icon={<Mail size={19} color={p.icon} />}
+                    value={value}
+                    placeholder={t('auth.emailPlaceholder', 'Enter your email')}
+                    onChangeText={(v) => { onChange(v); clearError(); }}
+                    keyboardType="email-address"
+                    error={errors.email?.message}
+                  />
+                )}
+              />
+              <Controller
+                control={control}
+                name="password"
+                render={({ field: { onChange, value } }) => (
+                  <Field
+                    p={p}
+                    icon={<Lock size={19} color={p.icon} />}
+                    value={value}
+                    placeholder={t('auth.password', 'Password')}
+                    onChangeText={(v) => { onChange(v); clearError(); }}
+                    secure={!showPassword}
+                    error={errors.password?.message}
+                    right={
+                      <Pressable hitSlop={10} onPress={() => setShowPassword((s) => !s)} style={styles.eye}>
+                        {showPassword ? <EyeOff size={19} color={p.icon} /> : <Eye size={19} color={p.icon} />}
+                      </Pressable>
+                    }
+                  />
+                )}
+              />
             </Animated.View>
 
-            {/* Password */}
-            <Animated.View entering={FadeInUp.delay(500)} style={{ marginTop: 16 }}>
-              <Controller control={control} name="password"
-                render={({ field: { onChange, value } }) => (
-                  <PasswordInput label={t('auth.password', 'Password')} placeholder="••••••••"
-                    value={value} onChangeText={(v: string) => { onChange(v); clearError(); }} error={errors.password?.message} />
-                )} />
-            </Animated.View>
-
-            {/* Forgot Password */}
-            <Animated.View entering={FadeIn.delay(550)} style={styles.forgotPasswordLink}>
-              <Link href="/forgot-password">
-                <Text fontSize={13} fontWeight="500" color={colors.primary}>
-                  {t('auth.forgotPassword', 'Forgot Password?')}
-                </Text>
+            <Animated.View entering={FadeIn.delay(420)} style={styles.forgot}>
+              <Link href="/forgot-password" asChild>
+                <Pressable hitSlop={8}>
+                  <Text style={[styles.forgotText, { color: p.link }]}>
+                    {t('auth.forgotPassword', 'Forgot Password?')}
+                  </Text>
+                </Pressable>
               </Link>
             </Animated.View>
 
             {/* Submit */}
-            <Animated.View entering={FadeInUp.delay(600)} style={{ marginTop: 20 }}>
-              <Pressable
-                style={styles.submitWrapper}
+            <Animated.View entering={FadeInUp.delay(480).duration(500)} style={{ marginTop: 16 }}>
+              <PrimaryButton
+                p={p}
+                loading={isLoading}
+                label={isLoading ? t('common.loading', 'Loading...') : t('auth.signIn', 'Sign In')}
                 onPress={handleSubmit(onSubmit)}
-                disabled={isLoading}
-                android_ripple={{ color: 'rgba(0,0,0,0.1)' }}
-              >
-                <LinearGradient
-                  colors={['#0D9488', '#059669']}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 1 }}
-                  style={styles.submitGradient}
-                >
-                  <Text color="#FFFFFF" fontWeight="700" fontSize={16}>
-                    {isLoading ? t('common.loading', 'Loading...') : t('auth.signIn', 'Sign In')}
-                  </Text>
-                </LinearGradient>
-              </Pressable>
+              />
             </Animated.View>
 
             {/* Divider */}
-            <Animated.View entering={FadeIn.delay(700)} style={styles.dividerContainer}>
-              <View style={[styles.divider, { backgroundColor: colors.glassBorder }]} />
-              <Text fontSize={12} color={colors.textMuted} marginHorizontal={12}>
-                {t('auth.orContinueWith', 'or')}
-              </Text>
-              <View style={[styles.divider, { backgroundColor: colors.glassBorder }]} />
+            <Animated.View entering={FadeIn.delay(560)} style={styles.dividerRow}>
+              <View style={[styles.divider, { backgroundColor: p.divider }]} />
+              <Text style={[styles.dividerText, { color: p.muted }]}>{t('auth.or', 'or')}</Text>
+              <View style={[styles.divider, { backgroundColor: p.divider }]} />
             </Animated.View>
 
             {/* Social */}
-            <Animated.View entering={FadeIn.delay(750)} style={styles.socialSection}>
-              <XStack justifyContent="space-between" gap={12}>
-                {['Google', 'GitHub', 'Apple'].map((label, i) => (
-                  <Pressable key={i} style={[styles.socialButton, {
-                    backgroundColor: colors.glass,
-                    borderColor: colors.glassBorder,
-                  }]}>
-                    <Text color={colors.textSecondary} fontWeight="500" fontSize={12}>{label}</Text>
-                  </Pressable>
-                ))}
-              </XStack>
+            <Animated.View entering={FadeInUp.delay(620).duration(500)} style={styles.socialRow}>
+              <SocialButton p={p} label="Google" icon={<GoogleIcon />} onPress={() => onSocial('Google')} />
+              <SocialButton p={p} label="GitHub" icon={<GitHubIcon color={p.githubFill} />} onPress={() => onSocial('GitHub')} />
+              <SocialButton p={p} label="Apple" icon={<AppleIcon color={p.appleFill} />} onPress={() => onSocial('Apple')} />
             </Animated.View>
 
             {/* Footer */}
-            <Animated.View entering={FadeIn.delay(800)} style={styles.footerLink}>
-              <Text fontSize={13} color={colors.textSecondary}>
-                {t('auth.noAccount', "Don't have an account?")}{' '}
-              </Text>
-              <Link href="/register">
-                <Text fontSize={13} fontWeight="600" color={colors.primary}>
-                  {t('auth.signUp', 'Sign Up')}
-                </Text>
+            <Animated.View entering={FadeInUp.delay(700).duration(500)}>
+              <Link href="/register" asChild>
+                <Pressable style={[styles.footer, { backgroundColor: p.footerBg }]}>
+                  <UserPlus size={18} color={p.footerIcon} />
+                  <Text style={[styles.footerText, { color: p.muted }]}>
+                    {t('auth.noAccount', "Don't have an account?")}
+                  </Text>
+                  <Text style={[styles.footerLink, { color: p.link }]}>{t('auth.signUp', 'Sign Up')}</Text>
+                  <ChevronRight size={14} color={p.link} />
+                </Pressable>
               </Link>
             </Animated.View>
-          </Animated.View>
+          </View>
         </ScrollView>
       </KeyboardAvoidingView>
     </View>
@@ -350,52 +780,89 @@ export default function LoginForm() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  header: {
-    paddingHorizontal: 16,
-    paddingBottom: 16,
+  scroll: { flexGrow: 1, paddingHorizontal: 24 },
+  inner: { width: '100%', maxWidth: 432, alignSelf: 'center' },
+  headerRow: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
     justifyContent: 'space-between',
-    zIndex: 10,
+    alignItems: 'flex-start',
+    height: 96,
+  },
+  back: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 2,
+  },
+  illustration: { width: 160, height: 140, marginRight: -16, marginTop: -6 },
+  titleBlock: { marginTop: 4, marginBottom: 22 },
+  welcome: { fontWeight: '800', letterSpacing: -0.5 },
+  subtitle: { fontSize: 13.5, marginTop: 10 },
+  errorBox: { borderWidth: 1, borderRadius: 12, padding: 12, marginBottom: 14 },
+  field: {
+    height: 54,
+    borderRadius: 14,
+    borderWidth: 1.2,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    shadowOffset: { width: 0, height: 0 },
+  },
+  fieldIcon: { width: 28 },
+  fieldInput: { flex: 1, fontSize: 15, paddingVertical: 0, marginLeft: 6, height: '100%' },
+  fieldError: { color: '#EF4444', fontSize: 12, marginTop: 6, marginLeft: 4 },
+  eye: { paddingLeft: 8 },
+  forgot: { alignItems: 'flex-end', marginTop: 12 },
+  forgotText: { fontSize: 13, fontWeight: '600' },
+  primaryShadow: {
+    borderRadius: 16,
+    shadowOpacity: 0.35,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 8,
+  },
+  primaryWrap: { borderRadius: 16, overflow: 'hidden' },
+  primary: { height: 58, borderRadius: 16, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
+  primaryText: { color: '#FFFFFF', fontSize: 17, fontWeight: '700', letterSpacing: 0.2 },
+  primaryArrow: {
+    position: 'absolute',
+    right: 14,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  shimmer: { position: 'absolute', top: 0, bottom: 0, left: 0, width: 80 },
+  dividerRow: { flexDirection: 'row', alignItems: 'center', marginVertical: 20 },
+  divider: { flex: 1, height: 1 },
+  dividerText: { marginHorizontal: 12, fontSize: 13 },
+  socialRow: { flexDirection: 'row', gap: 10 },
+  social: {
+    height: 70,
+    borderRadius: 14,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+  },
+  socialText: { fontSize: 12, fontWeight: '500' },
+  footer: {
+    marginTop: 22,
+    height: 50,
+    borderRadius: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
     gap: 8,
   },
-  backButton: {
-    width: 40, height: 40, borderRadius: 12,
-    alignItems: 'center', justifyContent: 'center',
-    borderWidth: 1,
-  },
-  headerContent: { flex: 1, paddingTop: 8, paddingLeft: 4 },
-  formWrapper: { flex: 1 },
-  scrollContent: {
-    flexGrow: 1, paddingHorizontal: 16, paddingTop: 8, paddingBottom: 40,
-  },
-  formCard: {
-    borderRadius: 24, padding: 24, borderWidth: 1,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.08, shadowRadius: 16, elevation: 4,
-  },
-  formHeader: { marginBottom: 28 },
-  forgotPasswordLink: { alignItems: 'flex-end', marginTop: 12 },
-  submitWrapper: {
-    borderRadius: 14, overflow: 'hidden',
-    shadowColor: '#059669',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.25, shadowRadius: 12, elevation: 6,
-  },
-  submitGradient: {
-    alignItems: 'center', justifyContent: 'center',
-    paddingVertical: 15, borderRadius: 14,
-  },
-  dividerContainer: {
-    flexDirection: 'row', alignItems: 'center', marginVertical: 24,
-  },
-  divider: { flex: 1, height: 1 },
-  socialSection: { marginBottom: 24 },
-  socialButton: {
-    flex: 1, paddingVertical: 12, borderRadius: 12,
-    alignItems: 'center', justifyContent: 'center', borderWidth: 1,
-  },
-  footerLink: {
-    flexDirection: 'row', justifyContent: 'center', alignItems: 'center', paddingTop: 8,
-  },
+  footerText: { fontSize: 13, flexShrink: 1, marginLeft: 6 },
+  footerLink: { fontSize: 13, fontWeight: '700' },
 });
