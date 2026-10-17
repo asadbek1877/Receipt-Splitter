@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useRouter, Link } from 'expo-router';
 import { useForm, Controller } from 'react-hook-form';
 import { z } from 'zod';
@@ -22,6 +22,8 @@ import Animated, {
   FadeIn,
   FadeInDown,
   FadeInUp,
+  ZoomIn,
+  type SharedValue,
   interpolate,
   useAnimatedProps,
   useAnimatedStyle,
@@ -59,6 +61,7 @@ const schema = z.object({
 type FormData = z.infer<typeof schema>;
 
 const AnimatedPath = Animated.createAnimatedComponent(Path);
+const AnimatedRect = Animated.createAnimatedComponent(Rect);
 
 // ---------------------------------------------------------------------------
 // Palettes — light = green, dark = blue → violet (matches the design mock)
@@ -147,72 +150,75 @@ function useLoop(duration: number, delay = 0) {
 }
 
 // ---------------------------------------------------------------------------
-// Background decoration (blobs / glows)
+// Background decoration: solid corner shapes (match the mock)
 // ---------------------------------------------------------------------------
 function BackgroundDecor({ isDark, p, height }: { isDark: boolean; p: Palette; height: number }) {
   const t1 = useLoop(5200);
-  const t2 = useLoop(6800, 600);
+  const t2 = useLoop(6400, 700);
 
   const topRight = useAnimatedStyle(() => ({
     transform: [
-      { translateX: interpolate(t1.value, [0, 1], [0, -10]) },
-      { translateY: interpolate(t1.value, [0, 1], [0, 8]) },
-      { scale: interpolate(t1.value, [0, 1], [1, 1.05]) },
+      { translateY: interpolate(t1.value, [0, 1], [0, 10]) },
+      { rotate: `${interpolate(t1.value, [0, 1], [0, 8])}deg` },
+      { scale: interpolate(t1.value, [0, 1], [1, 1.04]) },
     ],
   }));
   const bottomLeft = useAnimatedStyle(() => ({
     transform: [
-      { translateX: interpolate(t2.value, [0, 1], [0, 14]) },
-      { translateY: interpolate(t2.value, [0, 1], [0, -10]) },
+      { translateY: interpolate(t2.value, [0, 1], [0, -14]) },
+      { scale: interpolate(t2.value, [0, 1], [1, 1.06]) },
     ],
   }));
   const bottomRight = useAnimatedStyle(() => ({
     transform: [
-      { translateX: interpolate(t1.value, [0, 1], [0, -12]) },
-      { translateY: interpolate(t2.value, [0, 1], [0, -8]) },
+      { translateY: interpolate(t1.value, [0, 1], [0, -12]) },
+      { translateX: interpolate(t2.value, [0, 1], [0, -8]) },
     ],
   }));
 
   return (
     <View pointerEvents="none" style={StyleSheet.absoluteFill}>
-      {/* Top-right corner blob */}
-      <Animated.View style={[{ position: 'absolute', top: -70, right: -90 }, topRight]}>
-        <Svg width={260} height={260} viewBox="0 0 260 260">
+      {/* Top-right corner shape */}
+      <Animated.View style={[{ position: 'absolute', top: -90, right: -110 }, topRight]}>
+        <Svg width={280} height={280} viewBox="0 0 280 280">
           <Defs>
-            <RadialGradient id="trBlob" cx="40%" cy="60%" r="60%">
-              <Stop offset="0%" stopColor={p.blob[0]} stopOpacity={isDark ? 0.45 : 0.55} />
-              <Stop offset="100%" stopColor={p.blob[1]} stopOpacity={isDark ? 0.05 : 0.2} />
-            </RadialGradient>
+            <SvgLinearGradient id="trShape" x1="0" y1="0" x2="1" y2="1">
+              <Stop offset="0%" stopColor={isDark ? '#1E2A5C' : '#BBF7D0'} />
+              <Stop offset="100%" stopColor={isDark ? '#141B3D' : '#4ADE80'} />
+            </SvgLinearGradient>
           </Defs>
           <Path
-            d="M180 20c40 18 70 60 64 110-6 52-46 98-100 104-50 6-96-24-112-70-16-46 6-94 44-122 36-26 66-38 104-22z"
-            fill="url(#trBlob)"
+            d="M196 22c44 20 76 66 70 120-6 56-50 106-108 112-54 6-104-26-120-76-16-50 6-102 48-132 38-28 70-40 110-24z"
+            fill="url(#trShape)"
+            opacity={isDark ? 0.9 : 0.75}
           />
         </Svg>
       </Animated.View>
 
       {isDark && (
         <>
-          <Animated.View style={[{ position: 'absolute', left: -110, top: height * 0.62 }, bottomLeft]}>
-            <Svg width={240} height={240}>
+          {/* Bottom-left solid circle */}
+          <Animated.View style={[{ position: 'absolute', left: -70, top: height * 0.6 }, bottomLeft]}>
+            <Svg width={140} height={140}>
               <Defs>
-                <RadialGradient id="blGlow" cx="50%" cy="50%" r="50%">
-                  <Stop offset="0%" stopColor="#7C3AED" stopOpacity={0.55} />
-                  <Stop offset="100%" stopColor="#4F46E5" stopOpacity={0} />
-                </RadialGradient>
+                <SvgLinearGradient id="blCircle" x1="0" y1="0" x2="1" y2="1">
+                  <Stop offset="0%" stopColor="#7C3AED" />
+                  <Stop offset="100%" stopColor="#4338CA" />
+                </SvgLinearGradient>
               </Defs>
-              <Circle cx={120} cy={120} r={120} fill="url(#blGlow)" />
+              <Circle cx={70} cy={70} r={70} fill="url(#blCircle)" opacity={0.85} />
             </Svg>
           </Animated.View>
-          <Animated.View style={[{ position: 'absolute', right: -120, top: height * 0.72 }, bottomRight]}>
-            <Svg width={260} height={260}>
+          {/* Bottom-right solid circle */}
+          <Animated.View style={[{ position: 'absolute', right: -90, top: height * 0.76 }, bottomRight]}>
+            <Svg width={190} height={190}>
               <Defs>
-                <RadialGradient id="brGlow" cx="50%" cy="50%" r="50%">
-                  <Stop offset="0%" stopColor="#8B5CF6" stopOpacity={0.6} />
-                  <Stop offset="100%" stopColor="#6D28D9" stopOpacity={0} />
-                </RadialGradient>
+                <SvgLinearGradient id="brCircle" x1="0" y1="0" x2="1" y2="1">
+                  <Stop offset="0%" stopColor="#8B5CF6" />
+                  <Stop offset="100%" stopColor="#5B21B6" />
+                </SvgLinearGradient>
               </Defs>
-              <Circle cx={130} cy={130} r={130} fill="url(#brGlow)" />
+              <Circle cx={95} cy={95} r={95} fill="url(#brCircle)" opacity={0.85} />
             </Svg>
           </Animated.View>
         </>
@@ -222,41 +228,90 @@ function BackgroundDecor({ isDark, p, height }: { isDark: boolean; p: Palette; h
 }
 
 // ---------------------------------------------------------------------------
-// Hero illustration: floating receipt with blob + droplets
+// Hero illustration: big floating receipt that "prints" its lines,
+// barcode scan beam and twinkling sparkles
 // ---------------------------------------------------------------------------
-function ReceiptIllustration({ p }: { p: Palette }) {
-  const float = useLoop(2600);
-  const pulse = useLoop(3800, 300);
-  const drop1 = useLoop(2200, 200);
-  const drop2 = useLoop(2800, 900);
+const LINE_WIDTHS = [42, 34, 40, 28];
+
+function ReceiptLine({ index, progress, color }: { index: number; progress: SharedValue<number>; color: string }) {
+  const full = LINE_WIDTHS[index];
+  const animatedProps = useAnimatedProps(() => {
+    // each line draws in its own slice of the 0..1 cycle
+    const start = index * 0.12;
+    const local = Math.min(1, Math.max(0, (progress.value - start) / 0.25));
+    return { width: Math.max(0.01, full * local) };
+  });
+  return <AnimatedRect x={34} y={36 + index * 10} height={4} rx={2} fill={color} animatedProps={animatedProps} />;
+}
+
+function Sparkle({ x, y, size, delay, color }: { x: number; y: number; size: number; delay: number; color: string }) {
+  const v = useSharedValue(0);
+  useEffect(() => {
+    v.value = withDelay(
+      delay,
+      withRepeat(
+        withSequence(
+          withTiming(1, { duration: 700, easing: Easing.out(Easing.quad) }),
+          withTiming(0, { duration: 900, easing: Easing.in(Easing.quad) }),
+          withDelay(900, withTiming(0, { duration: 0 })),
+        ),
+        -1,
+        false,
+      ),
+    );
+  }, []);
+  const style = useAnimatedStyle(() => ({
+    opacity: v.value,
+    transform: [{ scale: interpolate(v.value, [0, 1], [0.3, 1]) }, { rotate: `${v.value * 45}deg` }],
+  }));
+  return (
+    <Animated.View style={[{ position: 'absolute', left: x, top: y }, style]}>
+      <Svg width={size} height={size} viewBox="0 0 24 24">
+        <Path d="M12 0c1 7 5 11 12 12-7 1-11 5-12 12-1-7-5-11-12-12 7-1 11-5 12-12z" fill={color} />
+      </Svg>
+    </Animated.View>
+  );
+}
+
+function ReceiptIllustration({ p, isDark }: { p: Palette; isDark: boolean }) {
+  const float = useLoop(2800);
+  const pulse = useLoop(4200, 300);
+  const print = useSharedValue(0);
+  const scan = useSharedValue(0);
+
+  useEffect(() => {
+    print.value = withRepeat(
+      withSequence(
+        withTiming(1, { duration: 1600, easing: Easing.out(Easing.cubic) }),
+        withDelay(2400, withTiming(0, { duration: 500, easing: Easing.in(Easing.cubic) })),
+      ),
+      -1,
+      false,
+    );
+    scan.value = withRepeat(withTiming(1, { duration: 1500, easing: Easing.inOut(Easing.sin) }), -1, true);
+  }, []);
 
   const receiptStyle = useAnimatedStyle(() => ({
     transform: [
-      { translateY: interpolate(float.value, [0, 1], [-6, 6]) },
-      { rotate: `${interpolate(float.value, [0, 1], [-3, 2])}deg` },
+      { translateY: interpolate(float.value, [0, 1], [-7, 7]) },
+      { rotate: `${interpolate(float.value, [0, 1], [-3, 2.5])}deg` },
     ],
   }));
   const blobStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: interpolate(pulse.value, [0, 1], [0.96, 1.06]) }],
-  }));
-  const drop1Style = useAnimatedStyle(() => ({
     transform: [
-      { translateY: interpolate(drop1.value, [0, 1], [0, -8]) },
-      { rotate: `${interpolate(drop1.value, [0, 1], [-10, 10])}deg` },
+      { scale: interpolate(pulse.value, [0, 1], [0.95, 1.06]) },
+      { rotate: `${interpolate(pulse.value, [0, 1], [-4, 4])}deg` },
     ],
   }));
-  const drop2Style = useAnimatedStyle(() => ({
-    transform: [
-      { translateY: interpolate(drop2.value, [0, 1], [0, 7]) },
-      { rotate: `${interpolate(drop2.value, [0, 1], [8, -8])}deg` },
-    ],
-  }));
+  const scanProps = useAnimatedProps(() => ({ y: 79 + scan.value * 16 }));
+
+  const sparkleColor = isDark ? '#C4B5FD' : '#22C55E';
 
   return (
     <View pointerEvents="none" style={styles.illustration}>
-      {/* soft blob behind the receipt */}
+      {/* blob behind the receipt */}
       <Animated.View style={[{ position: 'absolute', right: 0, top: 34 }, blobStyle]}>
-        <Svg width={130} height={110} viewBox="0 0 130 110">
+        <Svg width={170} height={145} viewBox="0 0 130 110">
           <Defs>
             <SvgLinearGradient id="heroBlob" x1="0" y1="0" x2="1" y2="1">
               <Stop offset="0%" stopColor={p.blob[0]} />
@@ -266,33 +321,15 @@ function ReceiptIllustration({ p }: { p: Palette }) {
           <Path
             d="M70 6c26-4 54 12 58 40 4 26-10 52-36 60-28 8-62 2-80-18C-4 70 2 44 20 28 34 14 48 9 70 6z"
             fill="url(#heroBlob)"
-            opacity={0.9}
+            opacity={0.92}
           />
-          <Circle cx={30} cy={88} r={14} fill={p.blobSoft} opacity={0.55} />
-        </Svg>
-      </Animated.View>
-
-      {/* floating droplets */}
-      <Animated.View style={[{ position: 'absolute', left: 16, top: 6 }, drop1Style]}>
-        <Svg width={22} height={30} viewBox="0 0 22 30">
-          <Defs>
-            <SvgLinearGradient id="d1" x1="0" y1="0" x2="1" y2="1">
-              <Stop offset="0%" stopColor={p.drop[0]} />
-              <Stop offset="100%" stopColor={p.drop[1]} />
-            </SvgLinearGradient>
-          </Defs>
-          <Path d="M11 1C16 8 21 14 21 20a10 10 0 0 1-20 0C1 14 6 8 11 1z" fill="url(#d1)" />
-        </Svg>
-      </Animated.View>
-      <Animated.View style={[{ position: 'absolute', left: 4, top: 40 }, drop2Style]}>
-        <Svg width={12} height={16} viewBox="0 0 22 30">
-          <Path d="M11 1C16 8 21 14 21 20a10 10 0 0 1-20 0C1 14 6 8 11 1z" fill={p.drop[0]} opacity={0.8} />
+          <Circle cx={28} cy={90} r={13} fill={p.blobSoft} opacity={0.5} />
         </Svg>
       </Animated.View>
 
       {/* receipt */}
-      <Animated.View style={[{ position: 'absolute', left: 34, top: 2 }, receiptStyle]}>
-        <Svg width={110} height={128} viewBox="0 0 110 128">
+      <Animated.View style={[{ position: 'absolute', left: 30, top: 0 }, receiptStyle]}>
+        <Svg width={156} height={182} viewBox="0 0 110 128">
           <Defs>
             <SvgLinearGradient id="paper" x1="0" y1="0" x2="1" y2="1">
               <Stop offset="0%" stopColor={p.paper[0]} />
@@ -304,29 +341,28 @@ function ReceiptIllustration({ p }: { p: Palette }) {
             </SvgLinearGradient>
           </Defs>
           <G rotation={-14} origin="55, 64">
-            {/* shadow */}
-            <Path d="M24 22h62v84l-6 6-6-6-6 6-6-6-6 6-6-6-6 6-6-6-6 6-8-6z" fill="#000" opacity={0.08} transform="translate(4 5)" />
-            {/* paper with zig-zag bottom */}
+            <Path d="M24 22h62v84l-6 6-6-6-6 6-6-6-6 6-6-6-6 6-6-6-6 6-8-6z" fill="#000" opacity={0.1} transform="translate(4 5)" />
             <Path d="M24 18h62v88l-6 6-6-6-6 6-6-6-6 6-6-6-6 6-6-6-6 6-8-6z" fill="url(#paper)" />
-            {/* top roll curl */}
             <Rect x={18} y={10} width={74} height={14} rx={7} fill="url(#roll)" />
             <Rect x={18} y={10} width={74} height={5} rx={2.5} fill="#FFFFFF" opacity={0.35} />
-            {/* text lines */}
-            <Rect x={34} y={36} width={42} height={4} rx={2} fill={p.paperLine} />
-            <Rect x={34} y={46} width={34} height={4} rx={2} fill={p.paperLine} />
-            <Rect x={34} y={56} width={40} height={4} rx={2} fill={p.paperLine} />
-            <Rect x={34} y={66} width={28} height={4} rx={2} fill={p.paperLine} />
-            {/* barcode */}
+            {LINE_WIDTHS.map((_, i) => (
+              <ReceiptLine key={i} index={i} progress={print} color={p.paperLine} />
+            ))}
             {[0, 3, 5, 9, 11, 14, 18, 20, 23, 27, 29, 33, 36, 38].map((x, i) => (
               <Rect key={i} x={34 + x} y={80} width={i % 3 === 0 ? 2.4 : 1.4} height={16} fill={p.barcode} />
             ))}
+            {/* scan beam over the barcode */}
+            <AnimatedRect x={30} width={48} height={1.6} rx={0.8} fill={p.gradientText[0]} opacity={0.9} animatedProps={scanProps} />
           </G>
         </Svg>
       </Animated.View>
+
+      <Sparkle x={18} y={30} size={16} delay={0} color={sparkleColor} />
+      <Sparkle x={176} y={18} size={12} delay={900} color={sparkleColor} />
+      <Sparkle x={40} y={150} size={11} delay={1700} color={sparkleColor} />
     </View>
   );
 }
-
 // ---------------------------------------------------------------------------
 // Gradient title + animated swoosh underline
 // ---------------------------------------------------------------------------
@@ -421,19 +457,21 @@ type FieldProps = {
 };
 
 function Field({ p, icon, value, placeholder, onChangeText, secure, keyboardType = 'default', error, right }: FieldProps) {
+  const inputRef = useRef<TextInput>(null);
   const [focused, setFocused] = useState(false);
   const borderColor = error ? '#EF4444' : focused ? p.inputFocus : p.inputBorder;
+  // NOTE: the style shape stays identical between focused / blurred states (only colors
+  // change). Toggling elevation/shadow on focus made Android re-create the native view,
+  // which dropped focus and closed the keyboard immediately.
   return (
     <View>
-      <View
-        style={[
-          styles.field,
-          { backgroundColor: p.inputBg, borderColor },
-          focused && { shadowColor: p.inputFocus, shadowOpacity: 0.18, shadowRadius: 10, elevation: 2 },
-        ]}
+      <Pressable
+        onPress={() => inputRef.current?.focus()}
+        style={StyleSheet.flatten([styles.field, { backgroundColor: p.inputBg, borderColor }])}
       >
         <View style={styles.fieldIcon}>{icon}</View>
         <TextInput
+          ref={inputRef}
           value={value}
           onChangeText={onChangeText}
           placeholder={placeholder}
@@ -442,12 +480,17 @@ function Field({ p, icon, value, placeholder, onChangeText, secure, keyboardType
           keyboardType={keyboardType}
           autoCapitalize="none"
           autoCorrect={false}
+          autoComplete={secure ? 'password' : keyboardType === 'email-address' ? 'email' : 'off'}
+          textContentType={secure ? 'password' : keyboardType === 'email-address' ? 'emailAddress' : 'none'}
+          selectionColor={p.inputFocus}
+          cursorColor={p.inputFocus}
+          underlineColorAndroid="transparent"
           onFocus={() => setFocused(true)}
           onBlur={() => setFocused(false)}
           style={[styles.fieldInput, { color: p.text }]}
         />
         {right}
-      </View>
+      </Pressable>
       {error ? <Text style={styles.fieldError}>{error}</Text> : null}
     </View>
   );
@@ -633,7 +676,7 @@ export default function LoginForm() {
       <LinearGradient colors={p.bg} style={StyleSheet.absoluteFill} />
       <BackgroundDecor isDark={isDark} p={p} height={height} />
 
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
         <ScrollView
           contentContainerStyle={[styles.scroll, { paddingTop: insets.top + 12, paddingBottom: insets.bottom + 24 }]}
           keyboardShouldPersistTaps="handled"
@@ -641,6 +684,11 @@ export default function LoginForm() {
         >
           <View style={styles.inner}>
             {/* Header: back + illustration */}
+            {/* Illustration sits behind the header/title so it can be large */}
+            <Animated.View entering={ZoomIn.delay(150).springify().damping(14)} style={styles.illustrationWrap} pointerEvents="none">
+              <ReceiptIllustration p={p} isDark={isDark} />
+            </Animated.View>
+
             <View style={styles.headerRow}>
               <Animated.View entering={FadeIn.delay(80)}>
                 <Link href="/" asChild>
@@ -649,13 +697,10 @@ export default function LoginForm() {
                   </Pressable>
                 </Link>
               </Animated.View>
-              <Animated.View entering={FadeIn.delay(150).duration(700)}>
-                <ReceiptIllustration p={p} />
-              </Animated.View>
             </View>
 
             {/* Title */}
-            <Animated.View entering={FadeInDown.delay(200).duration(600)} style={styles.titleBlock}>
+            <Animated.View entering={FadeInDown.delay(220).springify().damping(16)} style={styles.titleBlock}>
               <Text style={[styles.welcome, { color: p.text, fontSize: titleSize * 0.82 }]}>
                 {t('auth.welcomeTo', 'Welcome to')}
               </Text>
@@ -786,7 +831,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
-    height: 96,
+    height: 128,
   },
   back: {
     width: 42,
@@ -801,7 +846,8 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 2 },
     elevation: 2,
   },
-  illustration: { width: 160, height: 140, marginRight: -16, marginTop: -6 },
+  illustrationWrap: { position: 'absolute', top: -14, right: -30 },
+  illustration: { width: 210, height: 196 },
   titleBlock: { marginTop: 4, marginBottom: 22 },
   welcome: { fontWeight: '800', letterSpacing: -0.5 },
   subtitle: { fontSize: 13.5, marginTop: 10 },
