@@ -669,5 +669,17 @@
       "title": "コードの内容",
       "content": "内容"
     }
+  },
+  "split": {
+    "title": "誰が何を?",
+    "everyone": "全員",
+    "splitAll": "すべて均等に割る",
+    "clear": "クリア",
+    "pickSomeone": "誰が食べたか選択",
+    "paysAll": "全額を支払う",
+    "eachPays": "1人あたり {{amount}}",
+    "unitsAssigned": "{{done}}/{{total}} 個を割り当て済み",
+    "perPerson": "1人あたり",
+    "noItems": "割り勘する品目がありません"
   }
 }

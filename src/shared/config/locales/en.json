@@ -669,5 +669,17 @@
       "title": "Code content",
       "content": "Content"
     }
+  },
+  "split": {
+    "title": "Who had what?",
+    "everyone": "Everyone",
+    "splitAll": "Split everything equally",
+    "clear": "Clear",
+    "pickSomeone": "Pick who had this",
+    "paysAll": "Pays the full amount",
+    "eachPays": "Each pays {{amount}}",
+    "unitsAssigned": "{{done}}/{{total}} units assigned",
+    "perPerson": "Per person",
+    "noItems": "No items to split yet"
   }
 }

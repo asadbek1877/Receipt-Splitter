@@ -669,5 +669,17 @@
       "title": "Kod mazmuni",
       "content": "Mazmuni"
     }
+  },
+  "split": {
+    "title": "Kim nima yedi?",
+    "everyone": "Hamma",
+    "splitAll": "Hammasini teng bo'lish",
+    "clear": "Tozalash",
+    "pickSomeone": "Kim yeganini tanlang",
+    "paysAll": "To'liq summani to'laydi",
+    "eachPays": "Har biri {{amount}} to‘laydi",
+    "unitsAssigned": "{{done}}/{{total}} dona taqsimlandi",
+    "perPerson": "Har bir kishiga",
+    "noItems": "Hali bo'linadigan mahsulot yo'q"
   }
 }

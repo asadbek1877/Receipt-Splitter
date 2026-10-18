@@ -1,8 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Pressable } from 'react-native';
-import { useSharedValue } from 'react-native-reanimated';
+import { Pressable, RefreshControl, ScrollView as RNScrollView, StyleSheet, Text as RNText, View as RNView } from 'react-native';
+import { ChevronLeft } from '@tamagui/lucide-icons';
 import { YStack, XStack, Text, Button, Circle, ScrollView, Spinner } from 'tamagui';
 import { Users as UsersIcon, Check, Plus, Minus, Package as PackageIcon } from '@tamagui/lucide-icons';
 import { useTranslation } from 'react-i18next';
@@ -14,11 +14,8 @@ import { ReceiptApi } from '@/features/receipt/api/receipt.api';
 import type { FinalizeReceiptItemPayload, FinalizeTotalsByItem, FinalizeTotalsByParticipant, ReceiptAllocation } from '@/features/receipt/api/receipt.api';
 import { refreshSplitterStoreFromBackend } from '@/features/receipt/api/receipts.api';
 import { useSessionsHistoryStore } from '@/features/sessions/model/history.store';
-import {
-  DraggableProductCard,
-  ParticipantDropDock,
-  type DropZoneRects,
-} from '@/features/receipt/ui/DragAssignment';
+import { AssignItemCard, ConfirmButton, PersonTotals } from '@/features/receipt/ui/AssignItems';
+import { Glass, GlassScreen, PressScale, useGlassPalette } from '@/shared/ui/glass/GlassKit';
 
 // ===== Types =====
 type Participant = { uniqueId: string; username: string };
@@ -246,8 +243,7 @@ export default function ItemsSplitScreen() {
   useEffect(() => () => {
     if (navigateTimeoutRef.current) clearTimeout(navigateTimeoutRef.current);
   }, []);
-  const dropZoneRects = useSharedValue<DropZoneRects>([]);
-  const activeDropIndex = useSharedValue(-1);
+  const { p, isDark } = useGlassPalette();
 
   const participantsFromParams = useMemo(
     () => parseParticipantsParam(participantsParam),
@@ -381,6 +377,8 @@ export default function ItemsSplitScreen() {
       setSubmitError(null);
     }
   }, [canContinue, submitError]);
+
+  const personTotals = useMemo(() => buildLocalFinalization(items, participants).totalsMap, [items, participants]);
 
   // --- modal helpers ---
   const editingItem = editing ? items.find((it) => it.id === editing.id) : null;
@@ -569,27 +567,27 @@ export default function ItemsSplitScreen() {
     );
   }
 
-  const onAssign = useCallback(
-    (productId: string, participantIndex: number) => {
-      const userId = participants[participantIndex]?.uniqueId;
-      if (!userId) return;
+  /** Everyone shares every item equally (the usual restaurant case). */
+  function splitAllEqually() {
+    const everyone = participants.map((x) => x.uniqueId);
+    commitItems((prev) => prev.map((item) => ({ ...item, splitMode: 'equal', assignedTo: everyone, perPersonCount: {} })));
+  }
 
-      console.log('[DragAssign] mock onAssign', { productId, userId });
-      commitItems((prev) =>
-        prev.map((item) => {
-          if (item.id !== productId) return item;
+  function clearAll() {
+    commitItems((prev) => prev.map((item) => ({ ...item, splitMode: item.quantity > 1 ? 'count' : 'equal', assignedTo: [], perPersonCount: {} })));
+  }
 
-          return {
-            ...item,
-            splitMode: 'equal',
-            assignedTo: [userId],
-            perPersonCount: {},
-          };
-        })
-      );
-    },
-    [commitItems, participants]
-  );
+  /** "Everyone" on one item: select all, or clear when all are already selected. */
+  function toggleEveryone(itemId: string) {
+    const everyone = participants.map((x) => x.uniqueId);
+    commitItems((prev) =>
+      prev.map((item) => {
+        if (item.id !== itemId) return item;
+        const all = item.splitMode !== 'count' && everyone.every((uid) => item.assignedTo.includes(uid));
+        return { ...item, splitMode: 'equal', assignedTo: all ? [] : everyone, perPersonCount: {} };
+      }),
+    );
+  }
 
   async function modalSave() {
   if (!editing) return;
@@ -819,133 +817,93 @@ export default function ItemsSplitScreen() {
     </Button>
   );
 
-  const dockHeight = 126;
-  const bottomPanelHeight = 64;
-  const gapBottom = (insets?.bottom ?? 0) + dockHeight + bottomPanelHeight + 40;
+  const progress = totalItems > 0 ? assignedCount / totalItems : 0;
+  const everyoneAssigned = participants.length > 0 && items.length > 0 && items.every((it) => ensureMode(it) === 'equal' && participants.every((x) => it.assignedTo.includes(x.uniqueId)));
 
   return (
-    <YStack f={1} bg="$background" position="relative">
-      {/* Header */}
-      <YStack bg="$background" p="$4" pb="$2">
-        <XStack w="100%" ai="center" jc="flex-start" mb="$3">
-          <YStack ai="flex-start">
-            <Text fontSize={16} fontWeight="700">
-              {t('orders.title')}
-            </Text>
-            <Text fontSize={12} color="$gray10">
-              {sessionReceiptId ?? 'N/A'}
-            </Text>
-          </YStack>
-        </XStack>
-      </YStack>
-
-      {/* Content */}
-      <ScrollView
-        f={1}
+    <GlassScreen p={p} ambient="calm">
+      <RNScrollView
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
-        contentContainerStyle={{ paddingBottom: gapBottom }}
+        contentContainerStyle={{ paddingTop: insets.top + 10, paddingBottom: (insets.bottom ?? 0) + 250, paddingHorizontal: 18 }}
+        refreshControl={<RefreshControl refreshing={false} onRefresh={resetState} tintColor={p.accentGradient[1]} colors={[p.accentGradient[1]]} />}
       >
-        <YStack px="$4" gap="$3">
-          {/* Items */}
-          <YStack gap="$3" mt="$2">
-            <XStack ai="center" jc="space-between">
-              <YStack>
-                <Text fontSize={15} fontWeight="800">
-                  {t('orders.unassignedProducts')}
-                </Text>
-                <Text fontSize={12} color="$gray10">
-                  {t('orders.dragInstruction')}
-                </Text>
-              </YStack>
-              <Text fontSize={13} fontWeight="800" color="#2ECC71">
-                {assignedCount}/{totalItems}
-              </Text>
-            </XStack>
+        {/* Header */}
+        <RNView style={splitStyles.header}>
+          <PressScale onPress={() => router.back()} style={[splitStyles.back, { borderColor: p.cardBorder }]}>
+            <Glass p={p} fill={p.card} radius={22} />
+            <ChevronLeft size={22} color={p.text} />
+          </PressScale>
+          <RNView style={{ flex: 1 }}>
+            <RNText style={[splitStyles.eyebrow, { color: p.label }]} numberOfLines={1}>
+              {(session?.sessionName || t('orders.title')).toUpperCase()}
+            </RNText>
+            <RNText style={[splitStyles.title, { color: p.text }]}>{t('split.title', 'Who had what?')}</RNText>
+          </RNView>
+          <RNText style={[splitStyles.count, { color: p.accentGradient[1] }]}>
+            {assignedCount}/{totalItems}
+          </RNText>
+        </RNView>
 
-            {unassignedItems.map((it) => (
-              <DraggableProductCard
-                key={it.id}
-                item={it}
-                currency={storeCurrency || 'UZS'}
-                dropZoneRects={dropZoneRects}
-                activeDropIndex={activeDropIndex}
-                onAssign={onAssign}
-              />
-            ))}
+        <RNView style={[splitStyles.track, { backgroundColor: p.divider }]}>
+          <RNView style={[splitStyles.fill, { width: `${Math.round(progress * 100)}%`, backgroundColor: p.accentGradient[1] }]} />
+        </RNView>
 
-            {unassignedItems.length === 0 && (
-              <YStack
-                ai="center"
-                jc="center"
-                py="$8"
-                px="$4"
-                borderRadius={18}
-                borderWidth={1}
-                borderColor="$gray5"
-                bg="$color1"
-              >
-                <Check size={28} color="#2ECC71" />
-                <Text mt="$2" fontSize={15} fontWeight="800">
-                  {t('orders.everythingAssigned')}
-                </Text>
-                <Text mt="$1" fontSize={12} color="$gray10" textAlign="center">
-                  {t('orders.confirmWhenReady')}
-                </Text>
-              </YStack>
-            )}
-          </YStack>
-        </YStack>
-      </ScrollView>
+        {/* Quick actions */}
+        <RNView style={splitStyles.quick}>
+          <PressScale onPress={splitAllEqually} style={[splitStyles.quickBtn, { borderColor: everyoneAssigned ? p.accentGradient[1] : p.cardBorder }]}>
+            <Glass p={p} fill={p.card} radius={18} />
+            <RNText style={[splitStyles.quickText, { color: p.text }]} numberOfLines={1}>
+              {t('split.splitAll', 'Split everything equally')}
+            </RNText>
+          </PressScale>
+          <PressScale onPress={clearAll} style={[splitStyles.quickBtn, splitStyles.quickSmall, { borderColor: p.cardBorder }]}>
+            <Glass p={p} fill={p.card} radius={18} />
+            <RNText style={[splitStyles.quickText, { color: p.sub }]} numberOfLines={1}>
+              {t('split.clear', 'Clear')}
+            </RNText>
+          </PressScale>
+        </RNView>
 
-      {/* Bottom progress -> button */}
-      <YStack
-        position="absolute"
-        left={0}
-        right={0}
-        bottom={(insets?.bottom ?? 0) + dockHeight}
-        px="$4"
-        pt="$2"
-        pb="$2"
-        bg="$background"
-        borderTopWidth={1}
-        borderTopColor="$gray4"
-      >
-        <YStack>
-          <Button
-            unstyled
-            onPress={onContinue}
-            height={41}
-            borderRadius={10}
-            bg={canContinue ? '#2ECC71' : '#E2E8F0'}
-            ai="center"
-            jc="center"
-            pressStyle={finalizing ? undefined : { opacity: 0.9 }}
-            disabled={!canContinue || finalizing}
-          >
-            <Text fontSize={16} fontWeight="700" color={canContinue ? 'white' : '#64748B'}>
-              {finalizing ? t('orders.saving') : t('orders.confirmSplit')}
-            </Text>
-          </Button>
+        {/* Items: tap a person to add / remove them */}
+        {items.map((it) => (
+          <AssignItemCard
+            key={it.id}
+            p={p}
+            item={it}
+            participants={participants}
+            total={computeItemTotal(it)}
+            format={fmtCurrency}
+            onToggle={(uid) => toggleParticipantForItem(it.id, uid)}
+            onEveryone={() => toggleEveryone(it.id)}
+            onUnits={() => openAssignModal(it)}
+          />
+        ))}
+
+        {items.length === 0 && (
+          <RNView style={[splitStyles.empty, { borderColor: p.cardBorder }]}>
+            <Glass p={p} fill={p.card} radius={20} />
+            <RNText style={{ color: p.muted, fontSize: 15 }}>{t('split.noItems', 'No items to split yet')}</RNText>
+          </RNView>
+        )}
+      </RNScrollView>
+
+      {/* Bottom panel: who owes what so far + confirm */}
+      <RNView style={[splitStyles.panelWrap, { paddingBottom: (insets.bottom ?? 0) + 12 }]} pointerEvents="box-none">
+        <RNView style={[splitStyles.panel, { borderColor: p.cardBorder }]}>
+          <Glass p={p} fill={p.card} radius={26} />
+          <RNText style={[splitStyles.panelLabel, { color: p.label }]}>{t('split.perPerson', 'Per person').toUpperCase()}</RNText>
+          <PersonTotals p={p} participants={participants} totals={personTotals} format={fmtCurrency} />
+          <RNView style={{ height: 12 }} />
+          <ConfirmButton p={p} enabled={canContinue} loading={finalizing} label={finalizing ? t('orders.saving') : t('orders.confirmSplit')} onPress={onContinue} />
           {!canContinue && totalItems > 0 && (
-            <Text mt="$2" color="$gray10" fontSize={12} textAlign="center">
+            <RNText style={[splitStyles.hint, { color: p.muted }]}>
               {t('orders.assignAllItems', 'Assign every item before confirming the split.')}
-            </Text>
+            </RNText>
           )}
-          {submitError && (
-            <Text mt="$2" color="$red10" fontSize={13} textAlign="center">
-              {submitError}
-            </Text>
-          )}
-        </YStack>
-      </YStack>
-
-      <ParticipantDropDock
-        participants={participants}
-        dropZoneRects={dropZoneRects}
-        activeDropIndex={activeDropIndex}
-        bottomInset={insets?.bottom ?? 0}
-      />
+          {submitError && <RNText style={splitStyles.error}>{submitError}</RNText>}
+        </RNView>
+      </RNView>
 
       {/* Assign Modal */}
       {editing && (
@@ -1203,6 +1161,26 @@ export default function ItemsSplitScreen() {
           </YStack>
         </YStack>
       )}
-    </YStack>
+    </GlassScreen>
   );
 }
+
+const splitStyles = StyleSheet.create({
+  header: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 14 },
+  back: { width: 44, height: 44, borderRadius: 22, borderWidth: 1, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
+  eyebrow: { fontSize: 11, fontWeight: '600', letterSpacing: 2.5 },
+  title: { fontSize: 26, fontWeight: '800', letterSpacing: -0.4, marginTop: 2 },
+  count: { fontSize: 18, fontWeight: '800' },
+  track: { height: 6, borderRadius: 3, overflow: 'hidden', marginBottom: 16 },
+  fill: { height: 6, borderRadius: 3 },
+  quick: { flexDirection: 'row', gap: 10, marginBottom: 14 },
+  quickBtn: { flex: 1, height: 48, borderRadius: 18, borderWidth: 1.2, alignItems: 'center', justifyContent: 'center', overflow: 'hidden', paddingHorizontal: 12 },
+  quickSmall: { flex: 0, width: 96 },
+  quickText: { fontSize: 14, fontWeight: '700' },
+  empty: { borderRadius: 20, borderWidth: 1, paddingVertical: 36, alignItems: 'center', overflow: 'hidden' },
+  panelWrap: { position: 'absolute', left: 0, right: 0, bottom: 0, paddingHorizontal: 14 },
+  panel: { borderRadius: 26, borderWidth: 1, padding: 14, overflow: 'hidden', gap: 8 },
+  panelLabel: { fontSize: 11, fontWeight: '600', letterSpacing: 2.5 },
+  hint: { fontSize: 12, textAlign: 'center', marginTop: 6 },
+  error: { color: '#EF4444', fontSize: 13, textAlign: 'center', marginTop: 6 },
+});

@@ -221,7 +221,7 @@ export default function TabLayout() {
 
       <Tabs.Screen name="scan-receipt" options={{ href: null, title: scanReceiptTitle, headerShown: false }} />
       <Tabs.Screen name="sessions/participants" options={{ href: null, title: participantsTitle }} />
-      <Tabs.Screen name="sessions/items-split" options={{ href: null, title: itemsSplitTitle }} />
+      <Tabs.Screen name="sessions/items-split" options={{ href: null, title: itemsSplitTitle, headerShown: false }} />
       <Tabs.Screen name="sessions/finish" options={{ href: null, title: finishTitle }} />
       <Tabs.Screen name="sessions/history/index" options={{ href: null, title: historyTitle, headerShown: false }} />
       <Tabs.Screen name="sessions/history/[historyId]" options={{ href: null, title: historyDetailsTitle }} />
