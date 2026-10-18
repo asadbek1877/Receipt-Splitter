@@ -223,7 +223,7 @@ export default function TabLayout() {
       <Tabs.Screen name="sessions/history/index" options={{ href: null, title: historyTitle, headerShown: false }} />
       <Tabs.Screen name="sessions/history/[historyId]" options={{ href: null, title: historyDetailsTitle }} />
 
-      <Tabs.Screen name="analytics/index" options={{ href: null, title: t('analytics.title', 'Analytics') }} />
+      <Tabs.Screen name="analytics/index" options={{ href: null, title: t('analytics.title', 'Analytics'), headerShown: false }} />
 
       {/* Quick Split */}
       <Tabs.Screen name="quick-split" options={{ href: null, title: t('quickSplit.title', 'Quick Split') }} />

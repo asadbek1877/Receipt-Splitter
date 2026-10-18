@@ -105,9 +105,18 @@
       "day": "Day",
       "week": "Week",
       "month": "Month",
-      "all": "All"
+      "all": "All",
+      "year": "年"
     },
-    "otherCurrenciesExcluded": "合計は {{currency}} です。他の通貨のレシートは含まれていません。"
+    "otherCurrenciesExcluded": "合計は {{currency}} です。他の通貨のレシートは含まれていません。",
+    "subtitle2": "支出、支払い、貸し借り",
+    "chartTitle": "自分の負担と支払い",
+    "yourShare": "自分の負担",
+    "youPaid": "支払った額",
+    "vsPrevious": "前期比",
+    "amount": "金額",
+    "percentage": "割合",
+    "recent": "最近の伝票"
   },
   "friends": {
     "title": "友だち",

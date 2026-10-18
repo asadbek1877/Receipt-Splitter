@@ -105,9 +105,18 @@
       "day": "Day",
       "week": "Week",
       "month": "Month",
-      "all": "All"
+      "all": "All",
+      "year": "Year"
     },
-    "otherCurrenciesExcluded": "Totals are in {{currency}}. Receipts in other currencies are not included."
+    "otherCurrenciesExcluded": "Totals are in {{currency}}. Receipts in other currencies are not included.",
+    "subtitle2": "Your spending, what you paid and what is owed",
+    "chartTitle": "Your share vs you paid",
+    "yourShare": "Your share",
+    "youPaid": "You paid",
+    "vsPrevious": "vs previous",
+    "amount": "Amount",
+    "percentage": "Percentage",
+    "recent": "Recent bills"
   },
   "friends": {
     "title": "Friends",

@@ -105,9 +105,18 @@
       "day": "Kunlik",
       "week": "Haftalik",
       "month": "Oylik",
-      "all": "Barchasi"
+      "all": "Barchasi",
+      "year": "Yil"
     },
-    "otherCurrenciesExcluded": "Jami {{currency}} da. Boshqa valyutadagi cheklar kiritilmagan."
+    "otherCurrenciesExcluded": "Jami {{currency}} da. Boshqa valyutadagi cheklar kiritilmagan.",
+    "subtitle2": "Xarajatlaringiz, to'laganlaringiz va qarzlar",
+    "chartTitle": "Ulushingiz va to'laganingiz",
+    "yourShare": "Ulushingiz",
+    "youPaid": "Siz to'lagan",
+    "vsPrevious": "oldingiga nisbatan",
+    "amount": "Summa",
+    "percentage": "Foiz",
+    "recent": "Oxirgi cheklar"
   },
   "home": {
     "header": {
