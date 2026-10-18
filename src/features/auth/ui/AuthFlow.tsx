@@ -1,60 +1,84 @@
 import React, { useEffect, useState } from 'react';
-import { BackHandler } from 'react-native';
+import { BackHandler, Keyboard } from 'react-native';
+import { useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 
-import { AuthScreen, useCrossfade, type AuthVariant } from './AuthKit';
+import { AuthScreen, type AuthVariant } from './AuthKit';
+import { ForgotBody, useForgotFlow } from './ForgotPasswordForm';
 import { LoginBody } from './LoginForm';
 import { RegisterBody } from './RegisterForm';
 
 /**
- * Login and registration live in ONE screen and switch in place.
- * Navigating between two routes re-mounted the whole screen (white flash,
- * dropped frames); here the background stays and only the content cross-fades.
+ * Login, registration and password reset live in ONE screen.
+ *
+ * Every form is mounted once and stays mounted; switching just cross-fades
+ * opacity on the UI thread (see AuthScreen). Nothing is navigated, created or
+ * laid out mid-transition, so there is no flash and no dropped frame.
  */
 export default function AuthFlow({ initial }: { initial: AuthVariant }) {
   const { t } = useTranslation();
+  const router = useRouter();
   const [mode, setMode] = useState<AuthVariant>(initial);
-  const fade = useCrossfade();
+  const forgot = useForgotFlow();
 
-  // Android back from the "other" form returns to the one the screen opened with.
-  useEffect(() => {
-    if (mode === initial) return;
-    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
-      fade.run(() => setMode(initial));
+  const show = (next: AuthVariant) => {
+    Keyboard.dismiss();
+    if (next === 'forgot') forgot.reset();
+    setMode(next);
+  };
+
+  const leave = () => {
+    if (router.canGoBack()) router.back();
+    else router.replace('/onboarding');
+  };
+
+  /** Back: forgot steps first, then to the form the screen opened with, then out. */
+  const goBack = () => {
+    if (mode === 'forgot' && forgot.back()) return true;
+    if (mode !== initial) {
+      show(initial === 'forgot' ? 'login' : initial);
       return true;
-    });
+    }
+    return false;
+  };
+
+  const onBackButton = () => {
+    if (!goBack()) leave();
+  };
+
+  // Android hardware back follows the same rules while there is somewhere to go in-screen.
+  useEffect(() => {
+    const sub = BackHandler.addEventListener('hardwareBackPress', goBack);
     return () => sub.remove();
-  }, [mode, initial]);
-
-  const toLogin = () => fade.run(() => setMode('login'));
-  const toRegister = () => fade.run(() => setMode('register'));
-
-  if (mode === 'login') {
-    return (
-      <AuthScreen
-        variant="login"
-        eyebrow={t('auth.welcomeTo', 'Welcome to')}
-        subtitle={t('auth.enterCredentials', 'Enter your credentials to continue')}
-        backFallback="/onboarding"
-        onBack={initial === 'register' ? toRegister : undefined}
-        contentStyle={fade.style}
-      >
-        <LoginBody onSwitch={toRegister} />
-      </AuthScreen>
-    );
-  }
+  });
 
   return (
     <AuthScreen
-      variant="register"
-      eyebrow={t('auth.joinUs', 'Join us')}
-      title={t('auth.newAccount', 'New account')}
-      subtitle={t('auth.fillDetails', 'Fill in your details to get started')}
-      backFallback="/login"
-      onBack={initial === 'login' ? toLogin : undefined}
-      contentStyle={fade.style}
-    >
-      <RegisterBody onSwitch={toLogin} />
-    </AuthScreen>
+      active={mode}
+      onBack={onBackButton}
+      layers={[
+        {
+          variant: 'login',
+          eyebrow: t('auth.welcomeTo', 'Welcome to'),
+          subtitle: t('auth.enterCredentials', 'Enter your credentials to continue'),
+          body: <LoginBody onSwitch={() => show('register')} onForgot={() => show('forgot')} />,
+        },
+        {
+          variant: 'register',
+          eyebrow: t('auth.joinUs', 'Join us'),
+          title: t('auth.newAccount', 'New account'),
+          subtitle: t('auth.fillDetails', 'Fill in your details to get started'),
+          body: <RegisterBody onSwitch={() => show('login')} />,
+        },
+        {
+          variant: 'forgot',
+          eyebrow: t('auth.forgotPassword', 'Forgot Password?'),
+          title: forgot.copy.title,
+          subtitle: forgot.copy.subtitle,
+          body: <ForgotBody flow={forgot} onLogin={() => show('login')} />,
+          innerStyle: forgot.style,
+        },
+      ]}
+    />
   );
 }

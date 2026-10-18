@@ -25,6 +25,7 @@ import Animated, {
   useSharedValue,
   withDelay,
   withRepeat,
+  cancelAnimation,
   withSequence,
   withTiming,
 } from 'react-native-reanimated';
@@ -210,16 +211,34 @@ export const PALETTES: Record<AuthVariant, { light: Palette; dark: Palette }> = 
 };
 
 // ---------------------------------------------------------------------------
+// Ambient animation control: loops run only while their layer is visible.
+// Hidden layers stay mounted (instant switching) but cost nothing per frame.
+// ---------------------------------------------------------------------------
+const AmbientContext = createContext(true);
+
+function useAmbient(values: SharedValue<number>[], start: () => void) {
+  const active = useContext(AmbientContext);
+  useEffect(() => {
+    if (!active) {
+      values.forEach((v) => cancelAnimation(v));
+      return;
+    }
+    start();
+    return () => values.forEach((v) => cancelAnimation(v));
+  }, [active]);
+}
+
+// ---------------------------------------------------------------------------
 // Animation helpers
 // ---------------------------------------------------------------------------
 export function useLoop(duration: number, delay = 0) {
   const v = useSharedValue(0);
-  useEffect(() => {
+  useAmbient([v], () => {
     v.value = withDelay(
       delay,
       withRepeat(withTiming(1, { duration, easing: Easing.inOut(Easing.sin) }), -1, true),
     );
-  }, []);
+  });
   return v;
 }
 
@@ -487,7 +506,7 @@ function ReceiptLine({ index, progress, color }: { index: number; progress: Shar
 
 function Sparkle({ x, y, size, delay, color }: { x: number; y: number; size: number; delay: number; color: string }) {
   const v = useSharedValue(0);
-  useEffect(() => {
+  useAmbient([v], () => {
     v.value = withDelay(
       delay,
       withRepeat(
@@ -500,7 +519,7 @@ function Sparkle({ x, y, size, delay, color }: { x: number; y: number; size: num
         false,
       ),
     );
-  }, []);
+  });
   const style = useAnimatedStyle(() => ({
     opacity: v.value,
     transform: [{ scale: interpolate(v.value, [0, 1], [0.3, 1]) }, { rotate: `${v.value * 45}deg` }],
@@ -520,7 +539,7 @@ function ReceiptIllustration({ p, isDark }: { p: Palette; isDark: boolean }) {
   const print = useSharedValue(0);
   const scan = useSharedValue(0);
 
-  useEffect(() => {
+  useAmbient([print, scan], () => {
     print.value = withRepeat(
       withSequence(
         withTiming(1, { duration: 1600, easing: Easing.out(Easing.cubic) }),
@@ -530,7 +549,7 @@ function ReceiptIllustration({ p, isDark }: { p: Palette; isDark: boolean }) {
       false,
     );
     scan.value = withRepeat(withTiming(1, { duration: 1500, easing: Easing.inOut(Easing.sin) }), -1, true);
-  }, []);
+  });
 
   const receiptStyle = useAnimatedStyle(() => ({
     transform: [
@@ -630,9 +649,9 @@ function SplitIllustration({ p }: { p: Palette }) {
   const spin = useSharedValue(0);
   const pulse = useLoop(3200);
 
-  useEffect(() => {
+  useAmbient([spin], () => {
     spin.value = withRepeat(withTiming(1, { duration: 24000, easing: Easing.linear }), -1, false);
-  }, []);
+  });
 
   const donutStyle = useAnimatedStyle(() => ({ transform: [{ rotate: `${spin.value * 360}deg` }] }));
   const coinStyle = useAnimatedStyle(() => ({
@@ -700,9 +719,9 @@ function LockIllustration({ p }: { p: Palette }) {
   const float = useLoop(2800);
   const glow = useLoop(2000, 400);
 
-  useEffect(() => {
+  useAmbient([spin], () => {
     spin.value = withRepeat(withTiming(1, { duration: 18000, easing: Easing.linear }), -1, false);
-  }, []);
+  });
 
   const ringStyle = useAnimatedStyle(() => ({ transform: [{ rotate: `${spin.value * 360}deg` }] }));
   const lockStyle = useAnimatedStyle(() => ({
@@ -805,7 +824,7 @@ const SWOOSH_LENGTH = 70;
 
 function Swoosh({ p }: { p: Palette }) {
   const progress = useSharedValue(0);
-  useEffect(() => {
+  useAmbient([progress], () => {
     progress.value = withDelay(
       500,
       withRepeat(
@@ -817,7 +836,7 @@ function Swoosh({ p }: { p: Palette }) {
         false,
       ),
     );
-  }, []);
+  });
   const props1 = useAnimatedProps(() => ({ strokeDashoffset: SWOOSH_LENGTH * (1 - progress.value) }));
   const props2 = useAnimatedProps(() => ({ strokeDashoffset: SWOOSH_LENGTH * (1 - progress.value) }));
 
@@ -917,7 +936,7 @@ export function PrimaryButton({ p, label, onPress, loading }: { p: Palette; labe
   const press = useSharedValue(1);
   const [w, setW] = useState(320);
 
-  useEffect(() => {
+  useAmbient([shimmer], () => {
     shimmer.value = withRepeat(
       withSequence(
         withTiming(1, { duration: 1400, easing: Easing.inOut(Easing.quad) }),
@@ -926,7 +945,7 @@ export function PrimaryButton({ p, label, onPress, loading }: { p: Palette; labe
       -1,
       false,
     );
-  }, []);
+  });
 
   const shimmerStyle = useAnimatedStyle(() => ({
     transform: [{ translateX: interpolate(shimmer.value, [0, 1], [-120, w + 40]) }, { skewX: '-20deg' }],
@@ -1102,58 +1121,103 @@ function useTransitionDone() {
   return done;
 }
 
-export function AuthScreen({
-  variant,
-  eyebrow,
-  title = APP_TITLE,
-  subtitle,
-  backFallback,
-  onBack,
-  contentStyle,
-  children,
-}: {
+export type AuthLayer = {
   variant: AuthVariant;
   eyebrow: string;
   title?: string;
   subtitle: string;
-  /** Where the back button goes when there is no screen to go back to. */
-  backFallback: Href;
-  /** Overrides the back button (e.g. register → login inside the same screen). */
-  onBack?: () => void;
-  /** Animated opacity for swapping content in place (see useCrossfade). */
-  contentStyle?: ReturnType<typeof useCrossfade>['style'];
-  children: React.ReactNode;
+  body: React.ReactNode;
+  /** Extra animated opacity for in-layer swaps (e.g. forgot-password steps). */
+  innerStyle?: ReturnType<typeof useCrossfade>['style'];
+};
+
+const VARIANTS: AuthVariant[] = ['login', 'register', 'forgot'];
+const SWITCH_MS = 320;
+const GLASS_DELAY_MS = SWITCH_MS + 40;
+
+/** 0 → 1 opacity per variant, animated on the UI thread when `active` changes. */
+function useLayerOpacity(variant: AuthVariant, active: AuthVariant) {
+  const v = useSharedValue(variant === active ? 1 : 0);
+  useEffect(() => {
+    v.value = withTiming(variant === active ? 1 : 0, {
+      duration: SWITCH_MS,
+      easing: Easing.bezier(0.4, 0, 0.2, 1),
+    });
+  }, [active]);
+  return useAnimatedStyle(() => ({ opacity: v.value }));
+}
+
+/** Glass blur for a layer turns on only after its fade-in has finished. */
+function useLayerGlass(isActive: boolean, screenReady: boolean) {
+  const [on, setOn] = useState(isActive);
+  useEffect(() => {
+    if (!isActive) {
+      setOn(false);
+      return;
+    }
+    const timer = setTimeout(() => setOn(true), GLASS_DELAY_MS);
+    return () => clearTimeout(timer);
+  }, [isActive]);
+  return on && screenReady;
+}
+
+function Hero({ variant, p, isDark }: { variant: AuthVariant; p: Palette; isDark: boolean }) {
+  if (variant === 'login') return <ReceiptIllustration p={p} isDark={isDark} />;
+  if (variant === 'register') return <SplitIllustration p={p} />;
+  return <LockIllustration p={p} />;
+}
+
+/**
+ * One screen that hosts every auth form as a layer.
+ *
+ * All layers are mounted once and stay mounted; switching only animates their
+ * opacity on the UI thread, so nothing is created or laid out mid-transition.
+ * Hidden layers pause their ambient loops and drop their glass blur, so they
+ * cost nothing per frame.
+ */
+export function AuthScreen({
+  active,
+  layers,
+  onBack,
+}: {
+  active: AuthVariant;
+  layers: AuthLayer[];
+  onBack: () => void;
 }) {
   const theme = useAppStore((s) => s.theme);
   const isDark = theme === 'dark';
-  const p = PALETTES[variant][isDark ? 'dark' : 'light'];
-  const router = useRouter();
+  const p = PALETTES[active][isDark ? 'dark' : 'light'];
   const insets = useSafeAreaInsets();
   const { width, height } = useWindowDimensions();
   const blurTargetRef = useRef<View>(null);
   const reduceTransparency = useReduceTransparency();
-  const glassReady = useTransitionDone();
+  const screenReady = useTransitionDone();
   const contentWidth = Math.min(width, 480) - 48;
   const titleSize = Math.min(34, Math.floor(contentWidth / 9.6));
 
-  const goBack = () => {
-    if (onBack) onBack();
-    else if (router.canGoBack()) router.back();
-    else router.replace(backFallback);
+  const opacity = {
+    login: useLayerOpacity('login', active),
+    register: useLayerOpacity('register', active),
+    forgot: useLayerOpacity('forgot', active),
   };
+  const present = new Set(layers.map((l) => l.variant));
 
   return (
     <AuthThemeContext.Provider value={{ p, isDark }}>
       <BlurTargetContext.Provider value={blurTargetRef}>
         <ReduceTransparencyContext.Provider value={reduceTransparency}>
-          <GlassReadyContext.Provider value={glassReady}>
+          <GlassReadyContext.Provider value={screenReady}>
             <View style={styles.container}>
               {/* Everything the glass blurs lives inside this target (required on Android) */}
               <BlurTargetView ref={blurTargetRef} style={StyleSheet.absoluteFill}>
                 <LinearGradient colors={p.bg} style={StyleSheet.absoluteFill} />
-                <Animated.View style={[StyleSheet.absoluteFill, contentStyle]}>
-                  <BackgroundDecor variant={variant} isDark={isDark} p={p} width={width} height={height} />
-                </Animated.View>
+                {VARIANTS.filter((v) => present.has(v)).map((v) => (
+                  <AmbientContext.Provider key={v} value={v === active}>
+                    <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, opacity[v]]}>
+                      <BackgroundDecor variant={v} isDark={isDark} p={p} width={width} height={height} />
+                    </Animated.View>
+                  </AmbientContext.Provider>
+                ))}
               </BlurTargetView>
 
               <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
@@ -1163,22 +1227,20 @@ export function AuthScreen({
                   showsVerticalScrollIndicator={false}
                 >
                   <View style={styles.inner}>
-                    {/* Hero sits behind the header/title so it can be large */}
+                    {/* Heroes sit behind the header/title so they can be large */}
                     <View style={styles.illustrationWrap} pointerEvents="none">
-                      <Animated.View style={[styles.heroLayer, contentStyle]}>
-                        {variant === 'login' ? (
-                          <ReceiptIllustration p={p} isDark={isDark} />
-                        ) : variant === 'register' ? (
-                          <SplitIllustration p={p} />
-                        ) : (
-                          <LockIllustration p={p} />
-                        )}
-                      </Animated.View>
+                      {layers.map((l) => (
+                        <AmbientContext.Provider key={l.variant} value={l.variant === active}>
+                          <Animated.View style={[styles.heroLayer, opacity[l.variant]]}>
+                            <Hero variant={l.variant} p={p} isDark={isDark} />
+                          </Animated.View>
+                        </AmbientContext.Provider>
+                      ))}
                     </View>
 
                     <View style={styles.headerRow}>
                       <Pressable
-                        onPress={goBack}
+                        onPress={onBack}
                         accessibilityRole="button"
                         accessibilityLabel="Back"
                         hitSlop={6}
@@ -1189,16 +1251,21 @@ export function AuthScreen({
                       </Pressable>
                     </View>
 
-                    <Animated.View style={[styles.titleBlock, contentStyle]}>
-                      <Text style={[styles.welcome, { color: p.text, fontSize: titleSize * 0.82 }]}>{eyebrow}</Text>
-                      <GradientTitle p={p} text={title} fontSize={titleSize} width={contentWidth} />
-                      <Swoosh p={p} />
-                      <Text style={[styles.subtitle, { color: p.muted }]}>{subtitle}</Text>
-                    </Animated.View>
-
-                    <Animated.View style={contentStyle}>
-                      {children}
-                    </Animated.View>
+                    {/* Layers: the active one is in the flow, the others overlay it invisibly */}
+                    <View>
+                      {layers.map((l) => (
+                        <ContentLayer
+                          key={l.variant}
+                          layer={l}
+                          isActive={l.variant === active}
+                          screenReady={screenReady}
+                          opacityStyle={opacity[l.variant]}
+                          p={p}
+                          titleSize={titleSize}
+                          contentWidth={contentWidth}
+                        />
+                      ))}
+                    </View>
                   </View>
                 </ScrollView>
               </KeyboardAvoidingView>
@@ -1207,6 +1274,46 @@ export function AuthScreen({
         </ReduceTransparencyContext.Provider>
       </BlurTargetContext.Provider>
     </AuthThemeContext.Provider>
+  );
+}
+
+function ContentLayer({
+  layer,
+  isActive,
+  screenReady,
+  opacityStyle,
+  p,
+  titleSize,
+  contentWidth,
+}: {
+  layer: AuthLayer;
+  isActive: boolean;
+  screenReady: boolean;
+  opacityStyle: ReturnType<typeof useLayerOpacity>;
+  p: Palette;
+  titleSize: number;
+  contentWidth: number;
+}) {
+  const glassOn = useLayerGlass(isActive, screenReady);
+  return (
+    <AmbientContext.Provider value={isActive}>
+      <GlassReadyContext.Provider value={glassOn}>
+        <Animated.View
+          pointerEvents={isActive ? 'auto' : 'none'}
+          accessibilityElementsHidden={!isActive}
+          importantForAccessibility={isActive ? 'auto' : 'no-hide-descendants'}
+          style={[isActive ? null : styles.layerHidden, opacityStyle]}
+        >
+          <Animated.View style={[styles.titleBlock, layer.innerStyle]}>
+            <Text style={[styles.welcome, { color: p.text, fontSize: titleSize * 0.82 }]}>{layer.eyebrow}</Text>
+            <GradientTitle p={p} text={layer.title ?? APP_TITLE} fontSize={titleSize} width={contentWidth} />
+            <Swoosh p={p} />
+            <Text style={[styles.subtitle, { color: p.muted }]}>{layer.subtitle}</Text>
+          </Animated.View>
+          <Animated.View style={layer.innerStyle}>{layer.body}</Animated.View>
+        </Animated.View>
+      </GlassReadyContext.Provider>
+    </AmbientContext.Provider>
   );
 }
 
@@ -1330,6 +1437,7 @@ export const authStyles = StyleSheet.create({
   },
   illustrationWrap: { position: 'absolute', top: -14, right: -30, width: 210, height: 196 },
   heroLayer: { position: 'absolute', top: 0, left: 0 },
+  layerHidden: { position: 'absolute', top: 0, left: 0, right: 0 },
   illustration: { width: 210, height: 196 },
   titleBlock: { marginTop: 4, marginBottom: 22 },
   welcome: { fontWeight: '800', letterSpacing: -0.5 },

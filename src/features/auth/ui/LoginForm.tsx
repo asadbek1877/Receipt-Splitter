@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useRouter, Link } from 'expo-router';
+import { useRouter } from 'expo-router';
 import { useForm, Controller } from 'react-hook-form';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -31,7 +31,7 @@ const schema = z.object({
 type FormData = z.infer<typeof schema>;
 
 /** Login form; rendered inside <AuthFlow>. */
-export function LoginBody({ onSwitch }: { onSwitch: () => void }) {
+export function LoginBody({ onSwitch, onForgot }: { onSwitch: () => void; onForgot: () => void }) {
   const { t } = useTranslation();
   const { p } = useAuthTheme();
   const { control, handleSubmit, formState: { errors } } = useForm<FormData>({
@@ -106,13 +106,11 @@ export function LoginBody({ onSwitch }: { onSwitch: () => void }) {
       </View>
 
       <View style={styles.forgot}>
-        <Link href="/forgot-password" asChild>
-          <Pressable hitSlop={8}>
-            <Text style={[styles.forgotText, { color: p.link }]}>
-              {t('auth.forgotPassword', 'Forgot Password?')}
-            </Text>
-          </Pressable>
-        </Link>
+        <Pressable hitSlop={8} onPress={onForgot}>
+          <Text style={[styles.forgotText, { color: p.link }]}>
+            {t('auth.forgotPassword', 'Forgot Password?')}
+          </Text>
+        </Pressable>
       </View>
 
       <View style={{ marginTop: 16 }}>
