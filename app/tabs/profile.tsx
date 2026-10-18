@@ -44,11 +44,13 @@ import Animated, {
   interpolate,
   useAnimatedStyle,
   useSharedValue,
+  cancelAnimation,
+  withDelay,
   withRepeat,
   withTiming,
 } from 'react-native-reanimated';
 import { LinearGradient } from 'expo-linear-gradient';
-import Svg, { Defs, LinearGradient as SvgLinearGradient, Polygon, Stop } from 'react-native-svg';
+import Svg, { Circle, Defs, LinearGradient as SvgLinearGradient, Path, Polygon, RadialGradient, Rect, Stop } from 'react-native-svg';
 
 import { useAppStore } from '@/shared/lib/stores/app-store';
 import { useFriendsStore } from '@/features/friends/model/friends.store';
@@ -156,7 +158,9 @@ export default function ProfileScreen() {
   const displayName = user?.username || t('profile.labels.guest', 'Guest');
   const initials = initialsOf(displayName);
   const userId = user?.uniqueId ?? '';
-  const shortId = userId ? `#${userId.slice(0, 4)}${userId.length > 4 ? '...' : ''}` : '—';
+  // uniqueId already carries its '#' (e.g. "#5076..."); never prefix a second one
+  const bareId = userId.replace(/^#+/, '');
+  const shortId = bareId ? `#${bareId.slice(0, 4)}${bareId.length > 4 ? '...' : ''}` : '—';
 
   // Avatar
   const [previewUri, setPreviewUri] = useState<string | null>(user?.avatarUrl ?? null);
@@ -217,36 +221,34 @@ export default function ProfileScreen() {
     const allowed = await ensureMediaPermission();
     if (!allowed) return;
     const result = await ImagePicker.launchImageLibraryAsync(PICKER_OPTIONS);
-    if (!result.canceled && result.assets?.[0]) {
-      const asset = result.assets[0];
-      const localUri = asset.uri;
-      setPreviewUri(localUri);
-      try {
-        setIsSavingAvatar(true);
-        const formData = new FormData();
-        const mimeType = asset.mimeType ?? 'image/jpeg';
-        const extension = mimeType.split('/').pop() || 'jpg';
-        const fileName = asset.fileName ?? `avatar.${extension}`;
-        if (Platform.OS === 'web') {
-          const resp = await fetch(asset.uri);
-          const blob = await resp.blob();
-          formData.append('file', blob, fileName);
-        } else {
-          formData.append('file', { uri: asset.uri, name: fileName, type: mimeType } as any);
-        }
-        try {
-          const { avatarUrl: uploadedUrl } = await uploadAvatar(formData);
-          const updatedUser = await updateAvatar({ avatarUrl: uploadedUrl });
-          setUser(updatedUser);
-          if (updatedUser.avatarUrl) setPreviewUri(updatedUser.avatarUrl);
-        } catch {
-          setUser({ ...user!, avatarUrl: localUri });
-        }
-      } catch {
-        setUser({ ...user!, avatarUrl: localUri });
-      } finally { setIsSavingAvatar(false); }
+    if (result.canceled || !result.assets?.[0]) return;
+
+    const asset = result.assets[0];
+    const previous = user?.avatarUrl ?? null;
+    setPreviewUri(asset.uri); // show the picked photo right away
+    try {
+      setIsSavingAvatar(true);
+      const rawMime = (asset.mimeType ?? 'image/jpeg').toLowerCase();
+      const mimeType = rawMime === 'image/jpg' ? 'image/jpeg' : rawMime;
+      const extension = mimeType.split('/').pop() || 'jpg';
+      const formData = new FormData();
+      formData.append('file', { uri: asset.uri, name: asset.fileName ?? `avatar.${extension}`, type: mimeType } as any);
+
+      const { avatarUrl: uploadedUrl } = await uploadAvatar(formData);
+      const updatedUser = await updateAvatar({ avatarUrl: uploadedUrl });
+      setUser(updatedUser);
+      setPreviewUri(updatedUser.avatarUrl ?? uploadedUrl);
+    } catch (e) {
+      // Don't pretend it worked: restore the old avatar and say why.
+      setPreviewUri(previous);
+      Alert.alert(
+        t('common.error', 'Error'),
+        e instanceof Error && e.message ? e.message : t('profile.alerts.avatarUpdateFailed', 'Could not update the avatar.'),
+      );
+    } finally {
+      setIsSavingAvatar(false);
     }
-  }, [ensureMediaPermission, user, setUser, isSavingAvatar]);
+  }, [ensureMediaPermission, user, setUser, isSavingAvatar, t]);
 
   const handleResetAvatar = useCallback(async () => {
     if (!user || isResettingAvatar) return;
@@ -345,6 +347,7 @@ export default function ProfileScreen() {
           <View style={{ paddingTop: insets.top }}>
             <LinearGradient colors={p.heroBg} style={StyleSheet.absoluteFill} />
             <HeroBeams p={p} />
+            <HeroParticles p={p} />
 
             {/* top bar */}
             <View style={styles.topBar}>
@@ -517,7 +520,7 @@ export default function ProfileScreen() {
                 tile={p.tiles.info}
                 icon={Info}
                 title={t('profile.info.userId', 'User ID')}
-                subtitle={userId ? `#${userId}` : t('profile.labels.notAvailable', 'N/A')}
+                subtitle={bareId ? `#${bareId}` : t('profile.labels.notAvailable', 'N/A')}
                 onPress={() => handleCopy(userId)}
                 right={<Copy size={22} color={p.chevron} />}
               />
@@ -589,6 +592,123 @@ function HeroBeams({ p }: { p: Palette }) {
           <Polygon points={`${w * 0.5},${h * 0.9} ${w * 0.515},${h * 0.9} ${w * 0.83},${h * 0.1} ${w * 0.815},${h * 0.1}`} fill={p.shine} />
         </Svg>
       </Animated.View>
+    </View>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Hero ambience: a breathing glow plus coins, mini receipts and sparkles that
+// drift up behind the name — the "money being split" theme, kept subtle so the
+// text stays readable.
+// ---------------------------------------------------------------------------
+type ParticleKind = 'coin' | 'receipt' | 'spark';
+type ParticleSpec = { kind: ParticleKind; x: number; size: number; duration: number; delay: number; sway: number };
+
+const PARTICLES: ParticleSpec[] = [
+  { kind: 'coin', x: 0.08, size: 22, duration: 9000, delay: 0, sway: 14 },
+  { kind: 'receipt', x: 0.3, size: 20, duration: 11000, delay: 1800, sway: 18 },
+  { kind: 'spark', x: 0.52, size: 12, duration: 7500, delay: 900, sway: 10 },
+  { kind: 'coin', x: 0.42, size: 16, duration: 10000, delay: 4200, sway: 12 },
+  { kind: 'spark', x: 0.18, size: 10, duration: 8200, delay: 3000, sway: 8 },
+  { kind: 'receipt', x: 0.6, size: 16, duration: 12000, delay: 6000, sway: 16 },
+  { kind: 'coin', x: 0.24, size: 13, duration: 9500, delay: 7200, sway: 10 },
+  { kind: 'spark', x: 0.66, size: 9, duration: 7000, delay: 5200, sway: 8 },
+];
+
+function ParticleGlyph({ kind, size, p }: { kind: ParticleKind; size: number; p: Palette }) {
+  const [a, b] = p.accentGradient;
+  if (kind === 'coin') {
+    return (
+      <Svg width={size} height={size} viewBox="0 0 24 24">
+        <Defs>
+          <SvgLinearGradient id="pcoin" x1="0" y1="0" x2="1" y2="1">
+            <Stop offset="0%" stopColor={a} />
+            <Stop offset="100%" stopColor={b} />
+          </SvgLinearGradient>
+        </Defs>
+        <Circle cx={12} cy={12} r={11} fill="url(#pcoin)" />
+        <Circle cx={12} cy={12} r={7.5} fill="none" stroke="#FFFFFF" strokeOpacity={0.55} strokeWidth={1.4} />
+        {/* ÷ */}
+        <Circle cx={12} cy={8.6} r={1.3} fill="#FFFFFF" />
+        <Rect x={8} y={11.2} width={8} height={1.6} rx={0.8} fill="#FFFFFF" />
+        <Circle cx={12} cy={15.4} r={1.3} fill="#FFFFFF" />
+      </Svg>
+    );
+  }
+  if (kind === 'receipt') {
+    return (
+      <Svg width={size} height={size * 1.25} viewBox="0 0 20 25">
+        <Path d="M2 1h16v21l-2.7-1.8-2.6 1.8-2.7-1.8-2.6 1.8-2.7-1.8L2 22z" fill={p.card} stroke={a} strokeWidth={1.3} />
+        <Rect x={5} y={6} width={10} height={1.6} rx={0.8} fill={a} opacity={0.8} />
+        <Rect x={5} y={10} width={7} height={1.6} rx={0.8} fill={a} opacity={0.6} />
+        <Rect x={5} y={14} width={9} height={1.6} rx={0.8} fill={b} opacity={0.6} />
+      </Svg>
+    );
+  }
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      <Path d="M12 0c1 7 5 11 12 12-7 1-11 5-12 12-1-7-5-11-12-12 7-1 11-5 12-12z" fill={b} />
+    </Svg>
+  );
+}
+
+function Particle({ spec, p, width, height }: { spec: ParticleSpec; p: Palette; width: number; height: number }) {
+  const t = useSharedValue(0);
+  useEffect(() => {
+    t.value = withDelay(spec.delay, withRepeat(withTiming(1, { duration: spec.duration, easing: Easing.linear }), -1, false));
+    return () => cancelAnimation(t);
+  }, []);
+  const style = useAnimatedStyle(() => {
+    const v = t.value;
+    return {
+      opacity: interpolate(v, [0, 0.12, 0.75, 1], [0, 0.85, 0.85, 0]),
+      transform: [
+        { translateY: interpolate(v, [0, 1], [height, -spec.size * 2]) },
+        { translateX: Math.sin(v * Math.PI * 2) * spec.sway },
+        { rotate: `${interpolate(v, [0, 1], [-25, 25])}deg` },
+        { scale: interpolate(v, [0, 0.2, 1], [0.6, 1, 0.9]) },
+      ],
+    };
+  });
+  return (
+    <Animated.View style={[{ position: 'absolute', left: spec.x * width, top: 0 }, style]}>
+      <ParticleGlyph kind={spec.kind} size={spec.size} p={p} />
+    </Animated.View>
+  );
+}
+
+function HeroParticles({ p }: { p: Palette }) {
+  const { width } = useWindowDimensions();
+  const height = 300;
+  const breathe = useSharedValue(0);
+  useEffect(() => {
+    breathe.value = withRepeat(withTiming(1, { duration: 4200, easing: Easing.inOut(Easing.sin) }), -1, true);
+    return () => cancelAnimation(breathe);
+  }, []);
+  const glowStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(breathe.value, [0, 1], [0.35, 0.7]),
+    transform: [{ scale: interpolate(breathe.value, [0, 1], [0.9, 1.12]) }],
+  }));
+
+  return (
+    <View pointerEvents="none" style={[StyleSheet.absoluteFill, { overflow: 'hidden' }]}>
+      {/* breathing glow behind the name */}
+      <Animated.View style={[{ position: 'absolute', left: -70, top: 40 }, glowStyle]}>
+        <Svg width={280} height={280}>
+          <Defs>
+            <RadialGradient id="pglow" cx="50%" cy="50%" r="50%">
+              <Stop offset="0%" stopColor={p.accentGradient[0]} stopOpacity={0.45} />
+              <Stop offset="60%" stopColor={p.accentGradient[1]} stopOpacity={0.12} />
+              <Stop offset="100%" stopColor={p.accentGradient[1]} stopOpacity={0} />
+            </RadialGradient>
+          </Defs>
+          <Circle cx={140} cy={140} r={140} fill="url(#pglow)" />
+        </Svg>
+      </Animated.View>
+
+      {PARTICLES.map((spec, i) => (
+        <Particle key={i} spec={spec} p={p} width={width} height={height} />
+      ))}
     </View>
   );
 }
