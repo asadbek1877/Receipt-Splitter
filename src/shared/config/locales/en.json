@@ -116,7 +116,20 @@
     "vsPrevious": "vs previous",
     "amount": "Amount",
     "percentage": "Percentage",
-    "recent": "Recent bills"
+    "recent": "Recent bills",
+    "subtitle3": "Track your spending and debts",
+    "chartTitle2": "Share vs Paid",
+    "byCategory": "By category",
+    "emptyChart": "No bills in this period yet",
+    "vsYesterday": "vs yesterday",
+    "vsLast": "vs last period",
+    "toYou": "to you",
+    "byYou": "by you",
+    "range": {
+      "today": "Today",
+      "week": "This week",
+      "all": "All time"
+    }
   },
   "friends": {
     "title": "Friends",

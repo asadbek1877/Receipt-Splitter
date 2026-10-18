@@ -116,7 +116,20 @@
     "vsPrevious": "前期比",
     "amount": "金額",
     "percentage": "割合",
-    "recent": "最近の伝票"
+    "recent": "最近の伝票",
+    "subtitle3": "支出と貸し借りを確認",
+    "chartTitle2": "負担と支払い",
+    "byCategory": "カテゴリ別",
+    "emptyChart": "この期間の伝票はまだありません",
+    "vsYesterday": "前日比",
+    "vsLast": "前期比",
+    "toYou": "受取",
+    "byYou": "支払",
+    "range": {
+      "today": "今日",
+      "week": "今週",
+      "all": "全期間"
+    }
   },
   "friends": {
     "title": "友だち",

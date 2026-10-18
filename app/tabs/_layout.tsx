@@ -168,6 +168,9 @@ export default function TabLayout() {
       screenOptions={{
         header: (props) => <GlobalTabsHeader {...props} languageKey={languageKey} />,
         tabBarStyle: { display: 'none' },
+        // screens that are not visible don't re-render on store updates (big win when
+        // a refresh on one tab updates data that every tab subscribes to)
+        freezeOnBlur: true,
       }}
     >
       {/* Home & Settings tabs (hidden from bar) */}

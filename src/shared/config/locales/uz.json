@@ -116,7 +116,20 @@
     "vsPrevious": "oldingiga nisbatan",
     "amount": "Summa",
     "percentage": "Foiz",
-    "recent": "Oxirgi cheklar"
+    "recent": "Oxirgi cheklar",
+    "subtitle3": "Xarajat va qarzlaringizni kuzating",
+    "chartTitle2": "Ulush va to'lov",
+    "byCategory": "Kategoriyalar",
+    "emptyChart": "Bu davrda hali cheklar yo'q",
+    "vsYesterday": "kechaga nisbatan",
+    "vsLast": "oldingi davrga nisbatan",
+    "toYou": "sizga",
+    "byYou": "sizdan",
+    "range": {
+      "today": "Bugun",
+      "week": "Shu hafta",
+      "all": "Hammasi"
+    }
   },
   "home": {
     "header": {

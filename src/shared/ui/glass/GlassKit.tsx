@@ -172,7 +172,19 @@ export function useAmbientActive() {
  * Screen shell: fixed animated background (also the blur target for every
  * <Glass> inside), glass context, and focus-aware pausing.
  */
-export function GlassScreen({ p, children }: { p: GlassPalette; children: React.ReactNode }) {
+/**
+ * @param ambient  "full" = beams + orbs + floating coins/receipts (Home, Profile);
+ *                 "calm" = gradient + soft orbs only, for data-dense screens (Analytics, History).
+ */
+export function GlassScreen({
+  p,
+  children,
+  ambient = 'full',
+}: {
+  p: GlassPalette;
+  children: React.ReactNode;
+  ambient?: 'full' | 'calm';
+}) {
   const focused = useIsFocused();
   const bgRef = useRef<View>(null);
   return (
@@ -181,9 +193,9 @@ export function GlassScreen({ p, children }: { p: GlassPalette; children: React.
         <View style={{ flex: 1, backgroundColor: p.bg }}>
           <BlurTargetView ref={bgRef} style={StyleSheet.absoluteFill}>
             <LinearGradient colors={p.pageBg} style={StyleSheet.absoluteFill} />
-            <HeroBeams p={p} />
+            {ambient === 'full' && <HeroBeams p={p} />}
             <AmbientOrbs p={p} />
-            <HeroParticles p={p} />
+            {ambient === 'full' && <HeroParticles p={p} />}
           </BlurTargetView>
           <BackdropBlur p={p} />
           {children}
@@ -331,17 +343,12 @@ type ParticleSpec = { kind: ParticleKind; x: number; size: number; duration: num
 
 const PARTICLES: ParticleSpec[] = [
   { kind: 'coin', x: 0.82, size: 18, duration: 14000, delay: 2500, sway: 16 },
-  { kind: 'receipt', x: 0.9, size: 18, duration: 16000, delay: 8000, sway: 14 },
   { kind: 'spark', x: 0.76, size: 11, duration: 12000, delay: 5500, sway: 10 },
-  { kind: 'coin', x: 0.04, size: 15, duration: 15000, delay: 10000, sway: 12 },
   { kind: 'coin', x: 0.08, size: 22, duration: 9000, delay: 0, sway: 14 },
   { kind: 'receipt', x: 0.3, size: 20, duration: 11000, delay: 1800, sway: 18 },
   { kind: 'spark', x: 0.52, size: 12, duration: 7500, delay: 900, sway: 10 },
   { kind: 'coin', x: 0.42, size: 16, duration: 10000, delay: 4200, sway: 12 },
-  { kind: 'spark', x: 0.18, size: 10, duration: 8200, delay: 3000, sway: 8 },
   { kind: 'receipt', x: 0.6, size: 16, duration: 12000, delay: 6000, sway: 16 },
-  { kind: 'coin', x: 0.24, size: 13, duration: 9500, delay: 7200, sway: 10 },
-  { kind: 'spark', x: 0.66, size: 9, duration: 7000, delay: 5200, sway: 8 },
 ];
 
 function ParticleGlyph({ kind, size, p }: { kind: ParticleKind; size: number; p: Palette }) {
