@@ -56,7 +56,7 @@ import { useAppStore } from '@/shared/lib/stores/app-store';
 import { DEFAULT_LANGUAGE } from '@/shared/config/languages';
 import { useGlassPalette, type GlassPalette } from '@/shared/ui/glass/GlassKit';
 import CodeSheet from '@/features/scanner/CodeSheet';
-import { CODE_TYPES, classifyCode, formatName, type RawCode } from '@/features/scanner/codes';
+import { CODE_TYPES, classifyCode, formatName, normalizeType, type RawCode } from '@/features/scanner/codes';
 
 const AnimatedCircle = Animated.createAnimatedComponent(Circle);
 
@@ -87,7 +87,7 @@ async function readCodesFromPhoto(uri: string): Promise<RawCode[]> {
     const seen = new Set<string>();
     return results
       .filter((r) => r?.data && !seen.has(r.data) && seen.add(r.data))
-      .map((r) => ({ type: r.type, data: r.data }));
+      .map((r) => ({ type: normalizeType(r.type), data: String(r.data) }));
   } catch {
     return [];
   }
@@ -136,7 +136,7 @@ export default function ScanReceiptScreen() {
     if (!r?.data) return;
     const d = lastDismissed.current;
     if (d && d.data === r.data && Date.now() - d.at < 4000) return;
-    setLiveCode((prev) => (prev && prev.data === r.data ? prev : { type: r.type, data: r.data }));
+    setLiveCode((prev) => (prev && prev.data === r.data ? prev : { type: normalizeType(r.type), data: String(r.data) }));
     if (liveTimer.current) clearTimeout(liveTimer.current);
     liveTimer.current = setTimeout(() => setLiveCode(null), 2500); // gone from view → chip goes away
   }, []);

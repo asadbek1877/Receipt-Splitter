@@ -10,6 +10,35 @@
 
 export type RawCode = { type: string; data: string };
 
+// Android (ML Kit) reports the format of codes read from a SAVED PHOTO as a number, while live
+// scanning gives a name. Both must work, so every type goes through normalizeType().
+const ANDROID_FORMATS: Record<number, string> = {
+  1: "code128",
+  2: "code39",
+  4: "code93",
+  8: "codabar",
+  16: "datamatrix",
+  32: "ean13",
+  64: "ean8",
+  128: "itf14",
+  256: "qr",
+  512: "upc_a",
+  1024: "upc_e",
+  2048: "pdf417",
+  4096: "aztec",
+};
+
+/** Any value the camera library may return for a code type → a lowercase format name (or "unknown"). */
+export function normalizeType(type: unknown): string {
+  if (typeof type === "string") {
+    const t = type.trim().toLowerCase();
+    if (/^\d+$/.test(t)) return ANDROID_FORMATS[Number(t)] ?? "unknown";
+    return t.replace(/^org\.iso\./, "").replace(/[^a-z0-9_]/g, "") || "unknown";
+  }
+  if (typeof type === "number") return ANDROID_FORMATS[type] ?? "unknown";
+  return "unknown";
+}
+
 /** Barcode formats worth listening for (QR + the usual retail / logistics codes). */
 export const CODE_TYPES = [
   'qr',
@@ -65,7 +94,10 @@ const FORMAT_NAMES: Record<string, string> = {
   codabar: 'Codabar',
 };
 
-export const formatName = (type: string) => FORMAT_NAMES[type.toLowerCase()] ?? type;
+export const formatName = (type: unknown) => {
+  const t = normalizeType(type);
+  return FORMAT_NAMES[t] ?? (t === "unknown" ? "Code" : t);
+};
 
 /** Query string → object, without relying on React Native's partial URL implementation. */
 export function parseQuery(url: string): Record<string, string> {
@@ -151,8 +183,8 @@ export function regionForEan(code: string): string | undefined {
 
 /** Interpret a scanned code. */
 export function classifyCode(raw: RawCode): CodeInfo {
-  const type = raw.type.toLowerCase();
-  const data = (raw.data ?? '').trim();
+  const type = normalizeType(raw?.type);
+  const data = String(raw?.data ?? '').trim();
   const format = formatName(type);
 
   // ---- links (QR and friends) ----
@@ -176,8 +208,11 @@ export function classifyCode(raw: RawCode): CodeInfo {
 
   // ---- retail product barcodes ----
   const digits = data.replace(/\s+/g, '');
-  const retailFormat =
+  let retailFormat: 'EAN-13' | 'EAN-8' | 'UPC-A' | 'UPC-E' | null =
     type === 'ean13' ? 'EAN-13' : type === 'ean8' ? 'EAN-8' : type === 'upc_a' ? 'UPC-A' : type === 'upc_e' ? 'UPC-E' : null;
+  if (!retailFormat && type === 'unknown' && /^\d+$/.test(digits)) {
+    retailFormat = digits.length === 13 ? 'EAN-13' : digits.length === 12 ? 'UPC-A' : digits.length === 8 ? 'EAN-8' : null;
+  }
   if (retailFormat && /^\d+$/.test(digits)) {
     return {
       kind: 'product',
