@@ -169,6 +169,26 @@
     },
     "features": {
       "title": "できること"
+    },
+    "greetings": {
+      "morning": "おはようございます、",
+      "afternoon": "こんにちは、",
+      "evening": "こんばんは、",
+      "night": "おやすみなさい、"
+    },
+    "tagline": "今日もスマートに割り勘しよう！",
+    "balance": {
+      "title": "純残高",
+      "owedToYou": "受け取る額",
+      "youOwe": "支払う額"
+    },
+    "month": {
+      "title": "今月",
+      "spent": "支出",
+      "bills": "伝票"
+    },
+    "nav": {
+      "history": "履歴"
     }
   },
   "profile": {

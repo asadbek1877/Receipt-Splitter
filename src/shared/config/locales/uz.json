@@ -137,6 +137,26 @@
     },
     "features": {
       "title": "Nimalar qilishingiz mumkin"
+    },
+    "greetings": {
+      "morning": "Xayrli tong,",
+      "afternoon": "Xayrli kun,",
+      "evening": "Xayrli kech,",
+      "night": "Xayrli tun,"
+    },
+    "tagline": "Bugun aqlliroq bo'lishamiz!",
+    "balance": {
+      "title": "Umumiy balans",
+      "owedToYou": "Sizga qarzlar",
+      "youOwe": "Sizning qarzingiz"
+    },
+    "month": {
+      "title": "Shu oy",
+      "spent": "Sarflandi",
+      "bills": "Cheklar"
+    },
+    "nav": {
+      "history": "Tarix"
     }
   },
   "profile": {

@@ -1,437 +1,169 @@
-// app/tabs/index.tsx - Japanese-style Home Page with liquid glass effects
-import React, { useEffect, useMemo, useRef, useCallback, useState } from 'react';
-import { Pressable, StyleSheet, Dimensions, RefreshControl } from 'react-native';
-import { useRouter, useFocusEffect } from 'expo-router';
-import { YStack, XStack, Text, View, ScrollView } from 'tamagui';
-import { 
-  QrCode, 
-  Users2, 
-  FolderKanban, 
-  RefreshCcw, 
+// app/tabs/index.tsx — Home: balance, quick actions, this month, recent activity
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { RefreshControl, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import { useFocusEffect, useRouter } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useTranslation } from 'react-i18next';
+import {
+  ArrowDownRight,
+  ArrowUpRight,
   BarChart3,
-  Receipt,
-  Zap,
-  Settings,
-  Wallet,
-  History,
-  Heart,
-  Brain,
-  Sparkles,
-  Search,
   Bell,
   ChevronRight,
-  Sun,
+  Clock3,
+  Eye,
+  EyeOff,
+  Home as HomeIcon,
   Moon,
-  Flower2,
-  Mountain,
-  TreePine,
-  Waves,
+  Plus,
+  Receipt,
+  ScanLine,
+  Settings,
+  Sun,
+  User as UserIcon,
+  UserPlus,
+  Users2,
+  Wallet,
+  Zap,
 } from '@tamagui/lucide-icons';
-import { useTranslation } from 'react-i18next';
-import Animated, { 
-  FadeInDown, 
-  FadeInUp, 
-  FadeIn,
-  FadeOut,
-  SlideInUp,
-  useAnimatedScrollHandler, 
-  useSharedValue, 
-  useAnimatedStyle, 
-  withSpring, 
-  interpolate, 
-  withRepeat, 
-  withTiming, 
+import Animated, {
   Easing,
+  FadeIn,
+  FadeInDown,
+  cancelAnimation,
+  interpolate,
+  useAnimatedProps,
+  useAnimatedStyle,
+  useSharedValue,
+  withDelay,
+  withRepeat,
   withSequence,
+  withTiming,
 } from 'react-native-reanimated';
 import { LinearGradient } from 'expo-linear-gradient';
-import Svg, { Circle, Defs, RadialGradient, Stop, Path, G, Ellipse } from 'react-native-svg';
+import Svg, { Defs, LinearGradient as SvgLinearGradient, Path, Rect, Stop } from 'react-native-svg';
 
-import UserAvatar from '@/shared/ui/UserAvatar';
-import { getJapaneseColors, borderRadius, shadows } from '@/shared/ui/JapaneseTheme';
 import type { SessionHistoryEntry } from '@/features/sessions/api/history.api';
 import { useSessionsHistoryStore } from '@/features/sessions/model/history.store';
+import { useDebtsStore } from '@/features/debts/model/debts.store';
+import { useFriendsStore } from '@/features/friends/model/friends.store';
 import { useAppStore } from '@/shared/lib/stores/app-store';
-import { useThemeColors } from '@/shared/lib/stores/theme-store';
+import {
+  AvatarCircle,
+  Glass,
+  GlassScreen,
+  PressScale,
+  useAmbientActive,
+  useGlassPalette,
+  type GlassPalette,
+  type Tile,
+} from '@/shared/ui/glass/GlassKit';
 
-const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
-const HOME_HISTORY_LIMIT = 10;
+const HOME_HISTORY_LIMIT = 30;
 const DEFAULT_CURRENCY = 'UZS';
+const AnimatedPath = Animated.createAnimatedComponent(Path);
 
-const formatSessionDate = (value?: string, locale: string = 'en') => {
-  if (!value) return '';
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  const options: Intl.DateTimeFormatOptions = {
-    day: '2-digit',
-    month: 'short',
-    hour: '2-digit',
-    minute: '2-digit',
-  };
+type P = GlassPalette;
+
+const TILES: Record<'light' | 'dark', Record<string, Tile>> = {
+  light: {
+    quick: { bg: '#FEF3E2', fg: '#F59E0B' },
+    groups: { bg: '#E0F2FE', fg: '#0EA5E9' },
+    debts: { bg: '#E8F8EF', fg: '#16A34A' },
+    stats: { bg: '#F1ECFE', fg: '#8B5CF6' },
+    receipt: { bg: '#FDECEC', fg: '#EF4444' },
+    up: { bg: '#E8F8EF', fg: '#16A34A' },
+    down: { bg: '#FDECEC', fg: '#EF4444' },
+  },
+  dark: {
+    quick: { bg: 'rgba(245,158,11,0.16)', fg: '#FBBF24' },
+    groups: { bg: 'rgba(79,139,255,0.18)', fg: '#60A5FA' },
+    debts: { bg: 'rgba(56,189,248,0.16)', fg: '#38BDF8' },
+    stats: { bg: 'rgba(139,92,246,0.20)', fg: '#A78BFA' },
+    receipt: { bg: 'rgba(239,68,68,0.18)', fg: '#F87171' },
+    up: { bg: 'rgba(52,211,153,0.16)', fg: '#34D399' },
+    down: { bg: 'rgba(239,68,68,0.18)', fg: '#F87171' },
+  },
+};
+
+// ---------------------------------------------------------------------------
+// helpers
+// ---------------------------------------------------------------------------
+const sessionDate = (s: SessionHistoryEntry) => new Date(s.finalizedAt || s.createdAt || 0);
+
+const monthKey = (d: Date) => d.getFullYear() * 12 + d.getMonth();
+
+function formatMoney(value: number, currency: string, locale: string) {
+  const rounded = Math.round(value);
   try {
-    return date.toLocaleString(locale, options);
+    return `${rounded.toLocaleString(locale, { maximumFractionDigits: 0 })} ${currency}`;
   } catch {
-    return date.toLocaleString(undefined, options);
+    return `${rounded} ${currency}`;
   }
-};
-
-// Animated Floating Leaf
-const FloatingLeaf = ({ delay, startX, isDark }: { delay: number; startX: number; isDark: boolean }) => {
-  const colors = useThemeColors();
-  const translateY = useSharedValue(-30);
-  const translateX = useSharedValue(0);
-  const rotate = useSharedValue(0);
-  const opacity = useSharedValue(0);
-
-  useEffect(() => {
-    translateY.value = withRepeat(
-      withTiming(400, { duration: 8000 + Math.random() * 4000, easing: Easing.linear }),
-      -1,
-      false
-    );
-    translateX.value = withRepeat(
-      withTiming(Math.random() * 50 - 25, { duration: 3000, easing: Easing.inOut(Easing.ease) }),
-      -1,
-      true
-    );
-    rotate.value = withRepeat(
-      withTiming(360, { duration: 5000 + Math.random() * 2000, easing: Easing.linear }),
-      -1,
-      false
-    );
-    opacity.value = withTiming(0.5, { duration: 600 });
-  }, []);
-
-  const animatedStyle = useAnimatedStyle(() => ({
-    transform: [
-      { translateY: translateY.value },
-      { translateX: translateX.value },
-      { rotate: `${rotate.value}deg` },
-    ],
-    opacity: opacity.value,
-  }));
-
-  return (
-    <Animated.View style={[styles.petal, { left: startX }, animatedStyle]}>
-      <Svg width={14} height={14} viewBox="0 0 14 14">
-        <Ellipse cx="7" cy="7" rx="5" ry="3" fill="#86EFAC" opacity={0.6} />
-      </Svg>
-    </Animated.View>
-  );
-};
-
-// Japanese-style Category Card (like screenshot 2)
-const CategoryCard = ({
-  title,
-  icon,
-  imageColors,
-  onPress,
-  delay = 0,
-  size = 'normal',
-  isDark,
-}: {
-  title: string;
-  icon: React.ReactNode;
-  imageColors: readonly [string, string];
-  onPress: () => void;
-  delay?: number;
-  size?: 'normal' | 'small';
-  isDark: boolean;
-}) => {
-  const colors = useThemeColors();
-  const scale = useSharedValue(1);
-
-  const animatedStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: withSpring(scale.value, { damping: 15, stiffness: 150 }) }],
-  }));
-
-  return (
-    <Animated.View
-      entering={FadeInDown.delay(delay).springify()}
-      exiting={FadeOut.duration(350)}
-      style={[size === 'small' ? styles.categoryCardSmall : styles.categoryCard]}
-    >
-      <Pressable
-        onPress={onPress}
-        onPressIn={() => { scale.value = 0.95; }}
-        onPressOut={() => { scale.value = 1; }}
-        style={{ flex: 1 }}
-      >
-        <Animated.View style={[styles.categoryCardInner, animatedStyle]}>
-          <LinearGradient
-            colors={imageColors}
-            style={styles.categoryGradient}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-          >
-            <View style={styles.categoryIconContainer}>
-              {icon}
-            </View>
-          </LinearGradient>
-          <Text style={[styles.categoryTitle, { color: colors.text }]}>{title}</Text>
-        </Animated.View>
-      </Pressable>
-    </Animated.View>
-  );
-};
-
-// Glass Menu Card with Icon
-const GlassMenuCard = ({
-  title,
-  subtitle,
-  icon,
-  onPress,
-  delay = 0,
-  isDark,
-}: {
-  title: string;
-  subtitle?: string;
-  icon: React.ReactNode;
-  onPress: () => void;
-  delay?: number;
-  isDark: boolean;
-}) => {
-  const colors = useThemeColors();
-  const scale = useSharedValue(1);
-
-  const animatedStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: withSpring(scale.value, { damping: 15, stiffness: 150 }) }],
-  }));
-
-  return (
-    <Animated.View
-      entering={FadeInDown.delay(delay).springify()}
-      exiting={FadeOut.duration(350)}
-      style={styles.glassMenuWrapper}
-    >
-      <Pressable
-        onPress={onPress}
-        onPressIn={() => { scale.value = 0.96; }}
-        onPressOut={() => { scale.value = 1; }}
-        style={{ flex: 1 }}
-      >
-        <Animated.View 
-          style={[
-            styles.glassMenuCard,
-            { 
-              backgroundColor: colors.glass,
-              borderColor: colors.glassBorder,
-              ...shadows.medium,
-              shadowColor: colors.shadow,
-            },
-            animatedStyle,
-          ]}
-        >
-          <View style={[styles.glassMenuIcon, { backgroundColor: colors.iconBg }]}>
-            <View style={[styles.glassMenuIconInner, { backgroundColor: colors.iconBgStrong }]}>
-              {icon}
-            </View>
-          </View>
-          <Text style={[styles.glassMenuTitle, { color: colors.text }]}>{title}</Text>
-          {subtitle && (
-            <Text style={[styles.glassMenuSubtitle, { color: colors.textSecondary }]}>{subtitle}</Text>
-          )}
-        </Animated.View>
-      </Pressable>
-    </Animated.View>
-  );
-};
-
-// Breathing Scan Button
-const BreathingScanButton = ({ onPress, isDark }: { onPress: () => void; isDark: boolean }) => {
-  const { t } = useTranslation();
-  const colors = useThemeColors();
-  const breathScale = useSharedValue(1);
-  const glowOpacity = useSharedValue(0.3);
-  
-  useEffect(() => {
-    breathScale.value = withRepeat(
-      withTiming(1.08, { duration: 2500, easing: Easing.inOut(Easing.ease) }),
-      -1,
-      true
-    );
-    glowOpacity.value = withRepeat(
-      withTiming(0.6, { duration: 2000, easing: Easing.inOut(Easing.ease) }),
-      -1,
-      true
-    );
-  }, []);
-  
-  const animatedStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: breathScale.value }],
-  }));
-
-  const glowStyle = useAnimatedStyle(() => ({
-    opacity: glowOpacity.value,
-  }));
-
-  return (
-    <Pressable onPress={onPress}>
-      <YStack ai="center" gap="$3">
-        <View style={styles.scanButtonWrapper}>
-          <Animated.View style={[styles.scanButtonGlow, glowStyle]}>
-            <LinearGradient
-              colors={[colors.primary + '50', 'transparent']}
-              style={styles.scanGlowGradient}
-            />
-          </Animated.View>
-          <View style={[styles.scanButtonOuter, { borderColor: colors.primaryLight }]}>
-            <Animated.View style={[
-              styles.scanButtonMiddle, 
-              { borderColor: colors.primary, backgroundColor: colors.iconBg },
-              animatedStyle
-            ]}>
-              <View style={[styles.scanButtonInner, { 
-                backgroundColor: colors.card,
-                shadowColor: colors.primary,
-              }]}>
-                <Receipt size={36} color={colors.primary} strokeWidth={1.5} />
-              </View>
-            </Animated.View>
-          </View>
-        </View>
-        <Text style={[styles.scanLabel, { color: colors.text }]}>{t('home.scan.receipt')}</Text>
-        <Text style={[styles.scanSubLabel, { color: colors.textSecondary }]}>{t('home.scan.tapToStart')}</Text>
-      </YStack>
-    </Pressable>
-  );
-};
-
-// Recent Bill Card
-function BillCard({
-  title,
-  sub,
-  amountLabel,
-  participantIds,
-  onPress,
-  index = 0,
-  isDark,
-}: {
-  title: string;
-  sub: string;
-  amountLabel: string;
-  participantIds: string[];
-  onPress?: () => void;
-  index?: number;
-  isDark: boolean;
-}) {
-  const colors = useThemeColors();
-  
-  return (
-    <Animated.View
-      entering={FadeInDown.delay(300 + index * 80).springify()}
-      exiting={FadeOut.duration(350)}
-    >
-      <Pressable
-        onPress={onPress}
-        disabled={!onPress}
-        style={({ pressed }) => ({
-          width: '100%',
-          opacity: onPress && pressed ? 0.9 : 1,
-        })}
-      >
-        <View
-          style={[
-            styles.billCard,
-            {
-              backgroundColor: colors.card,
-              borderColor: colors.cardBorder,
-              ...shadows.medium,
-              shadowColor: colors.shadow,
-            }
-          ]}
-        >
-          <XStack jc="space-between" ai="center">
-            <YStack f={1}>
-              <Text style={[styles.billTitle, { color: colors.text }]}>{title}</Text>
-              <Text style={[styles.billSub, { color: colors.textSecondary }]}>{sub}</Text>
-            </YStack>
-            <View style={[styles.billAmount, { backgroundColor: colors.iconBg }]}>
-              <Text style={[styles.billAmountText, { color: colors.primary }]}>{amountLabel}</Text>
-            </View>
-          </XStack>
-          
-          <XStack ai="center" jc="space-between" mt="$3">
-            <XStack ai="center">
-              {participantIds.slice(0, 3).map((id, i) => (
-                <View 
-                  key={id || i} 
-                  style={[
-                    styles.avatarStack,
-                    { marginLeft: i === 0 ? 0 : -8, borderColor: colors.card },
-                  ]}
-                >
-                  <UserAvatar
-                    uri={undefined}
-                    label={(id || 'U').slice(0, 1).toUpperCase()}
-                    size={28}
-                    textSize={11}
-                    backgroundColor={colors.iconBgStrong}
-                  />
-                </View>
-              ))}
-              {participantIds.length > 3 && (
-                <View
-                  style={[
-                    styles.avatarExtra,
-                    { backgroundColor: colors.iconBg, marginLeft: -8, borderColor: colors.card },
-                  ]}
-                >
-                  <Text style={{ fontSize: 10, color: colors.textSecondary }}>
-                    +{participantIds.length - 3}
-                  </Text>
-                </View>
-              )}
-            </XStack>
-            <ChevronRight size={18} color={colors.textMuted} />
-          </XStack>
-        </View>
-      </Pressable>
-    </Animated.View>
-  );
 }
 
+function formatShortDate(d: Date, locale: string) {
+  if (Number.isNaN(d.getTime())) return '';
+  try {
+    return d.toLocaleDateString(locale, { day: '2-digit', month: 'short' });
+  } catch {
+    return d.toDateString();
+  }
+}
+
+/** Animates a number from its previous value to `target` (JS thread, ~0.9s). */
+function useCountUp(target: number, duration = 900) {
+  const [value, setValue] = useState(target);
+  const fromRef = useRef(target);
+  useEffect(() => {
+    const from = fromRef.current;
+    if (from === target) return;
+    const start = Date.now();
+    let frame = 0;
+    const tick = () => {
+      const t = Math.min(1, (Date.now() - start) / duration);
+      const eased = 1 - Math.pow(1 - t, 3);
+      setValue(from + (target - from) * eased);
+      if (t < 1) frame = requestAnimationFrame(tick);
+      else fromRef.current = target;
+    };
+    frame = requestAnimationFrame(tick);
+    return () => {
+      cancelAnimationFrame(frame);
+      fromRef.current = target;
+    };
+  }, [target]);
+  return value;
+}
+
+// ---------------------------------------------------------------------------
+// screen
+// ---------------------------------------------------------------------------
 export default function HomePage() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const { t, i18n } = useTranslation();
+  const locale = i18n.language ?? 'en';
   const { theme, user, setTheme } = useAppStore();
-  const isDark = theme === 'dark';
-  const colors = useThemeColors();
-  
-  const sessions = useSessionsHistoryStore(state => state.sessions);
-  const loading = useSessionsHistoryStore(state => state.loading);
-  const initialized = useSessionsHistoryStore(state => state.initialized);
-  const currentLimit = useSessionsHistoryStore(state => state.limit);
-  const error = useSessionsHistoryStore(state => state.error);
-  const fetchHistory = useSessionsHistoryStore(state => state.fetchHistory);
-  const refreshIfStale = useSessionsHistoryStore(state => state.refreshIfStale);
-  const forceRefresh = useSessionsHistoryStore(state => state.forceRefresh);
+  const { p, isDark } = useGlassPalette();
+  const tiles = TILES[isDark ? 'dark' : 'light'];
 
+  const sessions = useSessionsHistoryStore((s) => s.sessions);
+  const loading = useSessionsHistoryStore((s) => s.loading);
+  const initialized = useSessionsHistoryStore((s) => s.initialized);
+  const currentLimit = useSessionsHistoryStore((s) => s.limit);
+  const fetchHistory = useSessionsHistoryStore((s) => s.fetchHistory);
+  const refreshIfStale = useSessionsHistoryStore((s) => s.refreshIfStale);
+  const forceRefresh = useSessionsHistoryStore((s) => s.forceRefresh);
+  const debts = useDebtsStore((s) => s.debts);
+  const requestsCount = useFriendsStore((s) => s.requestsRaw?.incoming?.length ?? 0);
+
+  const [refreshing, setRefreshing] = useState(false);
+  const [hidden, setHidden] = useState(false);
   const hasFetchedRef = useRef(false);
-  const [refreshing, setRefreshing] = React.useState(false);
-  const [transitionColor, setTransitionColor] = useState('rgba(0,0,0,0)');
-  const themeTransition = useSharedValue(0);
-  
-  // Scroll animation
-  const scrollY = useSharedValue(0);
-  const scrollHandler = useAnimatedScrollHandler({
-    onScroll: (event) => {
-      scrollY.value = event.contentOffset.y;
-    },
-  });
-  
-  const headerStyle = useAnimatedStyle(() => {
-    const opacity = interpolate(scrollY.value, [0, 100], [1, 0.8], 'clamp');
-    return { opacity };
-  });
-
-  const transitionStyle = useAnimatedStyle(() => ({
-    opacity: themeTransition.value,
-  }));
 
   useEffect(() => {
-    if (loading) return;
-    if (hasFetchedRef.current) return;
+    if (loading || hasFetchedRef.current) return;
     if (!initialized || (currentLimit ?? 0) < HOME_HISTORY_LIMIT) {
       hasFetchedRef.current = true;
       fetchHistory(HOME_HISTORY_LIMIT).catch(() => {
@@ -443,7 +175,7 @@ export default function HomePage() {
   useFocusEffect(
     useCallback(() => {
       refreshIfStale(15_000, HOME_HISTORY_LIMIT).catch(() => {});
-    }, [refreshIfStale])
+    }, [refreshIfStale]),
   );
 
   const onRefresh = useCallback(async () => {
@@ -452,539 +184,668 @@ export default function HomePage() {
     setRefreshing(false);
   }, [forceRefresh]);
 
-  // Navigation handlers
-  const openFriends = () => router.push('/tabs/friends');
-  const openGroups = () => router.push('/tabs/groups');
-  const onScan = () => router.push('/tabs/scan-receipt');
-  const openAllSessions = () => router.push('/tabs/sessions/history');
-  const openAnalytics = () => router.push('/tabs/analytics');
-  const openQuickSplit = () => router.push('/tabs/quick-split');
-  const openDebts = () => router.push('/tabs/debts');
-  const openSettings = () => router.push('/tabs/settings');
+  // ---------- derived numbers ----------
+  const currency = sessions[0]?.currency || debts[0]?.currency || DEFAULT_CURRENCY;
 
-  const handleToggleTheme = useCallback(() => {
-    const nextIsDark = theme !== 'dark';
-    setTransitionColor(nextIsDark ? 'rgba(15,20,25,0.45)' : 'rgba(255,255,255,0.55)');
-    themeTransition.value = 1;
-    setTheme(nextIsDark ? 'dark' : 'light');
-    themeTransition.value = withTiming(0, { duration: 500, easing: Easing.out(Easing.cubic) });
-  }, [setTheme, theme, themeTransition]);
+  const { balance, owedToMe, iOwe } = useMemo(() => {
+    let owed = 0;
+    let owe = 0;
+    for (const d of debts) {
+      if (d.isPaid) continue;
+      if (d.type === 'owed') owed += d.amount;
+      else owe += d.amount;
+    }
+    return { balance: owed - owe, owedToMe: owed, iOwe: owe };
+  }, [debts]);
 
-  const recent = useMemo<SessionHistoryEntry[]>(() => sessions.slice(0, 3), [sessions]);
+  const month = useMemo(() => {
+    const now = monthKey(new Date());
+    const spent = Array(6).fill(0) as number[]; // oldest → current
+    const bills = Array(6).fill(0) as number[];
+    for (const s of sessions) {
+      const k = monthKey(sessionDate(s));
+      const idx = 5 - (now - k);
+      if (idx < 0 || idx > 5) continue;
+      bills[idx] += 1;
+      if ((s.currency || currency) === currency) spent[idx] += s.grandTotal ?? 0;
+    }
+    const prev = spent[4];
+    const change = prev > 0 ? ((spent[5] - prev) / prev) * 100 : spent[5] > 0 ? 100 : 0;
+    return { spent, bills, change };
+  }, [sessions, currency]);
 
-  // Generate floating leaves
-  const petals = useMemo(() => 
-    Array.from({ length: 6 }, (_, i) => ({
-      id: i,
-      delay: Math.random() * 2000,
-      startX: Math.random() * SCREEN_WIDTH,
-    })), []
+  const recent = useMemo(() => sessions.slice(0, 3), [sessions]);
+
+  const balanceAnimated = useCountUp(balance);
+  const spentAnimated = useCountUp(month.spent[5]);
+
+  const hour = new Date().getHours();
+  const greeting =
+    hour < 5
+      ? t('home.greetings.night', 'Good night,')
+      : hour < 12
+        ? t('home.greetings.morning', 'Good morning,')
+        : hour < 18
+          ? t('home.greetings.afternoon', 'Good afternoon,')
+          : t('home.greetings.evening', 'Good evening,');
+
+  const displayName = user?.username || t('home.header.friendFallback', 'friend');
+  const initials = displayName.slice(0, 2).toUpperCase();
+  const mask = (text: string) => (hidden ? '••••••' : text);
+
+  // ---------- navigation ----------
+  const go = (path: Parameters<typeof router.push>[0]) => () => router.push(path);
+  const toggleTheme = () => setTheme(theme === 'dark' ? 'light' : 'dark');
+
+  return (
+    <GlassScreen p={p}>
+      <ScrollView
+        contentContainerStyle={{ paddingTop: insets.top + 6, paddingBottom: insets.bottom + 120 }}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={p.accentGradient[1]} colors={[p.accentGradient[1]]} />
+        }
+      >
+        {/* ---------- top bar ---------- */}
+        <View style={styles.topBar}>
+          <View style={styles.brand}>
+            <LogoMark p={p} />
+            <Text style={[styles.brandText, { color: p.text }]}>Splitter</Text>
+          </View>
+          <View style={styles.topActions}>
+            <IconButton p={p} onPress={toggleTheme} label="Theme">
+              {isDark ? <Sun size={20} color={p.text} /> : <Moon size={20} color={p.text} />}
+            </IconButton>
+            <IconButton p={p} onPress={go('/tabs/friends/requests')} label="Notifications">
+              <Bell size={20} color={p.text} />
+              {requestsCount > 0 && <View style={[styles.dot, { backgroundColor: p.accentGradient[1] }]} />}
+            </IconButton>
+            <PressScale onPress={go('/tabs/profile')} style={undefined}>
+              <AvatarCircle p={p} uri={user?.avatarUrl ?? null} initials={initials} size={44} fontSize={16} ring={isDark} />
+            </PressScale>
+          </View>
+        </View>
+
+        {/* ---------- greeting + hero cards ---------- */}
+        <View style={styles.hero}>
+          <HeroCards p={p} />
+          <Animated.View entering={FadeIn.duration(500)} style={styles.greeting}>
+            <Text style={[styles.greetSmall, { color: p.sub }]}>{greeting}</Text>
+            <View style={styles.nameRow}>
+              <Text style={[styles.name, { color: p.text }]} numberOfLines={1}>
+                {displayName}
+              </Text>
+              <Wave />
+            </View>
+            <Text style={[styles.tagline, { color: p.muted }]}>{t('home.tagline', "Let's split smarter today!")}</Text>
+          </Animated.View>
+        </View>
+
+        <View style={styles.body}>
+          {/* ---------- balance ---------- */}
+          <Animated.View entering={FadeInDown.duration(450).delay(80)}>
+            <View style={[styles.balanceCard, { borderColor: p.cardBorder }]}>
+              <Glass p={p} fill={p.card} radius={24} />
+              <LinearGradient
+                colors={[`${p.accentGradient[0]}33`, `${p.accentGradient[1]}14`]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={StyleSheet.absoluteFill}
+                pointerEvents="none"
+              />
+              <View style={styles.balanceHead}>
+                <Text style={[styles.balanceLabel, { color: p.sub }]}>{t('home.balance.title', 'Net balance')}</Text>
+                <PressScale onPress={() => setHidden((h) => !h)} style={styles.eye}>
+                  {hidden ? <EyeOff size={18} color={p.sub} /> : <Eye size={18} color={p.sub} />}
+                </PressScale>
+              </View>
+              <Text style={[styles.balance, { color: p.text }]} numberOfLines={1} adjustsFontSizeToFit>
+                {mask(`${balanceAnimated >= 0 ? '' : '−'}${formatMoney(Math.abs(balanceAnimated), currency, locale)}`)}
+              </Text>
+              <View style={styles.balanceRow}>
+                <MiniStat p={p} tile={tiles.up} icon={ArrowDownRight} label={t('home.balance.owedToYou', 'Owed to you')} value={mask(formatMoney(owedToMe, currency, locale))} />
+                <MiniStat p={p} tile={tiles.down} icon={ArrowUpRight} label={t('home.balance.youOwe', 'You owe')} value={mask(formatMoney(iOwe, currency, locale))} />
+              </View>
+            </View>
+          </Animated.View>
+
+          {/* ---------- primary actions ---------- */}
+          <Animated.View entering={FadeInDown.duration(450).delay(140)} style={styles.primaryRow}>
+            <View style={{ flex: 1.35 }}>
+              <PressScale onPress={go('/tabs/scan-receipt')} style={styles.scanWrap}>
+                <LinearGradient colors={p.accentGradient} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.scan}>
+                  <ScanLine size={22} color="#FFFFFF" />
+                  <Text style={styles.scanText} numberOfLines={1}>{t('home.scan.receipt', 'Scan Receipt')}</Text>
+                  <ChevronRight size={18} color="#FFFFFF" />
+                </LinearGradient>
+              </PressScale>
+            </View>
+            <View style={{ flex: 1 }}>
+              <PressScale onPress={go('/tabs/friends')} style={[styles.secondary, { borderColor: p.cardBorder }]}>
+                <Glass p={p} fill={p.card} radius={18} />
+                <UserPlus size={20} color={p.text} />
+                <Text style={[styles.secondaryText, { color: p.text }]} numberOfLines={1}>
+                  {t('home.actions.friends', 'Friends')}
+                </Text>
+              </PressScale>
+            </View>
+          </Animated.View>
+
+          {/* ---------- quick grid ---------- */}
+          <Animated.View entering={FadeInDown.duration(450).delay(200)} style={styles.grid}>
+            <GridItem p={p} tile={tiles.quick} icon={Zap} label={t('quickSplit.title', 'Quick Split')} onPress={go('/tabs/quick-split')} />
+            <GridItem p={p} tile={tiles.groups} icon={Users2} label={t('home.actions.groups', 'Groups')} onPress={go('/tabs/groups')} />
+            <GridItem p={p} tile={tiles.debts} icon={Wallet} label={t('debts.title', 'Debts')} onPress={go('/tabs/debts')} />
+            <GridItem p={p} tile={tiles.stats} icon={BarChart3} label={t('analytics.title', 'Analytics')} onPress={go('/tabs/analytics')} />
+          </Animated.View>
+
+          {/* ---------- this month ---------- */}
+          <SectionHeader p={p} title={t('home.month.title', 'This month')} action={t('home.recent.showMore', 'See all')} onAction={go('/tabs/analytics')} delay={240} />
+          <Animated.View entering={FadeInDown.duration(450).delay(260)} style={styles.statsRow}>
+            <StatCard
+              p={p}
+              tile={tiles.receipt}
+              icon={Receipt}
+              label={t('home.month.spent', 'Spent')}
+              value={mask(formatMoney(spentAnimated, currency, locale))}
+              delta={month.change}
+              series={month.spent}
+              color={isDark ? '#F472B6' : '#EF4444'}
+            />
+            <StatCard
+              p={p}
+              tile={tiles.up}
+              icon={Clock3}
+              label={t('home.month.bills', 'Bills')}
+              value={String(month.bills[5])}
+              series={month.bills}
+              color={isDark ? '#34D399' : '#16A34A'}
+            />
+          </Animated.View>
+
+          {/* ---------- recent activity ---------- */}
+          <SectionHeader p={p} title={t('home.recent.title', 'Recent bills')} action={t('home.recent.showMore', 'See all')} onAction={go('/tabs/sessions/history')} delay={300} />
+          <Animated.View entering={FadeInDown.duration(450).delay(320)} style={[styles.list, { borderColor: p.cardBorder }]}>
+            <Glass p={p} fill={p.card} radius={20} />
+            {recent.length === 0 ? (
+              <View style={styles.empty}>
+                <Receipt size={26} color={p.muted} />
+                <Text style={[styles.emptyText, { color: p.muted }]}>
+                  {loading ? t('home.recent.loading', 'Loading...') : t('home.recent.empty', 'No bills yet')}
+                </Text>
+              </View>
+            ) : (
+              recent.map((bill, i) => {
+                const participants = (typeof bill.participantUniqueIds === 'string'
+                  ? bill.participantUniqueIds.split(',').filter((x) => x.trim())
+                  : []
+                ).length;
+                return (
+                  <View key={bill.sessionId}>
+                    {i > 0 && <View style={[styles.divider, { backgroundColor: p.divider }]} />}
+                    <PressScale
+                      onPress={() =>
+                        router.push({ pathname: '/tabs/sessions/history/[historyId]', params: { historyId: String(bill.sessionId) } })
+                      }
+                      style={styles.activity}
+                    >
+                      <View style={[styles.tile, { backgroundColor: i % 2 ? tiles.groups.bg : tiles.receipt.bg }]}>
+                        <Receipt size={22} color={i % 2 ? tiles.groups.fg : tiles.receipt.fg} />
+                      </View>
+                      <View style={styles.activityText}>
+                        <Text style={[styles.activityTitle, { color: p.text }]} numberOfLines={1}>
+                          {bill.sessionName || t('home.recent.fallbackName', 'Bill')}
+                        </Text>
+                        <Text style={[styles.activitySub, { color: p.muted }]} numberOfLines={1}>
+                          {t('home.recent.participants', { count: participants })} · {formatShortDate(sessionDate(bill), locale)}
+                        </Text>
+                      </View>
+                      <Text style={[styles.amount, { color: p.text }]}>
+                        {mask(formatMoney(bill.grandTotal ?? 0, bill.currency || currency, locale))}
+                      </Text>
+                      <ChevronRight size={18} color={p.chevron} />
+                    </PressScale>
+                  </View>
+                );
+              })
+            )}
+          </Animated.View>
+
+          <PressScale onPress={go('/tabs/settings')} style={[styles.settingsLink]}>
+            <Settings size={16} color={p.muted} />
+            <Text style={[styles.settingsText, { color: p.muted }]}>{t('navigation.tabs.settings', 'Settings')}</Text>
+          </PressScale>
+        </View>
+      </ScrollView>
+
+      <BottomNav
+        p={p}
+        bottom={insets.bottom}
+        labels={{
+          home: t('navigation.tabs.home', 'Home'),
+          history: t('home.nav.history', 'History'),
+          stats: t('analytics.title', 'Analytics'),
+          profile: t('profile.title', 'Profile'),
+        }}
+        onHistory={go('/tabs/sessions/history')}
+        onScan={go('/tabs/scan-receipt')}
+        onStats={go('/tabs/analytics')}
+        onProfile={go('/tabs/profile')}
+      />
+    </GlassScreen>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// pieces
+// ---------------------------------------------------------------------------
+function LogoMark({ p }: { p: P }) {
+  return (
+    <Svg width={30} height={30} viewBox="0 0 30 30">
+      <Defs>
+        <SvgLinearGradient id="logo" x1="0" y1="0" x2="1" y2="1">
+          <Stop offset="0%" stopColor={p.accentGradient[0]} />
+          <Stop offset="100%" stopColor={p.accentGradient[1]} />
+        </SvgLinearGradient>
+      </Defs>
+      <Path
+        d="M22 6.5C20.3 5 17.9 4 15 4c-5 0-8.5 2.6-8.5 6.3 0 7.6 16 4.7 16 10.4 0 2.3-2.6 4.3-7 4.3-3.1 0-5.6-1.1-7.5-3"
+        stroke="url(#logo)"
+        strokeWidth={4.2}
+        strokeLinecap="round"
+        fill="none"
+      />
+    </Svg>
+  );
+}
+
+function IconButton({ p, onPress, label, children }: { p: P; onPress: () => void; label: string; children: React.ReactNode }) {
+  return (
+    <PressScale onPress={onPress} style={[styles.iconBtn, { borderColor: p.cardBorder }]}>
+      <Glass p={p} fill={p.card} radius={22} />
+      <View accessibilityLabel={label}>{children}</View>
+    </PressScale>
+  );
+}
+
+function Wave() {
+  const active = useAmbientActive();
+  const r = useSharedValue(0);
+  useEffect(() => {
+    if (!active) return;
+    r.value = withRepeat(
+      withSequence(
+        withTiming(1, { duration: 180 }),
+        withTiming(-1, { duration: 180 }),
+        withTiming(1, { duration: 180 }),
+        withTiming(0, { duration: 180 }),
+        withDelay(2200, withTiming(0, { duration: 0 })),
+      ),
+      -1,
+      false,
+    );
+    return () => cancelAnimation(r);
+  }, [active]);
+  const style = useAnimatedStyle(() => ({ transform: [{ rotate: `${r.value * 18}deg` }] }));
+  return <Animated.Text style={[styles.wave, style]}>👋</Animated.Text>;
+}
+
+/** Floating stack of glassy cards (top-right of the hero). */
+function HeroCards({ p }: { p: P }) {
+  const active = useAmbientActive();
+  const f = useSharedValue(0);
+  useEffect(() => {
+    if (!active) return;
+    f.value = withRepeat(withTiming(1, { duration: 3200, easing: Easing.inOut(Easing.sin) }), -1, true);
+    return () => cancelAnimation(f);
+  }, [active]);
+  const back = useAnimatedStyle(() => ({
+    transform: [{ translateY: interpolate(f.value, [0, 1], [-4, 6]) }, { rotate: '-18deg' }],
+  }));
+  const front = useAnimatedStyle(() => ({
+    transform: [{ translateY: interpolate(f.value, [0, 1], [6, -6]) }, { rotate: '-10deg' }],
+  }));
+  const badge = useAnimatedStyle(() => ({
+    transform: [{ translateY: interpolate(f.value, [0, 1], [-3, 3]) }, { scale: interpolate(f.value, [0, 1], [0.96, 1.04]) }],
+  }));
+
+  const card = (id: string, opacity: number) => (
+    <Svg width={150} height={96} viewBox="0 0 150 96">
+      <Defs>
+        <SvgLinearGradient id={id} x1="0" y1="0" x2="1" y2="1">
+          <Stop offset="0%" stopColor={p.accentGradient[0]} stopOpacity={opacity} />
+          <Stop offset="100%" stopColor={p.accentGradient[1]} stopOpacity={opacity} />
+        </SvgLinearGradient>
+      </Defs>
+      <Rect x={1} y={1} width={148} height={94} rx={16} fill={`url(#${id})`} stroke="#FFFFFF" strokeOpacity={0.35} />
+      <Rect x={16} y={18} width={24} height={18} rx={4} fill="#FFFFFF" opacity={0.55} />
+      <Rect x={16} y={60} width={56} height={6} rx={3} fill="#FFFFFF" opacity={0.6} />
+      <Rect x={16} y={72} width={36} height={6} rx={3} fill="#FFFFFF" opacity={0.4} />
+      <Rect x={110} y={58} width={8} height={20} rx={3} fill="#FFFFFF" opacity={0.55} />
+      <Rect x={122} y={50} width={8} height={28} rx={3} fill="#FFFFFF" opacity={0.75} />
+    </Svg>
   );
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.bgGradientEnd }]}>
-      {/* Background Gradient */}
+    <View pointerEvents="none" style={styles.heroCards}>
+      <Animated.View style={[{ position: 'absolute', right: 10, top: 6 }, back]}>{card('hcBack', 0.55)}</Animated.View>
+      <Animated.View style={[{ position: 'absolute', right: 34, top: 40 }, front]}>{card('hcFront', 0.95)}</Animated.View>
+      <Animated.View style={[{ position: 'absolute', right: 16, top: 0 }, badge]}>
+        <View style={[styles.heroBadge, { borderColor: p.cardBorder }]}>
+          <Glass p={p} fill={p.card} radius={12} />
+          <BarChart3 size={16} color={p.accentGradient[1]} />
+        </View>
+      </Animated.View>
+    </View>
+  );
+}
+
+function MiniStat({
+  p,
+  tile,
+  icon: Icon,
+  label,
+  value,
+}: {
+  p: P;
+  tile: Tile;
+  icon: React.ComponentType<{ size?: number; color?: string }>;
+  label: string;
+  value: string;
+}) {
+  return (
+    <View style={styles.miniStat}>
+      <View style={[styles.miniIcon, { backgroundColor: tile.bg }]}>
+        <Icon size={14} color={tile.fg} />
+      </View>
+      <View style={{ flex: 1 }}>
+        <Text style={[styles.miniLabel, { color: p.muted }]} numberOfLines={1}>{label}</Text>
+        <Text style={[styles.miniValue, { color: p.text }]} numberOfLines={1} adjustsFontSizeToFit>{value}</Text>
+      </View>
+    </View>
+  );
+}
+
+function GridItem({
+  p,
+  tile,
+  icon: Icon,
+  label,
+  onPress,
+}: {
+  p: P;
+  tile: Tile;
+  icon: React.ComponentType<{ size?: number; color?: string }>;
+  label: string;
+  onPress: () => void;
+}) {
+  return (
+    <View style={{ flex: 1 }}>
+      <PressScale onPress={onPress} style={[styles.gridItem, { borderColor: p.cardBorder }]}>
+        <Glass p={p} fill={p.card} radius={18} />
+        <View style={[styles.gridIcon, { backgroundColor: tile.bg }]}>
+          <Icon size={22} color={tile.fg} />
+        </View>
+        <Text style={[styles.gridLabel, { color: p.text }]} numberOfLines={1} adjustsFontSizeToFit>
+          {label}
+        </Text>
+      </PressScale>
+    </View>
+  );
+}
+
+function SectionHeader({
+  p,
+  title,
+  action,
+  onAction,
+  delay,
+}: {
+  p: P;
+  title: string;
+  action: string;
+  onAction: () => void;
+  delay: number;
+}) {
+  return (
+    <Animated.View entering={FadeIn.duration(400).delay(delay)} style={styles.sectionHead}>
+      <Text style={[styles.sectionTitle, { color: p.text }]}>{title}</Text>
+      <PressScale onPress={onAction} style={styles.sectionAction}>
+        <Text style={[styles.sectionActionText, { color: p.accent }]}>{action}</Text>
+        <ChevronRight size={16} color={p.accent} />
+      </PressScale>
+    </Animated.View>
+  );
+}
+
+/** Sparkline that draws itself in. */
+function Sparkline({ series, color, width, height }: { series: number[]; color: string; width: number; height: number }) {
+  const max = Math.max(...series, 1);
+  const step = width / Math.max(1, series.length - 1);
+  const pts = series.map((v, i) => [i * step, height - 4 - (v / max) * (height - 8)] as const);
+  const d = pts.map(([x, y], i) => (i === 0 ? `M${x},${y}` : `L${x},${y}`)).join(' ');
+  const length = pts.reduce((acc, [x, y], i) => (i === 0 ? 0 : acc + Math.hypot(x - pts[i - 1][0], y - pts[i - 1][1])), 0) + 1;
+
+  const progress = useSharedValue(0);
+  useEffect(() => {
+    progress.value = 0;
+    progress.value = withDelay(300, withTiming(1, { duration: 1100, easing: Easing.out(Easing.cubic) }));
+  }, [d]);
+  const props = useAnimatedProps(() => ({ strokeDashoffset: length * (1 - progress.value) }));
+
+  return (
+    <Svg width={width} height={height}>
+      <AnimatedPath
+        d={d}
+        stroke={color}
+        strokeWidth={2.4}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        fill="none"
+        strokeDasharray={length}
+        animatedProps={props}
+      />
+    </Svg>
+  );
+}
+
+function StatCard({
+  p,
+  tile,
+  icon: Icon,
+  label,
+  value,
+  delta,
+  series,
+  color,
+}: {
+  p: P;
+  tile: Tile;
+  icon: React.ComponentType<{ size?: number; color?: string }>;
+  label: string;
+  value: string;
+  delta?: number;
+  series: number[];
+  color: string;
+}) {
+  const { width } = useWindowDimensions();
+  const cardWidth = (Math.min(width, 520) - 36 - 12) / 2;
+  const up = (delta ?? 0) >= 0;
+  return (
+    <View style={[styles.statCard, { borderColor: p.cardBorder }]}>
+      <Glass p={p} fill={p.card} radius={20} />
       <LinearGradient
-        colors={isDark 
-          ? [colors.bgGradientStart, colors.bgGradientEnd] 
-          : [colors.bgGradientStart, colors.bgGradientEnd, colors.bgSakura]
-        }
+        colors={[`${color}22`, `${color}00`]}
+        start={{ x: 1, y: 1 }}
+        end={{ x: 0, y: 0 }}
         style={StyleSheet.absoluteFill}
-      />
-
-      {/* Theme transition overlay */}
-      <Animated.View
         pointerEvents="none"
-        style={[StyleSheet.absoluteFill, { backgroundColor: transitionColor }, transitionStyle]}
       />
-      
-      {/* Floating Leaves */}
-      {petals.map(petal => (
-        <FloatingLeaf key={petal.id} delay={petal.delay} startX={petal.startX} isDark={isDark} />
-      ))}
+      <View style={styles.statTop}>
+        <View style={[styles.statIcon, { backgroundColor: tile.bg }]}>
+          <Icon size={18} color={tile.fg} />
+        </View>
+        <Text style={[styles.statLabel, { color: p.sub }]}>{label}</Text>
+      </View>
+      <Text style={[styles.statValue, { color: p.text }]} numberOfLines={1} adjustsFontSizeToFit>
+        {value}
+      </Text>
+      <View style={styles.statBottom}>
+        {delta !== undefined ? (
+          <View style={styles.delta}>
+            {up ? <ArrowUpRight size={14} color={color} /> : <ArrowDownRight size={14} color={color} />}
+            <Text style={[styles.deltaText, { color }]}>{Math.abs(delta).toFixed(1)}%</Text>
+          </View>
+        ) : (
+          <View />
+        )}
+        <Sparkline series={series} color={color} width={Math.max(60, cardWidth * 0.45)} height={34} />
+      </View>
+    </View>
+  );
+}
 
-      <Animated.ScrollView
-        style={{ flex: 1 }}
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
-        onScroll={scrollHandler}
-        scrollEventThrottle={16}
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={onRefresh}
-            tintColor={colors.primary}
-            colors={[colors.primary]}
-          />
-        }
-      >
-        {/* Header */}
-        <Animated.View style={[styles.header, headerStyle]}>
-          <LinearGradient
-            colors={isDark 
-              ? [colors.primaryDark, colors.primary] as const
-              : [colors.primary, colors.primaryLight] as const
-            }
-            style={styles.headerGradient}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-          >
-            <Animated.View entering={SlideInUp.delay(100).springify()}>
-              <XStack ai="center" jc="space-between" mb="$2">
-                <XStack ai="center" gap="$2">
-                  <TreePine size={24} color="rgba(255,255,255,0.9)" />
-                  <Text style={styles.headerTitle}>Splitter</Text>
-                </XStack>
-                <XStack ai="center" gap="$3">
-                  <Pressable onPress={handleToggleTheme} hitSlop={10}>
-                    {isDark ? (
-                      <Sun size={22} color="rgba(255,255,255,0.9)" />
-                    ) : (
-                      <Moon size={22} color="rgba(255,255,255,0.9)" />
-                    )}
-                  </Pressable>
-                  <Pressable onPress={openSettings} hitSlop={10}>
-                    <Settings size={22} color="rgba(255,255,255,0.8)" />
-                  </Pressable>
-                </XStack>
-              </XStack>
-              <Text style={styles.headerSubtitle}>
-                {t('home.greeting', { name: user?.username || 'Friend' })}
-              </Text>
-            </Animated.View>
+function BottomNav({
+  p,
+  bottom,
+  labels,
+  onHistory,
+  onScan,
+  onStats,
+  onProfile,
+}: {
+  p: P;
+  bottom: number;
+  labels: { home: string; history: string; stats: string; profile: string };
+  onHistory: () => void;
+  onScan: () => void;
+  onStats: () => void;
+  onProfile: () => void;
+}) {
+  const active = useAmbientActive();
+  const pulse = useSharedValue(0);
+  useEffect(() => {
+    if (!active) return;
+    pulse.value = withRepeat(withTiming(1, { duration: 1800, easing: Easing.out(Easing.quad) }), -1, false);
+    return () => cancelAnimation(pulse);
+  }, [active]);
+  const ring = useAnimatedStyle(() => ({
+    opacity: interpolate(pulse.value, [0, 1], [0.5, 0]),
+    transform: [{ scale: interpolate(pulse.value, [0, 1], [1, 1.5]) }],
+  }));
+
+  const Item = ({
+    icon: Icon,
+    label,
+    onPress,
+    current,
+  }: {
+    icon: React.ComponentType<{ size?: number; color?: string }>;
+    label: string;
+    onPress?: () => void;
+    current?: boolean;
+  }) => (
+    <View style={{ flex: 1 }}>
+      <PressScale onPress={onPress ?? (() => {})} style={[styles.navItem, current && { backgroundColor: `${p.accentGradient[1]}22` }]}>
+        <Icon size={22} color={current ? p.accentGradient[1] : p.muted} />
+        <Text style={[styles.navLabel, { color: current ? p.accentGradient[1] : p.muted }]} numberOfLines={1}>
+          {label}
+        </Text>
+      </PressScale>
+    </View>
+  );
+
+  return (
+    <View pointerEvents="box-none" style={[styles.navWrap, { bottom: Math.max(bottom, 10) + 6 }]}>
+      <View style={[styles.nav, { borderColor: p.cardBorder }]}>
+        <Glass p={p} fill={p.card} radius={26} />
+        <Item icon={HomeIcon} label={labels.home} current />
+        <Item icon={Clock3} label={labels.history} onPress={onHistory} />
+        <View style={styles.navCenterSlot} />
+        <Item icon={BarChart3} label={labels.stats} onPress={onStats} />
+        <Item icon={UserIcon} label={labels.profile} onPress={onProfile} />
+      </View>
+      <View pointerEvents="box-none" style={styles.fabWrap}>
+        <Animated.View pointerEvents="none" style={[styles.fabRing, { borderColor: p.accentGradient[1] }, ring]} />
+        <PressScale onPress={onScan} style={styles.fabPress}>
+          <LinearGradient colors={p.accentGradient} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.fab}>
+            <Plus size={28} color="#FFFFFF" />
           </LinearGradient>
-        </Animated.View>
-
-        {/* Search Bar */}
-        <Animated.View entering={FadeInDown.delay(200).springify()} style={styles.searchSection}>
-          <View style={[styles.searchBar, { 
-            backgroundColor: colors.glass, 
-            borderColor: colors.glassBorder 
-          }]}>
-            <Search size={18} color={colors.textMuted} />
-            <Text style={[styles.searchPlaceholder, { color: colors.textMuted }]}>
-              {t('home.search', 'Search destination...')}
-            </Text>
-          </View>
-        </Animated.View>
-
-        {/* Categories Section (like screenshot 2) */}
-        <Animated.View entering={FadeIn.delay(300)} style={styles.categoriesSection}>
-          <XStack jc="space-between" ai="center" px="$4" mb="$3">
-            <Text style={[styles.sectionTitle, { color: colors.text }]}>
-              {t('home.categories', 'Categories')}
-            </Text>
-            <Pressable>
-              <Text style={[styles.seeAll, { color: colors.primary }]}>
-                {t('home.seeAll', 'See all')}
-              </Text>
-            </Pressable>
-          </XStack>
-          
-          <ScrollView 
-            horizontal 
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.categoriesScroll}
-          >
-            <CategoryCard
-              title={t('quickSplit.title', 'Quick')}
-              icon={<Zap size={28} color="#FFFFFF" />}
-              imageColors={['#0D9488', '#059669'] as const}
-              onPress={openQuickSplit}
-              delay={350}
-              size="small"
-              isDark={isDark}
-            />
-            <CategoryCard
-              title={t('home.actions.groups', 'Groups')}
-              icon={<FolderKanban size={28} color="#FFFFFF" />}
-              imageColors={['#0891B2', '#0E7490'] as const}
-              onPress={openGroups}
-              delay={400}
-              size="small"
-              isDark={isDark}
-            />
-            <CategoryCard
-              title={t('debts.title', 'Debts')}
-              icon={<Wallet size={28} color="#FFFFFF" />}
-              imageColors={['#10B981', '#047857'] as const}
-              onPress={openDebts}
-              delay={450}
-              size="small"
-              isDark={isDark}
-            />
-            <CategoryCard
-              title={t('analytics.title', 'Stats')}
-              icon={<BarChart3 size={28} color="#FFFFFF" />}
-              imageColors={['#14B8A6', '#0D9488'] as const}
-              onPress={openAnalytics}
-              delay={500}
-              size="small"
-              isDark={isDark}
-            />
-          </ScrollView>
-        </Animated.View>
-
-        {/* Main Scan Button */}
-        <Animated.View entering={FadeInUp.delay(500).springify()} style={styles.scanSection}>
-          <BreathingScanButton onPress={onScan} isDark={isDark} />
-        </Animated.View>
-
-        {/* Action Grid */}
-        <View style={styles.gridSection}>
-          <XStack jc="space-between" ai="center" px="$4" mb="$3">
-            <Text style={[styles.sectionTitle, { color: colors.text }]}>
-              {t('home.popular', 'Popular')}
-            </Text>
-          </XStack>
-          
-          <View style={styles.gridContainer}>
-            <GlassMenuCard
-              title={t('home.actions.friends', 'Friends')}
-              icon={<Heart size={24} color={colors.primary} />}
-              onPress={openFriends}
-              delay={550}
-              isDark={isDark}
-            />
-            <GlassMenuCard
-              title={t('home.actions.groups', 'Groups')}
-              icon={<Users2 size={24} color={colors.primary} />}
-              onPress={openGroups}
-              delay={600}
-              isDark={isDark}
-            />
-            <GlassMenuCard
-              title={t('analytics.title', 'Analytics')}
-              icon={<Brain size={24} color={colors.primary} />}
-              onPress={openAnalytics}
-              delay={650}
-              isDark={isDark}
-            />
-            <GlassMenuCard
-              title={t('navigation.tabs.settings', 'Settings')}
-              icon={<Settings size={24} color={colors.primary} />}
-              onPress={openSettings}
-              delay={700}
-              isDark={isDark}
-            />
-          </View>
-        </View>
-
-        {/* Recent Bills Section */}
-        <View style={styles.recentSection}>
-          <XStack jc="space-between" ai="center" px="$4" mb="$3">
-            <Text style={[styles.sectionTitle, { color: colors.text }]}>
-              {t('home.recent.title', 'Recent bills')}
-            </Text>
-            <Pressable onPress={openAllSessions}>
-              <Text style={[styles.seeAll, { color: colors.primary }]}>
-                {t('home.recent.showMore', 'Show more')}
-              </Text>
-            </Pressable>
-          </XStack>
-
-          <YStack gap="$3" px="$4" pb="$6">
-            {loading && (
-              <Text style={{ color: colors.textMuted, fontSize: 14 }}>
-                {t('home.recent.loading', 'Loading...')}
-              </Text>
-            )}
-            {error && (
-              <Text style={{ color: colors.error, fontSize: 14 }}>{error}</Text>
-            )}
-            {!loading && !error && !recent.length && (
-              <Animated.View entering={FadeInDown.delay(300)} exiting={FadeOut.duration(350)}>
-                <View style={[styles.emptyState, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
-                  <View style={[styles.emptyIcon, { backgroundColor: colors.iconBg }]}>
-                    <Receipt size={32} color={colors.primary} />
-                  </View>
-                  <Text style={[styles.emptyText, { color: colors.textMuted }]}>
-                    {t('home.recent.empty', 'No bills yet')}
-                  </Text>
-                </View>
-              </Animated.View>
-            )}
-            {recent.map((bill, index) => {
-              const participantIds = (typeof bill.participantUniqueIds === 'string') 
-                ? bill.participantUniqueIds.split(',').map(id => id.trim()).filter(Boolean)
-                : bill.participantUniqueIds ?? [];
-              const dateForSummary = bill.finalizedAt || bill.createdAt;
-              const summary = formatSessionDate(dateForSummary, i18n.language);
-              const totalAmount = bill.grandTotal ?? 0;
-              const currency = bill.currency || DEFAULT_CURRENCY;
-              const amountLabel = `${totalAmount.toLocaleString(i18n.language ?? 'en', {
-                minimumFractionDigits: 0,
-                maximumFractionDigits: 0,
-              })} ${currency}`;
-
-              return (
-                <BillCard
-                  key={bill.sessionId}
-                  title={bill.sessionName || t('home.recent.fallbackName', 'Bill')}
-                  sub={summary}
-                  amountLabel={amountLabel}
-                  participantIds={participantIds}
-                  index={index}
-                  isDark={isDark}
-                  onPress={() =>
-                    router.push({
-                      pathname: '/tabs/sessions/history/[historyId]',
-                      params: { historyId: String(bill.sessionId) },
-                    })
-                  }
-                />
-              );
-            })}
-          </YStack>
-        </View>
-      </Animated.ScrollView>
+        </PressScale>
+      </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  scrollContent: {
-    paddingBottom: 40,
-  },
-  petal: {
-    position: 'absolute',
-    top: 0,
-    zIndex: 1,
-  },
-  header: {
-    marginBottom: 20,
-  },
-  headerGradient: {
-    paddingTop: 60,
-    paddingBottom: 28,
-    paddingHorizontal: 20,
-    borderBottomLeftRadius: 32,
-    borderBottomRightRadius: 32,
-  },
-  headerTitle: {
-    fontSize: 28,
-    fontWeight: '800',
-    color: '#ffffff',
-    letterSpacing: -0.5,
-  },
-  headerSubtitle: {
-    fontSize: 15,
-    color: 'rgba(255,255,255,0.85)',
-    marginTop: 6,
-  },
-  searchSection: {
-    paddingHorizontal: 20,
-    marginBottom: 24,
-  },
-  searchBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    paddingVertical: 14,
-    paddingHorizontal: 18,
-    borderRadius: 16,
-    borderWidth: 1,
-  },
-  searchPlaceholder: {
-    fontSize: 14,
-  },
-  categoriesSection: {
-    marginBottom: 28,
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-  },
-  seeAll: {
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  categoriesScroll: {
-    paddingHorizontal: 16,
-    gap: 12,
-  },
-  categoryCard: {
-    width: 100,
-  },
-  categoryCardSmall: {
-    width: 80,
-  },
-  categoryCardInner: {
-    alignItems: 'center',
-  },
-  categoryGradient: {
-    width: 70,
-    height: 70,
-    borderRadius: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 8,
-  },
-  categoryIconContainer: {
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  categoryTitle: {
-    fontSize: 12,
-    fontWeight: '600',
-    textAlign: 'center',
-  },
-  scanSection: {
-    alignItems: 'center',
-    marginBottom: 32,
-  },
-  scanButtonWrapper: {
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  scanButtonGlow: {
-    position: 'absolute',
-    width: 160,
-    height: 160,
-  },
-  scanGlowGradient: {
-    width: '100%',
-    height: '100%',
-    borderRadius: 80,
-  },
-  scanButtonOuter: {
-    width: 130,
-    height: 130,
-    borderRadius: 65,
-    borderWidth: 2,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  scanButtonMiddle: {
-    width: 110,
-    height: 110,
-    borderRadius: 55,
-    borderWidth: 3,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  scanButtonInner: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.3,
-    shadowRadius: 12,
-    elevation: 8,
-  },
-  scanLabel: {
-    fontSize: 17,
-    fontWeight: '700',
-  },
-  scanSubLabel: {
-    fontSize: 13,
-  },
-  gridSection: {
-    marginBottom: 28,
-  },
-  gridContainer: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    paddingHorizontal: 12,
-    gap: 12,
-    justifyContent: 'center',
-  },
-  glassMenuWrapper: {
-    width: '45%',
-    minWidth: 150,
-  },
-  glassMenuCard: {
-    borderRadius: 20,
-    padding: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-    minHeight: 110,
-    borderWidth: 1.5,
-  },
-  glassMenuIcon: {
-    width: 52,
-    height: 52,
-    borderRadius: 26,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 10,
-  },
-  glassMenuIconInner: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  glassMenuTitle: {
-    fontSize: 14,
-    fontWeight: '600',
-    textAlign: 'center',
-  },
-  glassMenuSubtitle: {
-    fontSize: 11,
-    textAlign: 'center',
-    marginTop: 2,
-  },
-  recentSection: {
-    marginTop: 8,
-  },
-  billCard: {
-    borderRadius: 20,
-    padding: 16,
-    borderWidth: 1,
-  },
-  billTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  billSub: {
-    fontSize: 12,
-    marginTop: 4,
-  },
-  billAmount: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 12,
-  },
-  billAmountText: {
-    fontSize: 14,
-    fontWeight: '700',
-  },
-  avatarStack: {
-    borderWidth: 2,
-    borderColor: '#FFFFFF',
-    borderRadius: 14,
-  },
-  avatarExtra: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 2,
-    borderColor: '#FFFFFF',
-  },
-  emptyState: {
-    alignItems: 'center',
-    paddingVertical: 32,
-    borderRadius: 20,
-    borderWidth: 1,
-  },
-  emptyIcon: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 12,
-  },
-  emptyText: {
-    fontSize: 14,
-  },
+  topBar: { height: 60, paddingHorizontal: 18, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  brand: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  brandText: { fontSize: 20, fontWeight: '800', letterSpacing: -0.3 },
+  topActions: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  iconBtn: { width: 44, height: 44, borderRadius: 22, borderWidth: 1, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
+  dot: { position: 'absolute', top: -2, right: -2, width: 9, height: 9, borderRadius: 5 },
+  hero: { minHeight: 150, paddingHorizontal: 20, paddingTop: 10, justifyContent: 'center' },
+  heroCards: { position: 'absolute', right: 0, top: 0, width: 200, height: 150 },
+  heroBadge: { width: 36, height: 36, borderRadius: 12, borderWidth: 1, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
+  greeting: { maxWidth: '68%' },
+  greetSmall: { fontSize: 17, fontWeight: '500' },
+  nameRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 2 },
+  name: { fontSize: 34, fontWeight: '800', letterSpacing: -0.6, flexShrink: 1 },
+  wave: { fontSize: 28 },
+  tagline: { fontSize: 15, marginTop: 6 },
+  body: { paddingHorizontal: 18, paddingTop: 8 },
+  balanceCard: { borderRadius: 24, borderWidth: 1, padding: 20, overflow: 'hidden' },
+  balanceHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  balanceLabel: { fontSize: 15, fontWeight: '500' },
+  eye: { padding: 6 },
+  balance: { fontSize: 36, fontWeight: '800', letterSpacing: -0.8, marginTop: 4 },
+  balanceRow: { flexDirection: 'row', gap: 12, marginTop: 16 },
+  miniStat: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8 },
+  miniIcon: { width: 30, height: 30, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
+  miniLabel: { fontSize: 12 },
+  miniValue: { fontSize: 14, fontWeight: '700', marginTop: 1 },
+  primaryRow: { flexDirection: 'row', gap: 12, marginTop: 16 },
+  scanWrap: { borderRadius: 18, overflow: 'hidden' },
+  scan: { height: 60, borderRadius: 18, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 18, gap: 12 },
+  scanText: { flex: 1, color: '#FFFFFF', fontSize: 16, fontWeight: '700' },
+  secondary: { height: 60, borderRadius: 18, borderWidth: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, overflow: 'hidden', paddingHorizontal: 12 },
+  secondaryText: { fontSize: 15, fontWeight: '600', flexShrink: 1 },
+  grid: { flexDirection: 'row', gap: 10, marginTop: 14 },
+  gridItem: { height: 100, borderRadius: 18, borderWidth: 1, alignItems: 'center', justifyContent: 'center', gap: 10, overflow: 'hidden', paddingHorizontal: 6 },
+  gridIcon: { width: 44, height: 44, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
+  gridLabel: { fontSize: 13, fontWeight: '600' },
+  sectionHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 24, marginBottom: 12 },
+  sectionTitle: { fontSize: 19, fontWeight: '700' },
+  sectionAction: { flexDirection: 'row', alignItems: 'center', gap: 2, paddingVertical: 4 },
+  sectionActionText: { fontSize: 14, fontWeight: '600' },
+  statsRow: { flexDirection: 'row', gap: 12 },
+  statCard: { flex: 1, borderRadius: 20, borderWidth: 1, padding: 14, overflow: 'hidden' },
+  statTop: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  statIcon: { width: 34, height: 34, borderRadius: 11, alignItems: 'center', justifyContent: 'center' },
+  statLabel: { fontSize: 14, fontWeight: '500' },
+  statValue: { fontSize: 20, fontWeight: '800', marginTop: 12 },
+  statBottom: { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', marginTop: 6 },
+  delta: { flexDirection: 'row', alignItems: 'center', gap: 2, paddingBottom: 4 },
+  deltaText: { fontSize: 13, fontWeight: '700' },
+  list: { borderRadius: 20, borderWidth: 1, paddingHorizontal: 14, overflow: 'hidden' },
+  divider: { height: 1, marginLeft: 60 },
+  activity: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 13 },
+  tile: { width: 46, height: 46, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
+  activityText: { flex: 1 },
+  activityTitle: { fontSize: 16, fontWeight: '600' },
+  activitySub: { fontSize: 13, marginTop: 2 },
+  amount: { fontSize: 15, fontWeight: '700' },
+  empty: { alignItems: 'center', paddingVertical: 28, gap: 8 },
+  emptyText: { fontSize: 14 },
+  settingsLink: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: 18, paddingVertical: 8 },
+  settingsText: { fontSize: 14 },
+  navWrap: { position: 'absolute', left: 14, right: 14 },
+  nav: { height: 72, borderRadius: 26, borderWidth: 1, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 8, overflow: 'hidden' },
+  navItem: { height: 58, borderRadius: 18, alignItems: 'center', justifyContent: 'center', gap: 4, marginHorizontal: 2 },
+  navLabel: { fontSize: 11, fontWeight: '600' },
+  navCenterSlot: { width: 74 },
+  fabWrap: { position: 'absolute', top: -24, left: 0, right: 0, alignItems: 'center' },
+  fabRing: { position: 'absolute', width: 66, height: 66, borderRadius: 33, borderWidth: 2 },
+  fabPress: { borderRadius: 33, overflow: 'hidden' },
+  fab: { width: 66, height: 66, borderRadius: 33, alignItems: 'center', justifyContent: 'center' },
 });

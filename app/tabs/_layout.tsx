@@ -172,6 +172,8 @@ export default function TabLayout() {
         name="index"
         options={{
           href: null,
+          // Home draws its own header and bottom navigation (see app/tabs/index.tsx)
+          headerShown: false,
           title: homeTitle,
           tabBarLabel: homeLabel,
           tabBarIcon: ({ color, size }) => <Home size={size} color={color as string} />,

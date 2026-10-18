@@ -169,6 +169,26 @@
     },
     "features": {
       "title": "What you can do"
+    },
+    "greetings": {
+      "morning": "Good morning,",
+      "afternoon": "Good afternoon,",
+      "evening": "Good evening,",
+      "night": "Good night,"
+    },
+    "tagline": "Let's split smarter today!",
+    "balance": {
+      "title": "Net balance",
+      "owedToYou": "Owed to you",
+      "youOwe": "You owe"
+    },
+    "month": {
+      "title": "This month",
+      "spent": "Spent",
+      "bills": "Bills"
+    },
+    "nav": {
+      "history": "History"
     }
   },
   "profile": {
