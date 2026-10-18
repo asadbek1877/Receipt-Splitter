@@ -1,4 +1,4 @@
-// app/tabs/settings.tsx — Settings with full theme customization
+// app/tabs/settings.tsx — language, currency and account (theme lives on the home screen)
 import React, { useEffect, useMemo, useState } from 'react';
 import { Alert, KeyboardAvoidingView, Platform, ScrollView, Switch, Pressable } from 'react-native';
 import { YStack, Text, XStack, View, Spinner } from 'tamagui';
@@ -17,14 +17,9 @@ import { Button } from '@/shared/ui/Button';
 import { ScreenContainer } from '@/shared/ui/ScreenContainer';
 import Input from '@/shared/ui/Input';
 import PasswordInput from '@/shared/ui/PasswordInput';
-import { ColorPicker } from '@/shared/ui/ColorPicker';
 import { useAppStore } from '@/shared/lib/stores/app-store';
 import { useCurrencyStore, formatLastUpdated } from '@/shared/lib/stores/currency-store';
-import {
-  useThemeStore,
-  useThemeColors,
-  COLOR_PRESETS,
-} from '@/shared/lib/stores/theme-store';
+import { useThemeColors } from '@/shared/lib/stores/theme-store';
 import { changePassword, updateUsername } from '@/features/auth/api';
 import { LANGUAGE_OPTIONS, type LanguageCode } from '@/shared/config/languages';
 import { CURRENCIES, getCurrency } from '@/shared/config/currencies';
@@ -48,9 +43,6 @@ export default function SettingsScreen() {
   const isLoggedIn = !!user;
   const isDark = theme === 'dark';
   const themeColors = useThemeColors();
-
-  // Theme store
-  const { presetId, customPrimaryColor, setPreset, setCustomPrimaryColor } = useThemeStore();
 
   // Derived settings-specific colors
   const colors = {
@@ -91,7 +83,6 @@ export default function SettingsScreen() {
   const [passwordError, setPasswordError] = useState<string | null>(null);
   const [isChangingPassword, setIsChangingPassword] = useState(false);
 
-  const [showColorPicker, setShowColorPicker] = useState(false);
   const [adminTapCount, setAdminTapCount] = useState(0);
 
   useEffect(() => { setUsernameValue(user?.username ?? ''); }, [user?.username]);
@@ -119,7 +110,6 @@ export default function SettingsScreen() {
   };
 
   const handleLanguageChange = (code: LanguageCode) => { if (code !== language) setLanguage(code); };
-  const handleThemeToggle = () => setTheme(isDark ? 'light' : 'dark');
   const handleCurrencyChange = (code: string) => { if (code !== currency) setCurrency(code); };
 
   const handleAdminSecretTap = () => {
@@ -232,10 +222,8 @@ export default function SettingsScreen() {
               {/* Quick action buttons */}
               <XStack gap="$4" mt="$4" jc="space-around">
                 {[
-                  { icon: <Moon size={20} color="#FFF" />, label: isDark ? t('settings.theme.dark', 'Dark') : t('settings.theme.light', 'Light'), onPress: handleThemeToggle },
                   { icon: <Globe size={20} color="#FFF" />, label: t('settings.language.title', 'Language'), onPress: () => {} },
                   { icon: <DollarSign size={20} color="#FFF" />, label: t('settings.currency.title', 'Currency'), onPress: () => {} },
-                  { icon: <Palette size={20} color="#FFF" />, label: t('settings.colors', 'Colors'), onPress: () => setShowColorPicker(!showColorPicker) },
                 ].map((item, idx) => (
                   <Pressable key={idx} onPress={item.onPress}>
                     <YStack ai="center" gap="$1">
@@ -252,101 +240,6 @@ export default function SettingsScreen() {
           </Animated.View>
 
           <YStack p="$4" gap="$4">
-            {/* --- THEME MODE --- */}
-            <Animated.View entering={FadeInDown.delay(100).springify()}>
-              <YStack style={{ backgroundColor: colors.card, borderRadius: 20, padding: 20, borderWidth: 1, borderColor: colors.cardBorder }}>
-                <SettingRow
-                  icon={isDark ? <Moon size={20} color={colors.purple} /> : <Sun size={20} color="#F59E0B" />}
-                  iconBg={isDark ? colors.purpleLight : colors.orangeLight}
-                  label={isDark ? t('settings.theme.dark', 'Dark Mode') : t('settings.theme.light', 'Light Mode')}
-                  value={isDark ? t('settings.theme.darkDesc', 'Easy on the eyes') : t('settings.theme.lightDesc', 'Bright look')}
-                  rightElement={
-                    <Switch value={isDark} onValueChange={handleThemeToggle}
-                      trackColor={{ false: '#E5E5E5', true: colors.purple }}
-                      thumbColor="#FFFFFF" ios_backgroundColor="#E5E5E5" />
-                  }
-                />
-              </YStack>
-            </Animated.View>
-
-            {/* --- COLOR THEME PRESETS --- */}
-            <Animated.View entering={FadeInDown.delay(120).springify()}>
-              <YStack style={{ backgroundColor: colors.card, borderRadius: 20, padding: 20, borderWidth: 1, borderColor: colors.cardBorder }}>
-                <XStack ai="center" gap="$2" mb="$3">
-                  <View w={36} h={36} br={10} ai="center" jc="center"
-                    style={{ backgroundColor: isDark ? 'rgba(236,72,153,0.15)' : 'rgba(236,72,153,0.08)' }}>
-                    <Paintbrush size={18} color="#EC4899" />
-                  </View>
-                  <YStack f={1}>
-                    <Text fontSize={15} fontWeight="600" style={{ color: colors.text }}>
-                      {t('settings.colorTheme', 'Color Theme')}
-                    </Text>
-                    <Text fontSize={12} style={{ color: colors.textSecondary }}>
-                      {t('settings.colorThemeDesc', 'Choose your style')}
-                    </Text>
-                  </YStack>
-                </XStack>
-
-                {/* Preset grid */}
-                <XStack flexWrap="wrap" gap={8}>
-                  {COLOR_PRESETS.map((preset) => {
-                    const isActive = preset.id === presetId && !customPrimaryColor;
-                    return (
-                      <Pressable key={preset.id} onPress={() => setPreset(preset.id)}>
-                        <YStack
-                          ai="center" gap={4}
-                          p="$2" br={14}
-                          style={{
-                            backgroundColor: isActive ? `rgba(${hexToRgbStr(preset.primary)},0.12)` : 'transparent',
-                            borderWidth: isActive ? 2 : 1,
-                            borderColor: isActive ? preset.primary : colors.cardBorder,
-                            minWidth: 72,
-                          }}
-                        >
-                          <LinearGradient
-                            colors={[preset.gradientStart, preset.gradientEnd]}
-                            start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
-                            style={{ width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' }}
-                          >
-                            <Text fontSize={16}>{preset.emoji}</Text>
-                          </LinearGradient>
-                          <Text fontSize={11} fontWeight={isActive ? '700' : '500'} style={{ color: isActive ? preset.primary : colors.text }} numberOfLines={1}>
-                            {preset.name}
-                          </Text>
-                        </YStack>
-                      </Pressable>
-                    );
-                  })}
-                </XStack>
-
-                {/* Custom color toggle */}
-                <Pressable onPress={() => setShowColorPicker(!showColorPicker)} style={{ marginTop: 12 }}>
-                  <XStack ai="center" jc="space-between" py="$2" px="$3" br={12}
-                    style={{ backgroundColor: colors.chipBg }}>
-                    <XStack ai="center" gap="$2">
-                      <View w={24} h={24} br={12}
-                        style={{ backgroundColor: customPrimaryColor || themeColors.primary, borderWidth: 1, borderColor: 'rgba(0,0,0,0.1)' }} />
-                      <Text fontSize={13} fontWeight="500" style={{ color: colors.text }}>
-                        {t('settings.customColor', 'Custom Color')}
-                      </Text>
-                    </XStack>
-                    {showColorPicker ? <ChevronUp size={16} color={colors.textMuted} /> : <ChevronDown size={16} color={colors.textMuted} />}
-                  </XStack>
-                </Pressable>
-
-                {/* Color Picker (expanded) */}
-                {showColorPicker && (
-                  <View mt="$3">
-                    <ColorPicker
-                      selectedColor={customPrimaryColor || themeColors.primary}
-                      onColorSelected={(color) => setCustomPrimaryColor(color)}
-                      isDark={isDark}
-                    />
-                  </View>
-                )}
-              </YStack>
-            </Animated.View>
-
             {/* --- LANGUAGE --- */}
             <Animated.View entering={FadeInDown.delay(150).springify()}>
               <YStack style={{ backgroundColor: colors.card, borderRadius: 20, padding: 20, borderWidth: 1, borderColor: colors.cardBorder }}>

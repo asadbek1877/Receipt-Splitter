@@ -16,7 +16,6 @@ import {
   Moon,
   Receipt,
   ScanLine,
-  Settings,
   Sun,
   UserPlus,
   Users2,
@@ -410,10 +409,6 @@ export default function HomePage() {
             )}
           </Animated.View>
 
-          <PressScale onPress={go('/tabs/settings')} style={[styles.settingsLink]}>
-            <Settings size={16} color={p.muted} />
-            <Text style={[styles.settingsText, { color: p.muted }]}>{t('navigation.tabs.settings', 'Settings')}</Text>
-          </PressScale>
         </View>
       </ScrollView>
 
@@ -824,6 +819,4 @@ const styles = StyleSheet.create({
   amount: { fontSize: 15, fontWeight: '700' },
   empty: { alignItems: 'center', paddingVertical: 28, gap: 8 },
   emptyText: { fontSize: 14 },
-  settingsLink: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: 18, paddingVertical: 8 },
-  settingsText: { fontSize: 14 },
 });

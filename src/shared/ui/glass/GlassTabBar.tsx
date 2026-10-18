@@ -10,6 +10,7 @@
  * - Slides away on screens that are not one of the four sections.
  */
 import React, { useEffect, useRef, useState } from 'react';
+import { usePathname } from 'expo-router';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
@@ -31,11 +32,11 @@ import { Glass, GlassProvider, PressScale, useGlassPalette } from './GlassKit';
 
 type TabKey = 'home' | 'history' | 'stats' | 'profile';
 
-const TABS: { key: TabKey; route: string; icon: React.ComponentType<{ size?: number; color?: string }> }[] = [
-  { key: 'home', route: 'index', icon: HomeIcon },
-  { key: 'history', route: 'sessions/history/index', icon: Clock3 },
-  { key: 'stats', route: 'analytics/index', icon: BarChart3 },
-  { key: 'profile', route: 'profile', icon: UserIcon },
+const TABS: { key: TabKey; route: string; path: string; icon: React.ComponentType<{ size?: number; color?: string }> }[] = [
+  { key: 'home', route: 'index', path: '/tabs', icon: HomeIcon },
+  { key: 'history', route: 'sessions/history/index', path: '/tabs/sessions/history', icon: Clock3 },
+  { key: 'stats', route: 'analytics/index', path: '/tabs/analytics', icon: BarChart3 },
+  { key: 'profile', route: 'profile', path: '/tabs/profile', icon: UserIcon },
 ];
 
 /** Height the bar occupies above the safe area; screens pad their content by this. */
@@ -52,9 +53,24 @@ export default function GlassTabBar({ state, navigation }: MinimalTabBarProps) {
   const { p } = useGlassPalette();
   const dummyTarget = useRef<View>(null);
 
+  // The bar belongs to exactly four sections. Decide by the URL (not by route-name matching), so
+  // every other screen — scanner, review, participants, split, finish, debts, ... — never shows it.
+  const pathname = usePathname();
   const currentRoute = state.routes[state.index]?.name;
-  const activeIndex = TABS.findIndex((tab) => tab.route === currentRoute);
+  const normPath = (pathname || '').replace(/\/+$/, '') || '/';
+  const activeIndex = TABS.findIndex((tab) => tab.path === normPath);
   const visible = activeIndex >= 0;
+
+  // Fully unmount after the hide animation: a hidden bar must never sit over a screen's buttons.
+  const [mounted, setMounted] = useState(visible);
+  useEffect(() => {
+    if (visible) {
+      setMounted(true);
+      return;
+    }
+    const timer = setTimeout(() => setMounted(false), 300);
+    return () => clearTimeout(timer);
+  }, [visible]);
 
   const [barWidth, setBarWidth] = useState(0);
   const [selected, setSelected] = useState(Math.max(0, activeIndex));
@@ -113,6 +129,8 @@ export default function GlassTabBar({ state, navigation }: MinimalTabBarProps) {
     stats: t('analytics.title', 'Analytics'),
     profile: t('profile.title', 'Profile'),
   };
+
+  if (!mounted) return null;
 
   return (
     <Animated.View

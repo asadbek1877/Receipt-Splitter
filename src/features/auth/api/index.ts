@@ -123,9 +123,16 @@ apiClient.interceptors.response.use(
       switch (status) {
         case 400:
           throw new ApiError(serverMsg || 'Invalid request. Please check your input.');
-        case 401:
-          emitUnauthorized();
+        case 401: {
+          // Wrong e-mail / password answers 401 too. That is NOT an expired
+          // session: logging out + redirecting here remounted the whole login screen (white flash
+          // and a freeze) instead of just showing the error.
+          // Only credential submissions are exempt; /auth/me with a dead token must still end the session.
+          const url = String(error.config?.url ?? '');
+          const isCredentialCall = /^\/auth\/(login|register|forgot-password|verify-reset-code|reset-password)/.test(url);
+          if (!isCredentialCall) emitUnauthorized();
           throw new ApiError(serverMsg || 'Authorization failed');
+        }
         case 409:
           throw new ApiError(serverMsg || 'This resource already exists.');
         case 415:

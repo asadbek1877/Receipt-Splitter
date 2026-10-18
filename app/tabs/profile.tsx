@@ -31,6 +31,7 @@ import {
   LogOut,
   Mail,
   RotateCcw,
+  Settings as SettingsIcon,
   Upload,
   User as UserIcon,
 } from '@tamagui/lucide-icons';
@@ -465,6 +466,22 @@ export default function ProfileScreen() {
                 subtitle={bareId ? `#${bareId}` : t('profile.labels.notAvailable', 'N/A')}
                 onPress={() => handleCopy(userId)}
                 right={<Copy size={22} color={p.chevron} />}
+              />
+            </Animated.View>
+
+            {/* ---------- SETTINGS ---------- */}
+            <Animated.View
+              entering={FadeInDown.duration(420).delay(230)}
+              style={[styles.card, { borderColor: p.cardBorder }]}
+            >
+              <Glass p={p} fill={p.card} radius={18} />
+              <Row
+                p={p}
+                tile={p.tiles.settings}
+                icon={SettingsIcon}
+                title={t('navigation.tabs.settings', 'Settings')}
+                subtitle={t('profile.menu.settingsHint', 'Language, currency, account')}
+                onPress={() => router.push('/tabs/settings')}
               />
             </Animated.View>
 

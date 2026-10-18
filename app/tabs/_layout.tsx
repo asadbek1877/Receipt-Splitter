@@ -49,6 +49,7 @@ function GlobalTabsHeader(props: any) {
   const routeName = props?.route?.name ?? '';
   const showHomeShortcut =
     routeName === 'profile' ||
+    routeName === 'settings' ||
     routeName.startsWith('friends') ||
     routeName.startsWith('groups') ||
     routeName.startsWith('sessions');

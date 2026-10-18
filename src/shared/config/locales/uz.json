@@ -265,7 +265,8 @@
       "editUsername": "Foydalanuvchi nomini tahrirlash",
       "editEmail": "Emailni tahrirlash",
       "changePassword": "Parolni o'zgartirish",
-      "passwordHint": "Xavfsizlikni yangilang"
+      "passwordHint": "Xavfsizlikni yangilang",
+      "settingsHint": "Til, valyuta, hisob"
     },
     "sections": {
       "account": "Hisob",

@@ -297,7 +297,8 @@
       "editUsername": "Edit Username",
       "editEmail": "Edit Email",
       "changePassword": "Change Password",
-      "passwordHint": "Update your security"
+      "passwordHint": "Update your security",
+      "settingsHint": "言語・通貨・アカウント"
     },
     "sections": {
       "account": "アカウント",

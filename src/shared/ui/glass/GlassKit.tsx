@@ -89,6 +89,7 @@ export const GLASS_PALETTES = {
       upload: { bg: '#E8F8EF', fg: '#22C55E' },
       reset: { bg: '#FDEAF3', fg: '#EC4899' },
       info: { bg: '#F1ECFE', fg: '#8B5CF6' },
+      settings: { bg: '#E7EEF6', fg: '#475569' },
     } as Record<string, Tile>,
   },
   dark: {
@@ -136,6 +137,7 @@ export const GLASS_PALETTES = {
       upload: { bg: 'rgba(79,139,255,0.16)', fg: '#60A5FA' },
       reset: { bg: 'rgba(236,72,153,0.18)', fg: '#F472B6' },
       info: { bg: 'rgba(139,92,246,0.20)', fg: '#A78BFA' },
+      settings: { bg: 'rgba(148,163,184,0.18)', fg: '#CBD5E1' },
     } as Record<string, Tile>,
   },
 };
