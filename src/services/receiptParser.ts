@@ -64,8 +64,9 @@ function intFromEnv(name: string, fallback: number, min: number, max: number): n
 export function getParserLimits() {
   return {
     maxAttempts: intFromEnv("GEMINI_MAX_ATTEMPTS", 2, 1, 3),
-    attemptTimeoutMs: intFromEnv("GEMINI_ATTEMPT_TIMEOUT_MS", 20000, 1000, 60000),
-    totalTimeoutMs: intFromEnv("GEMINI_TOTAL_TIMEOUT_MS", 40000, 1000, 90000),
+    attemptTimeoutMs: intFromEnv("GEMINI_ATTEMPT_TIMEOUT_MS", 35000, 1000, 60000),
+    // must stay below the app's 60s request timeout
+    totalTimeoutMs: intFromEnv("GEMINI_TOTAL_TIMEOUT_MS", 55000, 1000, 90000),
   };
 }
 
@@ -252,7 +253,13 @@ async function generateViaRest(
         ],
       },
     ],
-    generationConfig: { temperature: 0.1 },
+    generationConfig: {
+      temperature: 0.1,
+      // Long shop receipts (20+ lines) must not be cut off mid-JSON.
+      // NOTE: do not disable Gemini "thinking" to save time: it was 3x faster but misread
+      // thousands separators (a 48,000 total came back as 48).
+      maxOutputTokens: 8192,
+    },
   };
 
   const resp = await fetch(url, {
