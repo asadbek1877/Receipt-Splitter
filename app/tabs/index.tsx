@@ -1,6 +1,6 @@
 // app/tabs/index.tsx — Home: balance, quick actions, this month, recent activity
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { RefreshControl, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
@@ -15,7 +15,6 @@ import {
   EyeOff,
   Home as HomeIcon,
   Moon,
-  Plus,
   Receipt,
   ScanLine,
   Settings,
@@ -38,10 +37,11 @@ import Animated, {
   withDelay,
   withRepeat,
   withSequence,
+  withSpring,
   withTiming,
 } from 'react-native-reanimated';
 import { LinearGradient } from 'expo-linear-gradient';
-import Svg, { Defs, LinearGradient as SvgLinearGradient, Path, Rect, Stop } from 'react-native-svg';
+import Svg, { Defs, LinearGradient as SvgLinearGradient, Path, Stop } from 'react-native-svg';
 
 import type { SessionHistoryEntry } from '@/features/sessions/api/history.api';
 import { useSessionsHistoryStore } from '@/features/sessions/model/history.store';
@@ -55,6 +55,7 @@ import {
   PressScale,
   useAmbientActive,
   useGlassPalette,
+  useSmoothThemeToggle,
   type GlassPalette,
   type Tile,
 } from '@/shared/ui/glass/GlassKit';
@@ -144,7 +145,8 @@ export default function HomePage() {
   const insets = useSafeAreaInsets();
   const { t, i18n } = useTranslation();
   const locale = i18n.language ?? 'en';
-  const { theme, user, setTheme } = useAppStore();
+  const { user } = useAppStore();
+  const toggleTheme = useSmoothThemeToggle();
   const { p, isDark } = useGlassPalette();
   const tiles = TILES[isDark ? 'dark' : 'light'];
 
@@ -235,7 +237,6 @@ export default function HomePage() {
 
   // ---------- navigation ----------
   const go = (path: Parameters<typeof router.push>[0]) => () => router.push(path);
-  const toggleTheme = () => setTheme(theme === 'dark' ? 'light' : 'dark');
 
   return (
     <GlassScreen p={p}>
@@ -418,7 +419,7 @@ export default function HomePage() {
         </View>
       </ScrollView>
 
-      <BottomNav
+      <TabBar
         p={p}
         bottom={insets.bottom}
         labels={{
@@ -427,10 +428,10 @@ export default function HomePage() {
           stats: t('analytics.title', 'Analytics'),
           profile: t('profile.title', 'Profile'),
         }}
-        onHistory={go('/tabs/sessions/history')}
+        onNavigate={(tab) =>
+          router.push(tab === 'history' ? '/tabs/sessions/history' : tab === 'stats' ? '/tabs/analytics' : '/tabs/profile')
+        }
         onScan={go('/tabs/scan-receipt')}
-        onStats={go('/tabs/analytics')}
-        onProfile={go('/tabs/profile')}
       />
     </GlassScreen>
   );
@@ -488,56 +489,6 @@ function Wave() {
   }, [active]);
   const style = useAnimatedStyle(() => ({ transform: [{ rotate: `${r.value * 18}deg` }] }));
   return <Animated.Text style={[styles.wave, style]}>👋</Animated.Text>;
-}
-
-/** Floating stack of glassy cards (top-right of the hero). */
-function HeroCards({ p }: { p: P }) {
-  const active = useAmbientActive();
-  const f = useSharedValue(0);
-  useEffect(() => {
-    if (!active) return;
-    f.value = withRepeat(withTiming(1, { duration: 3200, easing: Easing.inOut(Easing.sin) }), -1, true);
-    return () => cancelAnimation(f);
-  }, [active]);
-  const back = useAnimatedStyle(() => ({
-    transform: [{ translateY: interpolate(f.value, [0, 1], [-4, 6]) }, { rotate: '-18deg' }],
-  }));
-  const front = useAnimatedStyle(() => ({
-    transform: [{ translateY: interpolate(f.value, [0, 1], [6, -6]) }, { rotate: '-10deg' }],
-  }));
-  const badge = useAnimatedStyle(() => ({
-    transform: [{ translateY: interpolate(f.value, [0, 1], [-3, 3]) }, { scale: interpolate(f.value, [0, 1], [0.96, 1.04]) }],
-  }));
-
-  const card = (id: string, opacity: number) => (
-    <Svg width={150} height={96} viewBox="0 0 150 96">
-      <Defs>
-        <SvgLinearGradient id={id} x1="0" y1="0" x2="1" y2="1">
-          <Stop offset="0%" stopColor={p.accentGradient[0]} stopOpacity={opacity} />
-          <Stop offset="100%" stopColor={p.accentGradient[1]} stopOpacity={opacity} />
-        </SvgLinearGradient>
-      </Defs>
-      <Rect x={1} y={1} width={148} height={94} rx={16} fill={`url(#${id})`} stroke="#FFFFFF" strokeOpacity={0.35} />
-      <Rect x={16} y={18} width={24} height={18} rx={4} fill="#FFFFFF" opacity={0.55} />
-      <Rect x={16} y={60} width={56} height={6} rx={3} fill="#FFFFFF" opacity={0.6} />
-      <Rect x={16} y={72} width={36} height={6} rx={3} fill="#FFFFFF" opacity={0.4} />
-      <Rect x={110} y={58} width={8} height={20} rx={3} fill="#FFFFFF" opacity={0.55} />
-      <Rect x={122} y={50} width={8} height={28} rx={3} fill="#FFFFFF" opacity={0.75} />
-    </Svg>
-  );
-
-  return (
-    <View pointerEvents="none" style={styles.heroCards}>
-      <Animated.View style={[{ position: 'absolute', right: 10, top: 6 }, back]}>{card('hcBack', 0.55)}</Animated.View>
-      <Animated.View style={[{ position: 'absolute', right: 34, top: 40 }, front]}>{card('hcFront', 0.95)}</Animated.View>
-      <Animated.View style={[{ position: 'absolute', right: 16, top: 0 }, badge]}>
-        <View style={[styles.heroBadge, { borderColor: p.cardBorder }]}>
-          <Glass p={p} fill={p.card} radius={12} />
-          <BarChart3 size={16} color={p.accentGradient[1]} />
-        </View>
-      </Animated.View>
-    </View>
-  );
 }
 
 function MiniStat({
@@ -705,71 +656,232 @@ function StatCard({
   );
 }
 
-function BottomNav({
+/**
+ * Floating glass cards (top-right of the hero). Everything runs on the UI
+ * thread with transforms/opacity only, so it holds 60 fps:
+ * float + 3D tilt, a periodic fan-out of the back card, and a light sweep.
+ */
+const CARD_W = 158;
+const CARD_H = 100;
+
+function GlassCardFace({ p, strong }: { p: P; strong?: boolean }) {
+  return (
+    <View style={[styles.cardFace, { borderColor: 'rgba(255,255,255,0.45)' }]}>
+      <LinearGradient
+        colors={strong ? p.accentGradient : [`${p.accentGradient[0]}99`, `${p.accentGradient[1]}88`]}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={StyleSheet.absoluteFill}
+      />
+      <LinearGradient
+        colors={['rgba(255,255,255,0.35)', 'rgba(255,255,255,0)']}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 0.6, y: 0.7 }}
+        style={StyleSheet.absoluteFill}
+      />
+      <View style={styles.cardChip} />
+      <View style={[styles.cardLine, { width: 64, bottom: 30 }]} />
+      <View style={[styles.cardLine, { width: 40, bottom: 18, opacity: 0.45 }]} />
+      <View style={styles.cardDots}>
+        <View style={[styles.cardDot, { opacity: 0.85 }]} />
+        <View style={[styles.cardDot, { opacity: 0.5, marginLeft: -8 }]} />
+      </View>
+    </View>
+  );
+}
+
+function HeroCards({ p }: { p: P }) {
+  const active = useAmbientActive();
+  const float = useSharedValue(0);
+  const tilt = useSharedValue(0);
+  const fan = useSharedValue(0);
+  const shine = useSharedValue(0);
+
+  useEffect(() => {
+    if (!active) return;
+    float.value = withRepeat(withTiming(1, { duration: 3400, easing: Easing.inOut(Easing.sin) }), -1, true);
+    tilt.value = withRepeat(withTiming(1, { duration: 5200, easing: Easing.inOut(Easing.sin) }), -1, true);
+    fan.value = withRepeat(
+      withSequence(
+        withDelay(1800, withTiming(1, { duration: 700, easing: Easing.out(Easing.back(1.6)) })),
+        withDelay(1400, withTiming(0, { duration: 700, easing: Easing.inOut(Easing.cubic) })),
+      ),
+      -1,
+      false,
+    );
+    shine.value = withRepeat(
+      withSequence(withTiming(1, { duration: 1300, easing: Easing.inOut(Easing.quad) }), withDelay(2600, withTiming(0, { duration: 0 }))),
+      -1,
+      false,
+    );
+    return () => {
+      cancelAnimation(float);
+      cancelAnimation(tilt);
+      cancelAnimation(fan);
+      cancelAnimation(shine);
+    };
+  }, [active]);
+
+  const backStyle = useAnimatedStyle(() => ({
+    transform: [
+      { perspective: 700 },
+      { translateY: interpolate(float.value, [0, 1], [-4, 6]) },
+      { translateX: interpolate(fan.value, [0, 1], [0, 14]) },
+      { rotateY: `${interpolate(tilt.value, [0, 1], [-14, 10])}deg` },
+      { rotate: `${interpolate(fan.value, [0, 1], [-16, -26])}deg` },
+    ],
+  }));
+  const frontStyle = useAnimatedStyle(() => ({
+    transform: [
+      { perspective: 700 },
+      { translateY: interpolate(float.value, [0, 1], [6, -6]) },
+      { translateX: interpolate(fan.value, [0, 1], [0, -6]) },
+      { rotateX: `${interpolate(tilt.value, [0, 1], [8, -6])}deg` },
+      { rotateY: `${interpolate(tilt.value, [0, 1], [-18, 14])}deg` },
+      { rotate: `${interpolate(fan.value, [0, 1], [-9, -4])}deg` },
+    ],
+  }));
+  const shineStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(shine.value, [0, 0.1, 0.9, 1], [0, 1, 1, 0]),
+    transform: [{ translateX: interpolate(shine.value, [0, 1], [-CARD_W, CARD_W * 1.4]) }, { rotate: '20deg' }],
+  }));
+  const shadowStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(float.value, [0, 1], [0.35, 0.18]),
+    transform: [{ scaleX: interpolate(float.value, [0, 1], [1, 0.85]) }],
+  }));
+
+  return (
+    <View pointerEvents="none" style={styles.heroCards}>
+      <Animated.View style={[styles.cardShadow, { backgroundColor: p.accentGradient[1] }, shadowStyle]} />
+      <Animated.View style={[{ position: 'absolute', right: 6, top: 8 }, backStyle]}>
+        <GlassCardFace p={p} />
+      </Animated.View>
+      <Animated.View style={[{ position: 'absolute', right: 30, top: 40 }, frontStyle]}>
+        <View style={styles.cardClip}>
+          <GlassCardFace p={p} strong />
+          <Animated.View style={[styles.cardShine, shineStyle]}>
+            <LinearGradient
+              colors={['rgba(255,255,255,0)', 'rgba(255,255,255,0.55)', 'rgba(255,255,255,0)']}
+              start={{ x: 0, y: 0.5 }}
+              end={{ x: 1, y: 0.5 }}
+              style={StyleSheet.absoluteFill}
+            />
+          </Animated.View>
+        </View>
+      </Animated.View>
+    </View>
+  );
+}
+
+/**
+ * Apple-style floating tab bar: a Liquid Glass capsule of tabs with a glass
+ * "lens" that glides (and stretches) to the tapped tab, plus a separate round
+ * glass button for the primary action — tabs navigate, the button acts.
+ */
+type TabKey = 'home' | 'history' | 'stats' | 'profile';
+const TAB_ORDER: TabKey[] = ['home', 'history', 'stats', 'profile'];
+
+function TabBar({
   p,
   bottom,
   labels,
-  onHistory,
+  onNavigate,
   onScan,
-  onStats,
-  onProfile,
 }: {
   p: P;
   bottom: number;
-  labels: { home: string; history: string; stats: string; profile: string };
-  onHistory: () => void;
+  labels: Record<TabKey, string>;
+  onNavigate: (tab: TabKey) => void;
   onScan: () => void;
-  onStats: () => void;
-  onProfile: () => void;
 }) {
   const active = useAmbientActive();
-  const pulse = useSharedValue(0);
+  const [barWidth, setBarWidth] = useState(0);
+  const [current, setCurrent] = useState<TabKey>('home');
+  const index = useSharedValue(0);
+  const stretch = useSharedValue(0);
+  const glow = useSharedValue(0);
+
+  // Back on Home: the lens returns to the Home tab.
+  useEffect(() => {
+    if (active) {
+      setCurrent('home');
+      index.value = withSpring(0, { damping: 18, stiffness: 180 });
+    }
+  }, [active]);
+
   useEffect(() => {
     if (!active) return;
-    pulse.value = withRepeat(withTiming(1, { duration: 1800, easing: Easing.out(Easing.quad) }), -1, false);
-    return () => cancelAnimation(pulse);
+    glow.value = withRepeat(withTiming(1, { duration: 2200, easing: Easing.inOut(Easing.sin) }), -1, true);
+    return () => cancelAnimation(glow);
   }, [active]);
-  const ring = useAnimatedStyle(() => ({
-    opacity: interpolate(pulse.value, [0, 1], [0.5, 0]),
-    transform: [{ scale: interpolate(pulse.value, [0, 1], [1, 1.5]) }],
+
+  const slot = barWidth > 0 ? (barWidth - 12) / TAB_ORDER.length : 0;
+
+  const lensStyle = useAnimatedStyle(() => ({
+    width: slot,
+    transform: [
+      { translateX: 6 + index.value * slot },
+      { scaleX: 1 + stretch.value * 0.28 },
+      { scaleY: 1 - stretch.value * 0.1 },
+    ],
+  }));
+  const fabGlow = useAnimatedStyle(() => ({
+    opacity: interpolate(glow.value, [0, 1], [0.25, 0.6]),
+    transform: [{ scale: interpolate(glow.value, [0, 1], [1, 1.12]) }],
   }));
 
-  const Item = ({
-    icon: Icon,
-    label,
-    onPress,
-    current,
-  }: {
-    icon: React.ComponentType<{ size?: number; color?: string }>;
-    label: string;
-    onPress?: () => void;
-    current?: boolean;
-  }) => (
-    <View style={{ flex: 1 }}>
-      <PressScale onPress={onPress ?? (() => {})} style={[styles.navItem, current && { backgroundColor: `${p.accentGradient[1]}22` }]}>
-        <Icon size={22} color={current ? p.accentGradient[1] : p.muted} />
-        <Text style={[styles.navLabel, { color: current ? p.accentGradient[1] : p.muted }]} numberOfLines={1}>
-          {label}
-        </Text>
-      </PressScale>
-    </View>
-  );
+  const press = (tab: TabKey) => {
+    const i = TAB_ORDER.indexOf(tab);
+    setCurrent(tab);
+    // liquid move: stretch while travelling, settle with a spring
+    stretch.value = withSequence(withTiming(1, { duration: 120 }), withSpring(0, { damping: 12, stiffness: 220 }));
+    index.value = withSpring(i, { damping: 16, stiffness: 200, mass: 0.8 });
+    if (tab !== 'home') setTimeout(() => onNavigate(tab), 190);
+  };
+
+  const icons: Record<TabKey, React.ComponentType<{ size?: number; color?: string }>> = {
+    home: HomeIcon,
+    history: Clock3,
+    stats: BarChart3,
+    profile: UserIcon,
+  };
 
   return (
-    <View pointerEvents="box-none" style={[styles.navWrap, { bottom: Math.max(bottom, 10) + 6 }]}>
-      <View style={[styles.nav, { borderColor: p.cardBorder }]}>
-        <Glass p={p} fill={p.card} radius={26} />
-        <Item icon={HomeIcon} label={labels.home} current />
-        <Item icon={Clock3} label={labels.history} onPress={onHistory} />
-        <View style={styles.navCenterSlot} />
-        <Item icon={BarChart3} label={labels.stats} onPress={onStats} />
-        <Item icon={UserIcon} label={labels.profile} onPress={onProfile} />
+    <View pointerEvents="box-none" style={[styles.tabWrap, { bottom: Math.max(bottom, 12) + 4 }]}>
+      <View style={[styles.tabBar, { borderColor: p.cardBorder }]} onLayout={(e) => setBarWidth(e.nativeEvent.layout.width)}>
+        <Glass p={p} fill={p.card} radius={34} />
+        {slot > 0 && (
+          <Animated.View pointerEvents="none" style={[styles.lens, { borderColor: `${p.accentGradient[1]}55` }, lensStyle]}>
+            <Glass p={p} fill={`${p.accentGradient[1]}22`} radius={26} />
+          </Animated.View>
+        )}
+        {TAB_ORDER.map((tab) => {
+          const Icon = icons[tab];
+          const selected = current === tab;
+          return (
+            <Pressable
+              key={tab}
+              onPress={() => press(tab)}
+              style={styles.tabItem}
+              accessibilityRole="tab"
+              accessibilityState={{ selected }}
+              accessibilityLabel={labels[tab]}
+            >
+              <Icon size={22} color={selected ? p.accentGradient[1] : p.text} />
+              <Text style={[styles.tabLabel, { color: selected ? p.accentGradient[1] : p.sub }]} numberOfLines={1}>
+                {labels[tab]}
+              </Text>
+            </Pressable>
+          );
+        })}
       </View>
-      <View pointerEvents="box-none" style={styles.fabWrap}>
-        <Animated.View pointerEvents="none" style={[styles.fabRing, { borderColor: p.accentGradient[1] }, ring]} />
-        <PressScale onPress={onScan} style={styles.fabPress}>
-          <LinearGradient colors={p.accentGradient} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.fab}>
-            <Plus size={28} color="#FFFFFF" />
+
+      <View style={styles.fabSlot}>
+        <Animated.View pointerEvents="none" style={[styles.fabGlow, { backgroundColor: p.accentGradient[1] }, fabGlow]} />
+        <PressScale onPress={onScan} style={[styles.fab, { borderColor: p.cardBorder }]}>
+          <Glass p={p} fill={p.card} radius={34} />
+          <LinearGradient colors={p.accentGradient} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.fabInner}>
+            <ScanLine size={24} color="#FFFFFF" />
           </LinearGradient>
         </PressScale>
       </View>
@@ -785,8 +897,15 @@ const styles = StyleSheet.create({
   iconBtn: { width: 44, height: 44, borderRadius: 22, borderWidth: 1, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
   dot: { position: 'absolute', top: -2, right: -2, width: 9, height: 9, borderRadius: 5 },
   hero: { minHeight: 150, paddingHorizontal: 20, paddingTop: 10, justifyContent: 'center' },
-  heroCards: { position: 'absolute', right: 0, top: 0, width: 200, height: 150 },
-  heroBadge: { width: 36, height: 36, borderRadius: 12, borderWidth: 1, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
+  heroCards: { position: 'absolute', right: 0, top: 0, width: 210, height: 160 },
+  cardFace: { width: CARD_W, height: CARD_H, borderRadius: 18, borderWidth: 1, overflow: 'hidden' },
+  cardClip: { width: CARD_W, height: CARD_H, borderRadius: 18, overflow: 'hidden' },
+  cardChip: { position: 'absolute', left: 16, top: 18, width: 26, height: 19, borderRadius: 5, backgroundColor: 'rgba(255,255,255,0.6)' },
+  cardLine: { position: 'absolute', left: 16, height: 6, borderRadius: 3, backgroundColor: 'rgba(255,255,255,0.65)' },
+  cardDots: { position: 'absolute', right: 16, bottom: 16, flexDirection: 'row' },
+  cardDot: { width: 20, height: 20, borderRadius: 10, backgroundColor: 'rgba(255,255,255,0.9)' },
+  cardShine: { position: 'absolute', top: -30, bottom: -30, width: 46 },
+  cardShadow: { position: 'absolute', right: 50, top: 150, width: 120, height: 14, borderRadius: 7 },
   greeting: { maxWidth: '68%' },
   greetSmall: { fontSize: 17, fontWeight: '500' },
   nameRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 2 },
@@ -839,13 +958,13 @@ const styles = StyleSheet.create({
   emptyText: { fontSize: 14 },
   settingsLink: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: 18, paddingVertical: 8 },
   settingsText: { fontSize: 14 },
-  navWrap: { position: 'absolute', left: 14, right: 14 },
-  nav: { height: 72, borderRadius: 26, borderWidth: 1, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 8, overflow: 'hidden' },
-  navItem: { height: 58, borderRadius: 18, alignItems: 'center', justifyContent: 'center', gap: 4, marginHorizontal: 2 },
-  navLabel: { fontSize: 11, fontWeight: '600' },
-  navCenterSlot: { width: 74 },
-  fabWrap: { position: 'absolute', top: -24, left: 0, right: 0, alignItems: 'center' },
-  fabRing: { position: 'absolute', width: 66, height: 66, borderRadius: 33, borderWidth: 2 },
-  fabPress: { borderRadius: 33, overflow: 'hidden' },
-  fab: { width: 66, height: 66, borderRadius: 33, alignItems: 'center', justifyContent: 'center' },
+  tabWrap: { position: 'absolute', left: 14, right: 14, flexDirection: 'row', alignItems: 'center', gap: 10 },
+  tabBar: { flex: 1, height: 68, borderRadius: 34, borderWidth: 1, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 6, overflow: 'hidden' },
+  lens: { position: 'absolute', left: 0, top: 6, bottom: 6, borderRadius: 26, borderWidth: 1, overflow: 'hidden' },
+  tabItem: { flex: 1, height: '100%', alignItems: 'center', justifyContent: 'center', gap: 3 },
+  tabLabel: { fontSize: 11, fontWeight: '600' },
+  fabSlot: { width: 68, height: 68, alignItems: 'center', justifyContent: 'center' },
+  fabGlow: { position: 'absolute', width: 64, height: 64, borderRadius: 32 },
+  fab: { width: 68, height: 68, borderRadius: 34, borderWidth: 1, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
+  fabInner: { width: 52, height: 52, borderRadius: 26, alignItems: 'center', justifyContent: 'center' },
 });

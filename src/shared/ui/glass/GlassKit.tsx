@@ -34,6 +34,8 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { BlurTargetView, BlurView } from 'expo-blur';
 import Svg, { Circle, Defs, LinearGradient as SvgLinearGradient, Path, Polygon, RadialGradient, Rect, Stop } from 'react-native-svg';
 
+import { create } from 'zustand';
+
 import { useAppStore } from '@/shared/lib/stores/app-store';
 
 export type Pair = readonly [string, string];
@@ -42,11 +44,13 @@ export type Tile = { bg: string; fg: string };
 // Light = green (matches the mock); dark = blue → violet (matches the auth screens).
 export const GLASS_PALETTES = {
   light: {
-    bg: '#F8FAFC',
+    bg: '#E9F5EE',
     heroBg: ['#FFFFFF', '#F8FAFC'] as Pair,
-    pageBg: ['#F1FBF5', '#F8FAFC'] as Pair,
-    orbs: ['#86EFAC', '#BBF7D0', '#FDE68A'],
-    orbOpacity: 0.5,
+    pageBg: ['#DCF4E5', '#EDF3F0'] as Pair,
+    orbs: ['#4ADE80', '#86EFAC', '#FACC15'],
+    orbOpacity: 0.55,
+    /** whole-background blur (expo-blur intensity) */
+    bgBlur: 35,
     glassTint: 'light' as 'light' | 'dark',
     glassHighlight: ['rgba(255,255,255,0.8)', 'rgba(255,255,255,0)'] as Pair,
     glassCaustic: 'rgba(255,255,255,0.5)',
@@ -54,8 +58,8 @@ export const GLASS_PALETTES = {
     glassRimSoft: 'rgba(255,255,255,0.55)',
     glassOpaque: '#FFFFFF',
     particleReceipt: '#FFFFFF',
-    beam: ['#BBF7D0', '#ECFDF5'] as Pair,
-    beamOpacity: 0.7,
+    beam: ['#86EFAC', '#DCFCE7'] as Pair,
+    beamOpacity: 0.85,
     shine: 'rgba(255,255,255,0.9)',
     text: '#0F172A',
     sub: '#334155',
@@ -64,8 +68,8 @@ export const GLASS_PALETTES = {
     accent: '#16A34A',
     accentGradient: ['#34D27B', '#16A34A'] as Pair,
     avatarRing: 'transparent',
-    card: 'rgba(255,255,255,0.55)',
-    cardBorder: 'rgba(15,23,42,0.07)',
+    card: 'rgba(255,255,255,0.42)',
+    cardBorder: 'rgba(255,255,255,0.75)',
     divider: '#EEF1F4',
     chevron: '#64748B',
     inputBg: '#F3F5F8',
@@ -90,6 +94,8 @@ export const GLASS_PALETTES = {
     pageBg: ['#0A0F1E', '#0E1430'] as Pair,
     orbs: ['#3B82F6', '#8B5CF6', '#6366F1'],
     orbOpacity: 0.32,
+    /** whole-background blur (expo-blur intensity) */
+    bgBlur: 30,
     glassTint: 'dark' as 'light' | 'dark',
     glassHighlight: ['rgba(255,255,255,0.16)', 'rgba(255,255,255,0)'] as Pair,
     glassCaustic: 'rgba(167,139,250,0.12)',
@@ -165,11 +171,80 @@ export function GlassScreen({ p, children }: { p: GlassPalette; children: React.
             <AmbientOrbs p={p} />
             <HeroParticles p={p} />
           </BlurTargetView>
+          <BackdropBlur p={p} />
           {children}
+          <ThemeFadeOverlay />
         </View>
       </GlassProvider>
     </AmbientActiveContext.Provider>
   );
+}
+
+
+/** Softens the whole animated background (≈30–35%) once the screen has settled. */
+function BackdropBlur({ p }: { p: GlassPalette }) {
+  const { target, ready, reduce } = useContext(GlassContext);
+  if (reduce || !ready) return null;
+  return (
+    <Animated.View entering={FadeIn.duration(450)} pointerEvents="none" style={StyleSheet.absoluteFill}>
+      <BlurView
+        intensity={p.bgBlur}
+        tint="default"
+        blurMethod="dimezisBlurViewSdk31Plus"
+        blurReductionFactor={3}
+        blurTarget={target ?? undefined}
+        style={StyleSheet.absoluteFill}
+      />
+    </Animated.View>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Smooth theme switching
+//
+// Re-theming re-renders every mounted screen at once, which drops frames if it
+// happens in plain sight. Instead: fade a veil in the NEW background colour
+// over the screen (UI thread), switch the theme behind it, wait two frames for
+// the re-render to land, then fade the veil out.
+// ---------------------------------------------------------------------------
+type ThemeFadeState = { color: string | null; visible: boolean; busy: boolean };
+const useThemeFadeStore = create<ThemeFadeState>(() => ({ color: null, visible: false, busy: false }));
+
+const VEIL_IN_MS = 160;
+const VEIL_OUT_MS = 340;
+
+export function useSmoothThemeToggle() {
+  const theme = useAppStore((st) => st.theme);
+  const setTheme = useAppStore((st) => st.setTheme);
+  return () => {
+    if (useThemeFadeStore.getState().busy) return;
+    const next = theme === 'dark' ? 'light' : 'dark';
+    useThemeFadeStore.setState({ color: GLASS_PALETTES[next].bg, visible: true, busy: true });
+    setTimeout(() => {
+      setTheme(next);
+      requestAnimationFrame(() =>
+        requestAnimationFrame(() => {
+          useThemeFadeStore.setState({ visible: false });
+          setTimeout(() => useThemeFadeStore.setState({ busy: false, color: null }), VEIL_OUT_MS);
+        }),
+      );
+    }, VEIL_IN_MS + 10);
+  };
+}
+
+function ThemeFadeOverlay() {
+  const color = useThemeFadeStore((st) => st.color);
+  const visible = useThemeFadeStore((st) => st.visible);
+  const opacity = useSharedValue(0);
+  useEffect(() => {
+    opacity.value = withTiming(visible ? 1 : 0, {
+      duration: visible ? VEIL_IN_MS : VEIL_OUT_MS,
+      easing: visible ? Easing.out(Easing.quad) : Easing.inOut(Easing.quad),
+    });
+  }, [visible]);
+  const style = useAnimatedStyle(() => ({ opacity: opacity.value }));
+  if (!color) return null;
+  return <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: color }, style]} />;
 }
 
 // ---------------------------------------------------------------------------
