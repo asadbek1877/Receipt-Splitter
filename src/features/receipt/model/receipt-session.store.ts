@@ -12,7 +12,7 @@ import type {
   ReceiptAllocation,
 } from '@/features/receipt/api/receipt.api';
 import { ReceiptApi } from '@/features/receipt/api/receipt.api';
-import { v4 as uuid } from 'uuid';
+import { uuid } from '@/shared/lib/utils/uuid';
 
 export type CapturedReceiptImage = {
   uri?: string;
