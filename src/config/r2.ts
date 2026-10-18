@@ -6,6 +6,10 @@ const R2_SECRET_ACCESS_KEY = process.env.R2_SECRET_ACCESS_KEY || "";
 const R2_BUCKET = process.env.R2_BUCKET || "";
 const CDN_BASE_URL = (process.env.CDN_BASE_URL || "").replace(/\/$/, "");
 
+export function isR2Configured(): boolean {
+  return !!(R2_ENDPOINT && R2_ACCESS_KEY_ID && R2_SECRET_ACCESS_KEY && R2_BUCKET && CDN_BASE_URL);
+}
+
 export function assertR2Config() {
   if (
     !R2_ENDPOINT ||

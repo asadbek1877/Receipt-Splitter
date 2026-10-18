@@ -10,7 +10,7 @@ import friendsRoutes from "./routes/friends.js";
 import groupsRoutes from "./routes/groups.js";
 import sessionsRoutes from "./routes/sessions.js";
 import usersRoutes from "./routes/users.js";
-import uploadsRoutes from "./routes/uploads.js";
+import uploadsRoutes, { UPLOADS_DIR } from "./routes/uploads.js";
 import { logAuthAttempts } from "./middleware/logAuth.js";
 import debugRoutes from "./routes/debug.js";
 import analyticsRoutes from "./routes/analytics.js";
@@ -91,6 +91,8 @@ app.use("/groups", groupsRoutes);
 app.use("/sessions", sessionsRoutes);
 app.use("/users", usersRoutes);
 app.use("/uploads", uploadsRoutes);
+// Uploaded files (local storage fallback). Keys are versioned, so they can be cached for long.
+app.use("/static", express.static(UPLOADS_DIR, { maxAge: "30d", immutable: true, fallthrough: false }));
 app.use("/debug", debugRoutes);
 app.use("/analytics", analyticsRoutes);
 app.use("/admin", adminRoutes);

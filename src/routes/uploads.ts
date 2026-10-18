@@ -2,7 +2,9 @@ import { Router } from "express";
 import type { Request, Response } from "express";
 import multer from "multer";
 import { authenticateToken } from "../middleware/auth.js";
-import { uploadAvatarObject } from "../config/r2.js";
+import { mkdir, writeFile } from "node:fs/promises";
+import path from "node:path";
+import { isR2Configured, uploadAvatarObject } from "../config/r2.js";
 import { prisma } from "../config/prisma.js";
 
 type UploadFile = {
@@ -17,6 +19,14 @@ type UploadFile = {
 type ReqFileMinimal = { buffer: Buffer; mimetype: string; size: number };
 
 const router = Router();
+
+/** Local fallback storage for uploads when R2 is not configured; served under /static. */
+export const UPLOADS_DIR = path.resolve(process.env.UPLOADS_DIR || "uploads");
+
+function publicBaseUrl(req: Request): string {
+  const configured = (process.env.PUBLIC_BASE_URL || "").replace(/\/$/, "");
+  return configured || `${req.protocol}://${req.get("host")}`;
+}
 
 /**
  * @swagger
@@ -37,7 +47,7 @@ function pickExtByMime(
 ): ".webp" | ".jpg" | ".jpeg" | ".png" | ".gif" | null {
   const m = mime.toLowerCase();
   if (m === "image/webp") return ".webp";
-  if (m === "image/jpeg") return ".jpg";
+  if (m === "image/jpeg" || m === "image/jpg") return ".jpg";
   if (m === "image/png") return ".png";
   if (m === "image/gif") return ".gif";
   return null;
@@ -126,27 +136,26 @@ router.post(
         return;
       }
 
-      // Get current user data
-      const currentUser = await prisma.user.findUnique({
-        where: { id: req.user.id },
-        select: { username: true },
-      });
-      const username = currentUser?.username || `User${req.user.id}`;
-
-      // Create a unique avatar URL using ui-avatars with timestamp for cache busting
+      // Store the actual image: Cloudflare R2 when configured, otherwise local disk.
       const v = Math.floor(Date.now() / 1000);
       const key = `avatars/${req.user.id}/v${v}/avatar${ext}`;
-      const encodedName = encodeURIComponent(username);
-      const mockUrl = `https://ui-avatars.com/api/?name=${encodedName}&size=200&background=2ECC71&color=fff&v=${v}`;
+      let avatarUrl: string;
+      if (isR2Configured()) {
+        ({ url: avatarUrl } = await uploadAvatarObject(key, file.buffer, mimetype));
+      } else {
+        const target = path.join(UPLOADS_DIR, key);
+        await mkdir(path.dirname(target), { recursive: true });
+        await writeFile(target, file.buffer);
+        avatarUrl = `${publicBaseUrl(req)}/static/${key}`;
+      }
 
-      // Save to database
       await prisma.user.update({
         where: { id: req.user.id },
-        data: { avatarUrl: mockUrl },
+        data: { avatarUrl },
       });
 
-      console.log("POST /uploads/avatar:", { id: req.user.id, key, url: mockUrl });
-      res.json({ success: true, avatarUrl: mockUrl, key });
+      console.log("POST /uploads/avatar:", { id: req.user.id, key, url: avatarUrl });
+      res.json({ success: true, avatarUrl, key });
       return;
     } catch (err) {
       console.error("POST /uploads/avatar error:", err);
