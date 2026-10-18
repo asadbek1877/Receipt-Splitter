@@ -598,6 +598,24 @@
       "captureGeneric": "Something went wrong while capturing",
       "sendFailed": "Something went wrong while sending the receipt",
       "galleryFailed": "Something went wrong while uploading the receipt image"
+    },
+    "subtitle": "レシートを撮影",
+    "hint": "レシートを枠内に合わせてください",
+    "manual": "手入力",
+    "analysis": {
+      "title": "スキャン中...",
+      "subtitle": "レシート情報を抽出しています",
+      "status": "レシートを解析中...",
+      "statusSub": "文字を読み取り、品目を特定しています",
+      "failedTitle": "スキャン失敗",
+      "failed": "レシートを読み取れませんでした",
+      "tryAgain": "再試行",
+      "steps": {
+        "detect": "書類を検出",
+        "extract": "テキストを抽出",
+        "categorize": "品目を分類",
+        "prepare": "概要を作成"
+      }
     }
   },
   "historyScreen": {

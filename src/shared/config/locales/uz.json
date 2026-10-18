@@ -598,6 +598,24 @@
       "captureGeneric": "Rasmga olishda xatolik yuz berdi",
       "sendFailed": "Chekni yuborishda xatolik yuz berdi",
       "galleryFailed": "Galereyadan chek rasmini yuklashda xatolik yuz berdi"
+    },
+    "subtitle": "Chekni suratga oling",
+    "hint": "Chekni ramka ichiga joylashtiring",
+    "manual": "Qo'lda",
+    "analysis": {
+      "title": "Skanerlanmoqda...",
+      "subtitle": "Chek ma'lumotlari olinmoqda",
+      "status": "Chek tahlil qilinmoqda...",
+      "statusSub": "Matn o'qilmoqda va mahsulotlar aniqlanmoqda",
+      "failedTitle": "Skanerlash xatosi",
+      "failed": "Chekni o'qib bo'lmadi",
+      "tryAgain": "Qayta urinish",
+      "steps": {
+        "detect": "Hujjat aniqlanmoqda",
+        "extract": "Matn ajratilmoqda",
+        "categorize": "Mahsulotlar turkumlanmoqda",
+        "prepare": "Xulosa tayyorlanmoqda"
+      }
     }
   },
   "historyScreen": {

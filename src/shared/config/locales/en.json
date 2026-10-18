@@ -598,6 +598,24 @@
       "captureGeneric": "Something went wrong while capturing",
       "sendFailed": "Something went wrong while sending the receipt",
       "galleryFailed": "Something went wrong while uploading the receipt image"
+    },
+    "subtitle": "Capture your bill",
+    "hint": "Place the receipt inside the frame",
+    "manual": "Manual",
+    "analysis": {
+      "title": "Scanning...",
+      "subtitle": "Extracting receipt details",
+      "status": "Analyzing receipt...",
+      "statusSub": "Reading text and identifying items",
+      "failedTitle": "Scan failed",
+      "failed": "Couldn't read the receipt",
+      "tryAgain": "Try again",
+      "steps": {
+        "detect": "Detecting document",
+        "extract": "Extracting text",
+        "categorize": "Categorizing items",
+        "prepare": "Preparing summary"
+      }
     }
   },
   "historyScreen": {

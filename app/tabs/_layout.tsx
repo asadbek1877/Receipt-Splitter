@@ -219,7 +219,7 @@ export default function TabLayout() {
       <Tabs.Screen name="friends/invite" options={{ href: null, title: friendQrTitle }} />
       <Tabs.Screen name="groups/invite" options={{ href: null, title: groupQrTitle }} />
 
-      <Tabs.Screen name="scan-receipt" options={{ href: null, title: scanReceiptTitle }} />
+      <Tabs.Screen name="scan-receipt" options={{ href: null, title: scanReceiptTitle, headerShown: false }} />
       <Tabs.Screen name="sessions/participants" options={{ href: null, title: participantsTitle }} />
       <Tabs.Screen name="sessions/items-split" options={{ href: null, title: itemsSplitTitle }} />
       <Tabs.Screen name="sessions/finish" options={{ href: null, title: finishTitle }} />

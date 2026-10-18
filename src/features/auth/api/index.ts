@@ -225,11 +225,44 @@ export interface UploadAvatarResponse {
   key: string;
 }
 
+// Multipart uploads go through React Native's own fetch, not axios: axios 1.x on
+// Android fails file FormData with a bare "Network Error" (it cannot set the
+// multipart boundary). fetch builds the body and boundary natively.
 export async function uploadAvatar(formData: FormData): Promise<UploadAvatarResponse> {
-  const { data } = await apiClient.post<UploadAvatarResponse>('/uploads/avatar', formData, {
-    headers: { 'Content-Type': 'multipart/form-data' },
-  });
-  return data;
+  const token = await getToken();
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 30000);
+  let res: Response;
+  try {
+    res = await fetch(`${API_URL}/uploads/avatar`, {
+      method: 'POST',
+      headers: {
+        Accept: 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: formData,
+      signal: controller.signal,
+    });
+  } catch (e: any) {
+    throw new ApiError(
+      e?.name === 'AbortError' ? 'Request timed out. Please try again.' : 'Network error. Please check your connection.',
+    );
+  } finally {
+    clearTimeout(timer);
+  }
+
+  const text = await res.text();
+  let data: any = null;
+  try {
+    data = text ? JSON.parse(text) : null;
+  } catch {
+    data = null;
+  }
+  if (!res.ok) {
+    if (res.status === 401) emitUnauthorized();
+    throw new ApiError(data?.error || data?.message || `Upload failed (${res.status})`);
+  }
+  return data as UploadAvatarResponse;
 }
 
 export interface UpdateAvatarPayload {

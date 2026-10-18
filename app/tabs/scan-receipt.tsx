@@ -1,948 +1,922 @@
-// app/tabs/scan-receipt.tsx — Receipt scanner with zoom, flashlight & improved design
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+// app/tabs/scan-receipt.tsx — capture a receipt, confirm it, watch the AI analyse it.
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  ActivityIndicator, Alert, Image, Linking, Platform, StyleSheet, View,
-  Animated as RNAnimated, Pressable, Dimensions,
+  ActivityIndicator,
+  Alert,
+  Image,
+  Linking,
+  Pressable,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+  useWindowDimensions,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { CameraView, useCameraPermissions } from 'expo-camera';
-import { useRouter, useFocusEffect, useIsFocused } from 'expo-router';
-import { YStack, XStack, Button, Paragraph, Input, Text, Spinner, Circle } from 'tamagui';
-import {
-  ChevronLeft, AlertTriangle, Camera as CameraIcon,
-  Scan, Zap, Receipt, ZoomIn, ZoomOut, Flashlight, X,
-  Focus, Users as UsersIcon, Plus, ImagePlus,
-} from '@tamagui/lucide-icons';
+import { useFocusEffect, useIsFocused, useRouter } from 'expo-router';
 import { manipulateAsync, SaveFormat } from 'expo-image-manipulator';
-import Animated, { FadeIn, FadeInDown, FadeInUp, SlideInDown } from 'react-native-reanimated';
-import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
-
 import {
-  useReceiptSessionStore,
-  CapturedReceiptImage,
-} from '@/features/receipt/model/receipt-session.store';
-import { useAppStore } from '@/shared/lib/stores/app-store';
-import { useThemeColors } from '@/shared/lib/stores/theme-store';
-import { DEFAULT_LANGUAGE } from '@/shared/config/languages';
+  ArrowLeft,
+  BarChart3,
+  Camera,
+  Check,
+  FileText,
+  Image as ImageIcon,
+  PencilLine,
+  RotateCcw,
+  Search,
+  Sparkles,
+  X,
+  Zap,
+  ZapOff,
+} from '@tamagui/lucide-icons';
+import Animated, {
+  Easing,
+  FadeIn,
+  FadeInDown,
+  FadeOut,
+  cancelAnimation,
+  interpolate,
+  useAnimatedProps,
+  useAnimatedStyle,
+  useSharedValue,
+  withRepeat,
+  withSequence,
+  withTiming,
+} from 'react-native-reanimated';
+import { LinearGradient } from 'expo-linear-gradient';
+import Svg, { Circle, Defs, Ellipse, LinearGradient as SvgLinearGradient, Stop } from 'react-native-svg';
 
-const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
-const SCAN_FRAME_WIDTH = SCREEN_WIDTH * 0.78;
-const SCAN_FRAME_HEIGHT = SCAN_FRAME_WIDTH * 1.4;
+import { useReceiptSessionStore, type CapturedReceiptImage } from '@/features/receipt/model/receipt-session.store';
+import { useAppStore } from '@/shared/lib/stores/app-store';
+import { DEFAULT_LANGUAGE } from '@/shared/config/languages';
+import { useGlassPalette, type GlassPalette } from '@/shared/ui/glass/GlassKit';
+
+const AnimatedCircle = Animated.createAnimatedComponent(Circle);
+
+const ZOOMS = [
+  { label: '1x', value: 0 },
+  { label: '2x', value: 0.25 },
+  { label: '3x', value: 0.5 },
+];
 
 const getDefaultSessionName = () => {
   const now = new Date();
-  const pad = (value: number) => value.toString().padStart(2, '0');
-  const date = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
-  const time = `${pad(now.getHours())}:${pad(now.getMinutes())}`;
-  return `${date} ${time}`;
+  const pad = (v: number) => v.toString().padStart(2, '0');
+  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}`;
 };
 
-function guessMime(uri?: string): string {
-  if (!uri) return 'image/jpeg';
-  const lower = uri.toLowerCase();
-  if (lower.endsWith('.png')) return 'image/png';
-  if (lower.endsWith('.webp')) return 'image/webp';
-  return 'image/jpeg';
+/** Frame geometry, shared by the overlay and the crop so they always agree. */
+function useFrame() {
+  const { width, height } = useWindowDimensions();
+  const w = Math.min(width * 0.76, 420);
+  const h = w * 1.36;
+  return { width, height, w, h, left: (width - w) / 2, top: (height - h) / 2.25 };
 }
 
-const getFileNameFromUri = (uri: string, fallback = `receipt-${Date.now()}.jpg`) => {
-  const rawName = uri.split('/').pop()?.split('?')[0];
-  return rawName && rawName.includes('.') ? rawName : fallback;
-};
-
-const appendImageToFormData = async (
-  formData: FormData,
-  file: { uri: string; fileName: string; mimeType: string },
-) => {
-  if (Platform.OS === 'web') {
-    const response = await fetch(file.uri);
-    const blob = await response.blob();
-    formData.append('file', blob, file.fileName);
-    return;
-  }
-
-  formData.append('file', {
-    uri: file.uri,
-    name: file.fileName,
-    type: file.mimeType,
-  } as any);
-};
-
-// Zoom levels
-const ZOOM_LEVELS = [0, 0.25, 0.5, 0.75, 1.0];
-const ZOOM_LABELS = ['1×', '1.5×', '2×', '3×', '4×'];
+type Stage = 'camera' | 'confirm' | 'analyzing';
 
 export default function ScanReceiptScreen() {
   const { t } = useTranslation();
-  const [perm, requestPerm] = useCameraPermissions();
-  const isFocused = useIsFocused();
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const themeColors = useThemeColors();
-
+  const isFocused = useIsFocused();
+  const { p } = useGlassPalette();
+  const frame = useFrame();
+  const [perm, requestPerm] = useCameraPermissions();
+  const [mediaPermission, requestMediaPermission] = ImagePicker.useMediaLibraryPermissions();
   const cameraRef = useRef<CameraView | null>(null);
 
   const parsing = useReceiptSessionStore((s) => s.parsing);
   const parseReceipt = useReceiptSessionStore((s) => s.parseReceipt);
-  const parseReceiptUpload = useReceiptSessionStore((s) => s.parseReceiptUpload);
   const parseError = useReceiptSessionStore((s) => s.parseError);
   const setCapture = useReceiptSessionStore((s) => s.setCapture);
   const clearCapture = useReceiptSessionStore((s) => s.clearCapture);
-  const storedCapture = useReceiptSessionStore((s) => s.capture);
   const setSessionNameStore = useReceiptSessionStore((s) => s.setSessionName);
   const storedSessionName = useReceiptSessionStore((s) => s.session?.sessionName);
-  const storeParticipants = useReceiptSessionStore((s) => s.participants);
-  const appLanguage = useAppStore((s) => s.language);
-  const isDark = useAppStore((s) => s.theme === 'dark');
+  const language = useAppStore((s) => s.language) || DEFAULT_LANGUAGE;
 
+  const [stage, setStage] = useState<Stage>('camera');
   const [sessionName, setSessionName] = useState(() => storedSessionName || getDefaultSessionName());
   const [isAutoName, setIsAutoName] = useState(() => !storedSessionName);
-  const [localError, setLocalError] = useState<string | null>(null);
-  // Captured photo waiting for user confirmation before sending to AI
-  const [pendingCapture, setPendingCapture] = useState<CapturedReceiptImage | null>(null);
-  const [pendingName, setPendingName] = useState<string>('');
-  const [galleryProcessing, setGalleryProcessing] = useState(false);
-  const [mediaPermission, requestMediaPermission] = ImagePicker.useMediaLibraryPermissions();
-
-  // Zoom & Flash state
-  const [zoomLevel, setZoomLevel] = useState(0); // index into ZOOM_LEVELS
-  const [flashEnabled, setFlashEnabled] = useState(false);
-  const [showControls, setShowControls] = useState(true);
-  const [showBottomPanel, setShowBottomPanel] = useState(true);
-
-  // Scan line animation
-  const scanLineAnim = useRef(new RNAnimated.Value(0)).current;
-
-  const language = appLanguage || DEFAULT_LANGUAGE;
-
-  // Primary color from theme
-  const accentColor = themeColors.primary;
-  const accentColorDim = `${accentColor}99`;
+  const [pending, setPending] = useState<CapturedReceiptImage | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [analysisDone, setAnalysisDone] = useState(false);
+  const [analysisError, setAnalysisError] = useState<string | null>(null);
+  const [zoom, setZoom] = useState(0);
+  const [flash, setFlash] = useState(false);
 
   useEffect(() => {
-    if (isFocused && !perm?.granted) requestPerm();
-  }, [isFocused, perm?.granted, requestPerm]);
-
-  useEffect(() => {
-    if (storedSessionName) {
-      setIsAutoName(false);
-      setSessionName((prev) => (prev === storedSessionName ? prev : storedSessionName));
-    } else {
-      setIsAutoName(true);
-    }
-  }, [storedSessionName]);
+    if (isFocused && !perm?.granted && perm?.canAskAgain !== false) requestPerm();
+  }, [isFocused, perm?.granted, perm?.canAskAgain, requestPerm]);
 
   useFocusEffect(
     useCallback(() => {
-      if (storedSessionName) return;
-      if (!isAutoName) return;
-      const freshName = getDefaultSessionName();
-      setSessionName((prev) => (prev === freshName ? prev : freshName));
-    }, [storedSessionName, isAutoName])
+      if (storedSessionName || !isAutoName) return;
+      setSessionName(getDefaultSessionName());
+    }, [storedSessionName, isAutoName]),
   );
 
   useEffect(() => () => clearCapture(), [clearCapture]);
 
-  // Animated scan line
-  useEffect(() => {
-    const animation = RNAnimated.loop(
-      RNAnimated.sequence([
-        RNAnimated.timing(scanLineAnim, {
-          toValue: 1,
-          duration: 2500,
-          useNativeDriver: true,
-        }),
-        RNAnimated.timing(scanLineAnim, {
-          toValue: 0,
-          duration: 2500,
-          useNativeDriver: true,
-        }),
-      ])
-    );
-    animation.start();
-    return () => animation.stop();
-  }, [scanLineAnim]);
-
-  const scanLineTranslateY = scanLineAnim.interpolate({
-    inputRange: [0, 1],
-    outputRange: [0, SCAN_FRAME_HEIGHT - 4],
-  });
-
-  // Step 1: take photo and show confirmation preview
+  // ---------- capture: crop exactly what is inside the frame ----------
   const handleCapture = useCallback(async () => {
-    if (!cameraRef.current || parsing) return;
-
+    if (!cameraRef.current || busy || parsing) return;
     try {
-      setLocalError(null);
-      console.log('[ReceiptScan] Starting capture...');
-      
-      const picture = await cameraRef.current.takePictureAsync({
-        quality: 0.7,
-        base64: false,
-        skipProcessing: true,
-      });
+      setBusy(true);
+      setError(null);
+      const picture = await cameraRef.current.takePictureAsync({ quality: 0.7, base64: false, skipProcessing: true });
+      if (!picture?.uri) throw new Error(t('scanReceipt.errors.captureFailed'));
 
-      if (!picture?.uri) {
-        throw new Error(t('scanReceipt.errors.captureFailed'));
+      const picW = picture.width || frame.width;
+      const picH = picture.height || frame.height;
+      const actions: any[] = [];
+      // The preview "covers" the screen: map the on-screen frame back into the photo.
+      if (picH >= picW) {
+        const scale = Math.max(frame.width / picW, frame.height / picH);
+        const offX = (picW * scale - frame.width) / 2;
+        const offY = (picH * scale - frame.height) / 2;
+        const pad = 0.04 * frame.w; // keep a little margin around the frame
+        const x = Math.max(0, Math.round((frame.left - pad + offX) / scale));
+        const y = Math.max(0, Math.round((frame.top - pad + offY) / scale));
+        const w = Math.min(picW - x, Math.round((frame.w + pad * 2) / scale));
+        const h = Math.min(picH - y, Math.round((frame.h + pad * 2) / scale));
+        if (w > 50 && h > 50) actions.push({ crop: { originX: x, originY: y, width: w, height: h } });
       }
-      console.log('[ReceiptScan] Picture captured:', picture.uri, `(${picture.width}x${picture.height})`);
+      actions.push({ resize: { width: 1280 } });
+      const out = await manipulateAsync(picture.uri, actions, { compress: 0.5, format: SaveFormat.JPEG, base64: true });
+      if (!out?.base64) throw new Error(t('scanReceipt.errors.prepareFailed'));
 
-      // Calculate crop area based on frame position on screen
-      const frameLeft = (SCREEN_WIDTH - SCAN_FRAME_WIDTH) / 2;
-      const frameTop = (SCREEN_HEIGHT - SCAN_FRAME_HEIGHT) / 2.15; // Adjust based on actual layout
-      
-      // Map screen coordinates to image coordinates
-      const scaleX = (picture.width || SCREEN_WIDTH) / SCREEN_WIDTH;
-      const scaleY = (picture.height || SCREEN_HEIGHT) / SCREEN_HEIGHT;
-      
-      const cropLeft = Math.round(frameLeft * scaleX);
-      const cropTop = Math.round(frameTop * scaleY);
-      const cropWidth = Math.round(SCAN_FRAME_WIDTH * scaleX);
-      const cropHeight = Math.round(SCAN_FRAME_HEIGHT * scaleY);
-      
-      console.log('[ReceiptScan] Crop area:', { cropLeft, cropTop, cropWidth, cropHeight });
-
-      const targetWidth = Math.min(cropWidth, 1280);
-      const manipActions = [
-        {
-          crop: {
-            originX: cropLeft,
-            originY: cropTop,
-            width: cropWidth,
-            height: cropHeight,
-          },
-        },
-        { resize: { width: targetWidth } },
-      ];
-      
-      const manipResult = await manipulateAsync(
-        picture.uri,
-        manipActions,
-        { compress: 0.45, format: SaveFormat.JPEG, base64: true }
-      );
-
-      if (!manipResult?.base64) {
-        throw new Error(t('scanReceipt.errors.prepareFailed'));
-      }
-
-      const preparedName = sessionName.trim() || getDefaultSessionName();
-      const capture: CapturedReceiptImage = {
-        uri: manipResult.uri ?? picture.uri,
-        base64: manipResult.base64,
-        mimeType: 'image/jpeg',
-        width: manipResult.width ?? cropWidth,
-        height: manipResult.height ?? cropHeight,
-      };
-
-      console.log('[ReceiptScan] Cropped image size:', { width: manipResult.width, height: manipResult.height, base64Length: manipResult.base64.length });
-
-      setPendingCapture(capture);
-      setPendingName(preparedName);
-    } catch (error) {
-      console.warn('[ReceiptScan] Capture error:', error);
-      const message = error instanceof Error ? error.message : t('scanReceipt.errors.captureGeneric');
-      setLocalError(message);
-    }
-  }, [cameraRef, parsing, sessionName, t]);
-
-  // Step 2a: user confirms — send to AI
-  const handleConfirmScan = useCallback(async () => {
-    if (!pendingCapture || parsing) return;
-
-    try {
-      setLocalError(null);
-      setSessionNameStore(pendingName);
-      setCapture(pendingCapture);
-      setPendingCapture(null);
-
-      console.log('[ReceiptScan] Calling parseReceipt...');
-      await parseReceipt({
-        sessionName: pendingName,
-        language,
-        image: {
-          data: pendingCapture.base64,
-          mimeType: pendingCapture.mimeType,
-        },
-      });
-
-      console.log('[ReceiptScan] Navigating to review screen...');
-      router.push('/tabs/sessions/review-items' as any);
-    } catch (error) {
-      console.warn('[ReceiptScan] Error:', error);
-      const message = error instanceof Error ? error.message : t('scanReceipt.errors.sendFailed');
-      setLocalError(message);
-    }
-  }, [pendingCapture, parsing, pendingName, setSessionNameStore, setCapture, parseReceipt, language, router, t]);
-
-  const showGalleryPermissionAlert = useCallback(() => {
-    Alert.alert(
-      t('scanReceipt.galleryPermissionTitle'),
-      t('scanReceipt.galleryPermissionMessage'),
-      [
-        { text: t('common.cancel'), style: 'cancel' },
-        {
-          text: t('common.openSettings'),
-          onPress: () => {
-            void Linking.openSettings();
-          },
-        },
-      ],
-    );
-  }, [t]);
-
-  const ensureGalleryPermission = useCallback(async () => {
-    const currentPermission =
-      mediaPermission ?? (await ImagePicker.getMediaLibraryPermissionsAsync());
-
-    if (currentPermission.granted) return true;
-
-    const nextPermission = currentPermission.canAskAgain
-      ? await requestMediaPermission()
-      : currentPermission;
-
-    if (nextPermission.granted) return true;
-
-    showGalleryPermissionAlert();
-    return false;
-  }, [mediaPermission, requestMediaPermission, showGalleryPermissionAlert]);
-
-  const handlePickFromGallery = useCallback(async () => {
-    if (parsing || galleryProcessing || pendingCapture) return;
-
-    const hasPermission = await ensureGalleryPermission();
-    if (!hasPermission) return;
-
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ["images"],
-      allowsEditing: true,
-      quality: 0.9,
-      selectionLimit: 1,
-      base64: false,
-    });
-
-    if (result.canceled || !result.assets?.[0]?.uri) return;
-
-    setGalleryProcessing(true);
-    setLocalError(null);
-
-    try {
-      const asset = result.assets[0];
-      const preparedName = sessionName.trim() || getDefaultSessionName();
-      const targetWidth = Math.min(asset.width || 1280, 1280);
-      const preparedImage = await manipulateAsync(
-        asset.uri,
-        targetWidth > 0 ? [{ resize: { width: targetWidth } }] : [],
-        { compress: 0.58, format: SaveFormat.JPEG, base64: false },
-      );
-
-      const uploadFile = {
-        uri: preparedImage.uri ?? asset.uri,
-        fileName: asset.fileName ?? getFileNameFromUri(asset.uri),
-        mimeType: 'image/jpeg',
-      };
-
-      const formData = new FormData();
-      formData.append('sessionName', preparedName);
-      formData.append('language', language);
-      await appendImageToFormData(formData, uploadFile);
-
-      setSessionNameStore(preparedName);
-      setCapture({
-        uri: uploadFile.uri,
-        base64: '',
-        mimeType: uploadFile.mimeType,
-        width: preparedImage.width ?? asset.width,
-        height: preparedImage.height ?? asset.height,
-      });
-
-      await parseReceiptUpload(formData);
-      router.push('/tabs/sessions/review-items' as any);
-    } catch (error) {
-      console.warn('[ReceiptScan] Gallery upload error:', error);
-      const message = error instanceof Error ? error.message : t('scanReceipt.errors.galleryFailed');
-      setLocalError(message);
+      setPending({ uri: out.uri ?? picture.uri, base64: out.base64, mimeType: 'image/jpeg', width: out.width, height: out.height });
+      setStage('confirm');
+    } catch (e) {
+      setError(e instanceof Error ? e.message : t('scanReceipt.errors.captureGeneric'));
     } finally {
-      setGalleryProcessing(false);
+      setBusy(false);
     }
-  }, [
-    ensureGalleryPermission,
-    galleryProcessing,
-    language,
-    parseReceiptUpload,
-    parsing,
-    pendingCapture,
-    router,
-    sessionName,
-    setCapture,
-    setSessionNameStore,
-    t,
-  ]);
+  }, [busy, parsing, frame, t]);
 
-  // Step 2b: user retakes the photo
-  const handleRetake = useCallback(() => {
-    setPendingCapture(null);
-    setPendingName('');
+  // ---------- gallery: same base64 path as the camera (no multipart upload) ----------
+  const ensureGalleryPermission = useCallback(async () => {
+    const current = mediaPermission ?? (await ImagePicker.getMediaLibraryPermissionsAsync());
+    if (current.granted) return true;
+    const next = current.canAskAgain ? await requestMediaPermission() : current;
+    if (next.granted) return true;
+    Alert.alert(t('scanReceipt.galleryPermissionTitle'), t('scanReceipt.galleryPermissionMessage'), [
+      { text: t('common.cancel'), style: 'cancel' },
+      { text: t('common.openSettings'), onPress: () => void Linking.openSettings() },
+    ]);
+    return false;
+  }, [mediaPermission, requestMediaPermission, t]);
+
+  const handleGallery = useCallback(async () => {
+    if (busy || parsing) return;
+    if (!(await ensureGalleryPermission())) return;
+    const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], allowsEditing: true, quality: 0.9, selectionLimit: 1 });
+    if (result.canceled || !result.assets?.[0]?.uri) return;
+    try {
+      setBusy(true);
+      setError(null);
+      const asset = result.assets[0];
+      const out = await manipulateAsync(asset.uri, [{ resize: { width: Math.min(asset.width || 1280, 1280) } }], {
+        compress: 0.55,
+        format: SaveFormat.JPEG,
+        base64: true,
+      });
+      if (!out?.base64) throw new Error(t('scanReceipt.errors.prepareFailed'));
+      setPending({ uri: out.uri ?? asset.uri, base64: out.base64, mimeType: 'image/jpeg', width: out.width, height: out.height });
+      setStage('confirm');
+    } catch (e) {
+      setError(e instanceof Error ? e.message : t('scanReceipt.errors.galleryFailed'));
+    } finally {
+      setBusy(false);
+    }
+  }, [busy, parsing, ensureGalleryPermission, t]);
+
+  // ---------- analyse ----------
+  const analyze = useCallback(async () => {
+    if (!pending) return;
+    const name = sessionName.trim() || getDefaultSessionName();
+    setSessionNameStore(name);
+    setCapture(pending);
+    setAnalysisDone(false);
+    setAnalysisError(null);
+    setStage('analyzing');
+    try {
+      await parseReceipt({ sessionName: name, language, image: { data: pending.base64, mimeType: pending.mimeType } });
+      setAnalysisDone(true);
+    } catch (e) {
+      setAnalysisError(e instanceof Error ? e.message : t('scanReceipt.errors.sendFailed'));
+    }
+  }, [pending, sessionName, language, setSessionNameStore, setCapture, parseReceipt, t]);
+
+  const onAnalysisFinished = useCallback(() => {
+    setStage('camera');
+    setPending(null);
+    router.push('/tabs/sessions/review-items' as any);
+  }, [router]);
+
+  const retake = useCallback(() => {
+    setPending(null);
+    setAnalysisError(null);
+    setStage('camera');
   }, []);
 
-  const goToParticipants = useCallback(() => {
-    const preparedName = sessionName.trim() || getDefaultSessionName();
-    setSessionNameStore(preparedName);
+  const goManual = useCallback(() => {
+    setSessionNameStore(sessionName.trim() || getDefaultSessionName());
     router.push('/tabs/sessions/participants');
   }, [sessionName, setSessionNameStore, router]);
 
-  const goBack = useCallback(() => {
-    router.back();
-  }, [router]);
-
-  const handleSessionNameChange = useCallback((value: string) => {
-    setIsAutoName(false);
-    setSessionName(value);
-  }, []);
-
-  const handleZoomIn = useCallback(() => {
-    setZoomLevel((prev) => Math.min(prev + 1, ZOOM_LEVELS.length - 1));
-  }, []);
-
-  const handleZoomOut = useCallback(() => {
-    setZoomLevel((prev) => Math.max(prev - 1, 0));
-  }, []);
-
-  const toggleFlash = useCallback(() => {
-    setFlashEnabled((prev) => !prev);
-  }, []);
-
-  const isProcessingReceipt = parsing || galleryProcessing;
-  const disableCapture = isProcessingReceipt || !perm?.granted || !!pendingCapture;
-  const disableGallery = isProcessingReceipt || !!pendingCapture;
-  const errorMessage = localError || parseError;
+  const shownError = error || (stage === 'camera' ? parseError : null);
 
   return (
-    <View style={S.root}>
-      {/* ===== CAMERA VIEW ===== */}
-      <View style={S.cameraWrap}>
-        {isFocused && perm?.granted ? (
-          <>
-            <CameraView
-              ref={cameraRef}
-              style={S.camera}
-              facing="back"
-              zoom={ZOOM_LEVELS[zoomLevel]}
-              enableTorch={flashEnabled}
-            />
-
-            {/* Scan Frame Overlay */}
-            <View style={S.scanOverlay}>
-              {/* Top dark area */}
-              <View style={S.overlayTop} />
-
-              {/* Middle row: left dark | frame | right dark */}
-              <View style={S.overlayMiddle}>
-                <View style={S.overlaySide} />
-                <View style={[S.scanFrame, { borderColor: accentColorDim }]}>
-                  {/* Corners */}
-                  <View style={[S.corner, S.cornerTL, { borderColor: accentColor }]} />
-                  <View style={[S.corner, S.cornerTR, { borderColor: accentColor }]} />
-                  <View style={[S.corner, S.cornerBL, { borderColor: accentColor }]} />
-                  <View style={[S.corner, S.cornerBR, { borderColor: accentColor }]} />
-
-                  {/* Animated scan line */}
-                  <RNAnimated.View
-                    style={[
-                      S.scanLine,
-                      {
-                        backgroundColor: accentColor,
-                        transform: [{ translateY: scanLineTranslateY }],
-                      },
-                    ]}
-                  />
-
-                  {/* Grid lines (subtle) */}
-                  <View style={[S.gridLineH, { top: '33%', backgroundColor: `${accentColor}15` }]} />
-                  <View style={[S.gridLineH, { top: '66%', backgroundColor: `${accentColor}15` }]} />
-                  <View style={[S.gridLineV, { left: '33%', backgroundColor: `${accentColor}15` }]} />
-                  <View style={[S.gridLineV, { left: '66%', backgroundColor: `${accentColor}15` }]} />
-                </View>
-                <View style={S.overlaySide} />
-              </View>
-
-              {/* Bottom dark area with hint */}
-              <View style={S.overlayBottom}>
-                <Animated.View entering={FadeIn.delay(300).duration(400)}>
-                  <View style={[S.scanHintBadge, { backgroundColor: accentColor }]}>  
-                    <Focus size={14} color="#FFF" />
-                    <Text style={S.scanHintText}>{t('scanReceipt.positionHint')}</Text>
-                  </View>
-                </Animated.View>
-              </View>
-            </View>
-          </>
-        ) : (
-          <YStack f={1} ai="center" jc="center" gap="$4" bg="rgba(15,23,42,0.95)">
-            {!perm ? (
-              <ActivityIndicator color="white" size="large" />
-            ) : (
-              <Animated.View entering={FadeIn.duration(400)}>
-                <YStack ai="center" gap="$4" p="$6">
-                  <View style={[S.permIconWrap, { borderColor: accentColor }]}>
-                    <CameraIcon size={48} color={accentColor} />
-                  </View>
-                  <Text color="white" fontSize={18} fontWeight="700" textAlign="center">
-                    {t('scanReceipt.cameraAccessTitle')}
-                  </Text>
-                  <Text color="$gray8" fontSize={14} textAlign="center" px="$4">
-                    {t('scanReceipt.cameraAccessMessage')}
-                  </Text>
-                  <Pressable onPress={requestPerm}>
-                    <View style={[S.permButton, { backgroundColor: accentColor }]}>
-                      <CameraIcon size={18} color="#FFF" />
-                      <Text color="white" fontWeight="700" fontSize={15}>{t('scanReceipt.enableCamera')}</Text>
-                    </View>
-                  </Pressable>
-                </YStack>
-              </Animated.View>
-            )}
-          </YStack>
-        )}
-
-        {/* Processing Overlay */}
-        {isProcessingReceipt && (
-          <View style={S.processingOverlay}>
-            <Animated.View entering={FadeIn.duration(300)}>
-              <View style={[S.processingCard, { borderColor: `${accentColor}40` }]}>
-                <Spinner size="large" color={accentColor} />
-                <Text mt="$3" color="white" fontWeight="700" fontSize={17}>
-                  {galleryProcessing ? t('scanReceipt.processingGallery') : t('scanReceipt.processingReceipt')}
-                </Text>
-                <Text mt="$1" color="$gray9" fontSize={13}>
-                  {t('scanReceipt.aiReading')}
-                </Text>
-                <View style={[S.processingProgress, { backgroundColor: `${accentColor}30` }]}>
-                  <View style={[S.processingProgressBar, { backgroundColor: accentColor }]} />
-                </View>
-              </View>
-            </Animated.View>
-          </View>
-        )}
-      </View>
-
-      {/* ===== PHOTO CONFIRMATION OVERLAY ===== */}
-      {pendingCapture && !parsing && (
-        <Animated.View entering={FadeIn.duration(300)} style={S.confirmOverlay}>
-          <Image
-            source={{ uri: pendingCapture.uri }}
-            style={S.confirmImage}
-            resizeMode="contain"
-          />
-          <LinearGradient
-            colors={['rgba(0,0,0,0)', 'rgba(15,23,42,0.92)', 'rgba(15,23,42,1)']}
-            style={S.confirmGradient}
-          />
-          <YStack style={S.confirmActions} gap="$3" px="$4" pb={insets.bottom + 16}>
-            <Text color="white" fontSize={17} fontWeight="700" textAlign="center">
-              {t('scanReceipt.confirmReceipt')}
-            </Text>
-            <XStack gap="$3">
-              <Pressable style={S.cancelBtn} onPress={handleRetake}>
-                <X size={18} color="white" />
-                <Text color="white" fontWeight="600" fontSize={14}>{t('scanReceipt.retake')}</Text>
-              </Pressable>
-              <Pressable
-                style={[S.scanBtn, { backgroundColor: accentColor }]}
-                onPress={handleConfirmScan}
-              >
-                <Scan size={20} color="white" />
-                <Text color="white" fontWeight="800" fontSize={15}>{t('scanReceipt.scanWithAi')}</Text>
-              </Pressable>
-            </XStack>
-          </YStack>
-        </Animated.View>
+    <View style={styles.root}>
+      {isFocused && perm?.granted && stage !== 'analyzing' ? (
+        <CameraView ref={cameraRef} style={StyleSheet.absoluteFill} facing="back" zoom={ZOOMS[zoom].value} enableTorch={flash} />
+      ) : (
+        <LinearGradient colors={['#0B1022', '#05070F']} style={StyleSheet.absoluteFill} />
       )}
 
-      {/* ===== TOP HEADER ===== */}
-      <View style={[S.header, { paddingTop: insets.top + 8 }]}>
-        <LinearGradient
-          colors={['rgba(0,0,0,0.7)', 'rgba(0,0,0,0)']}
-          style={StyleSheet.absoluteFill}
-        />
-        <XStack ai="center" jc="space-between" px="$4" py="$2">
-          <Pressable onPress={goBack} style={S.headerBtn}>
-            <ChevronLeft size={22} color="white" />
-          </Pressable>
+      {stage === 'camera' && (
+        <>
+          <FrameOverlay p={p} frame={frame} active={!!perm?.granted && isFocused} />
 
-          <XStack ai="center" gap="$2">
-            <Receipt size={18} color={accentColor} />
-            <Text color="white" fontWeight="700" fontSize={17}>
-              {t('scanReceipt.scannerTitle')}
-            </Text>
-          </XStack>
+          {/* top bar */}
+          <View style={[styles.topBar, { paddingTop: insets.top + 8 }]}>
+            <GlassCircle onPress={() => router.back()} label="Back">
+              <ArrowLeft size={22} color="#FFFFFF" />
+            </GlassCircle>
+            <View style={styles.titleWrap}>
+              <Text style={styles.title}>{t('scanReceipt.scanReceipt', 'Scan Receipt')}</Text>
+              <Text style={styles.subtitle}>{t('scanReceipt.subtitle', 'Capture your bill')}</Text>
+            </View>
+            <GlassCircle onPress={() => setFlash((f) => !f)} label="Flash" active={flash} accent={p.accentGradient[1]}>
+              {flash ? <Zap size={20} color="#FFFFFF" /> : <ZapOff size={20} color="#FFFFFF" />}
+            </GlassCircle>
+          </View>
 
-          {/* Flash toggle */}
-          <Pressable onPress={toggleFlash} style={[S.headerBtn, flashEnabled && { backgroundColor: `${accentColor}40` }]}>
-            <Flashlight size={20} color={flashEnabled ? accentColor : 'white'} />
-          </Pressable>
-        </XStack>
-      </View>
-
-      {/* Zoom controls hidden - minimal UI */}
-
-      {/* ===== BOTTOM ACTION PANEL - MINIMAL ===== */}
-      <Animated.View entering={SlideInDown.delay(100).springify()} style={S.bottomPanel}>
-        <LinearGradient
-          colors={['rgba(15,23,42,0)', 'rgba(15,23,42,0.92)', 'rgba(15,23,42,0.98)']}
-          style={StyleSheet.absoluteFill}
-        />
-        <YStack px="$4" pb={insets.bottom + 16} pt="$3" gap="$2">
-          {/* Compact session name input */}
-          <Input
-            value={sessionName}
-            onChangeText={handleSessionNameChange}
-            placeholder={t('scanReceipt.sessionName')}
-            height={40}
-            borderRadius={10}
-            px={12}
-            backgroundColor="rgba(255,255,255,0.06)"
-            color="white"
-            borderWidth={0.5}
-            borderColor={`${accentColor}40`}
-            fontSize={13}
-            focusStyle={{
-              borderColor: accentColor,
-              backgroundColor: 'rgba(255,255,255,0.1)',
-            }}
-          />
-
-          <XStack gap="$2">
-            <Pressable
-              style={[S.galleryBtn, disableGallery && S.disabledButton]}
-              onPress={handlePickFromGallery}
-              disabled={disableGallery}
-              accessibilityRole="button"
-              accessibilityLabel={t('scanReceipt.gallery')}
-            >
-              <ImagePlus size={24} color={accentColor} />
-              <Text fontSize={10} fontWeight="800" color={accentColor} mt="$1">
-                {t('scanReceipt.gallery')}
-              </Text>
-            </Pressable>
-
-            <Pressable
-              style={[
-                S.scanBtn,
-                { 
-                  backgroundColor: accentColor, 
-                  opacity: disableCapture ? 0.5 : 1,
-                  height: 52,
-                  borderRadius: 12,
-                }
-              ]}
-              onPress={handleCapture}
-              disabled={disableCapture}
-            >
-              <YStack f={1} ai="center" jc="center" w="100%">
-                {isProcessingReceipt ? (
-                  <>
-                    <Spinner size="small" color="#FFF" />
-                    <Text color="white" fontWeight="700" fontSize={13} mt="$1">{t('scanReceipt.processing')}</Text>
-                  </>
-                ) : (
-                  <>
-                    <CameraIcon size={22} color="white" />
-                    <Text color="white" fontWeight="800" fontSize={15}>{t('scanReceipt.takePhoto')}</Text>
-                  </>
-                )}
-              </YStack>
-            </Pressable>
-          </XStack>
-
-          {/* Error message if any */}
-          {errorMessage && (
-            <Animated.View entering={FadeInDown.duration(300)}>
-              <YStack gap="$1.5" bg="rgba(239,68,68,0.15)" px="$3" py="$2" br={10}
-                borderWidth={1} borderColor="rgba(239,68,68,0.4)">
-                <XStack ai="center" gap="$2">
-                  <AlertTriangle size={16} color="#ef4444" />
-                  <Text color="#ef4444" fontWeight="600" fontSize={12}>
-                    {errorMessage}
-                  </Text>
-                  <Pressable onPress={() => setLocalError(null)} style={{ marginLeft: 'auto' }}>
-                    <X size={14} color="#ef4444" />
-                  </Pressable>
-                </XStack>
-              </YStack>
+          {/* hint */}
+          {perm?.granted && (
+            <Animated.View entering={FadeInDown.duration(400).delay(150)} style={[styles.hintWrap, { top: Math.max(insets.top + 76, frame.top - 74) }]}>
+              <View style={[styles.hint, { borderColor: `${p.accentGradient[1]}88` }]}>
+                <View style={[styles.hintIcon, { backgroundColor: `${p.accentGradient[1]}33` }]}>
+                  <FileText size={18} color="#FFFFFF" />
+                </View>
+                <Text style={styles.hintText}>{t('scanReceipt.hint', 'Place the receipt inside the frame')}</Text>
+              </View>
+              <View style={[styles.hintArrow, { borderTopColor: 'rgba(12,16,34,0.78)' }]} />
             </Animated.View>
           )}
-        </YStack>
+
+          {/* permission */}
+          {perm && !perm.granted && (
+            <View style={[styles.permCard, { top: frame.top + frame.h * 0.2 }]}>
+              <View style={[styles.permIcon, { backgroundColor: `${p.accentGradient[1]}33` }]}>
+                <Camera size={30} color="#FFFFFF" />
+              </View>
+              <Text style={styles.permTitle}>{t('scanReceipt.cameraAccessTitle')}</Text>
+              <Text style={styles.permText}>{t('scanReceipt.cameraAccessMessage')}</Text>
+              <Pressable onPress={() => (perm.canAskAgain ? requestPerm() : Linking.openSettings())} style={styles.permBtnWrap}>
+                <LinearGradient colors={p.accentGradient} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.permBtn}>
+                  <Text style={styles.permBtnText}>{t('scanReceipt.enableCamera')}</Text>
+                </LinearGradient>
+              </Pressable>
+            </View>
+          )}
+
+          {/* bottom controls */}
+          <View style={[styles.bottom, { paddingBottom: insets.bottom + 18 }]}>
+            {shownError ? (
+              <Animated.View entering={FadeIn} exiting={FadeOut} style={styles.errorToast}>
+                <Text style={styles.errorText} numberOfLines={3}>{shownError}</Text>
+                <Pressable onPress={() => setError(null)} hitSlop={10}>
+                  <X size={16} color="#FFFFFF" />
+                </Pressable>
+              </Animated.View>
+            ) : null}
+
+            <View style={styles.nameRow}>
+              <View style={styles.namePill}>
+                <PencilLine size={14} color="rgba(255,255,255,0.75)" />
+                <TextInput
+                  value={sessionName}
+                  onChangeText={(v) => {
+                    setIsAutoName(false);
+                    setSessionName(v);
+                  }}
+                  placeholder={t('scanReceipt.sessionName')}
+                  placeholderTextColor="rgba(255,255,255,0.5)"
+                  style={styles.nameInput}
+                  selectionColor={p.accentGradient[1]}
+                  underlineColorAndroid="transparent"
+                />
+              </View>
+            </View>
+
+            <ZoomPicker p={p} value={zoom} onChange={setZoom} />
+
+            <View style={styles.controls}>
+              <SideAction label={t('scanReceipt.gallery', 'Gallery')} onPress={handleGallery} disabled={busy || parsing}>
+                <ImageIcon size={24} color="#FFFFFF" />
+              </SideAction>
+              <Shutter p={p} busy={busy} disabled={busy || parsing || !perm?.granted} onPress={handleCapture} />
+              <SideAction label={t('scanReceipt.manual', 'Manual')} onPress={goManual} disabled={busy || parsing}>
+                <PencilLine size={24} color="#FFFFFF" />
+              </SideAction>
+            </View>
+          </View>
+        </>
+      )}
+
+      {stage === 'confirm' && pending && (
+        <ConfirmStage
+          p={p}
+          image={pending}
+          topInset={insets.top}
+          bottomInset={insets.bottom}
+          title={t('scanReceipt.confirmReceipt', 'Is this your receipt?')}
+          retakeLabel={t('scanReceipt.retake', 'Retake')}
+          analyzeLabel={t('scanReceipt.scanWithAi', 'Scan with AI')}
+          onRetake={retake}
+          onAnalyze={analyze}
+        />
+      )}
+
+      {stage === 'analyzing' && pending && (
+        <AnalyzingStage
+          p={p}
+          image={pending}
+          topInset={insets.top}
+          bottomInset={insets.bottom}
+          done={analysisDone}
+          error={analysisError}
+          onFinished={onAnalysisFinished}
+          onRetry={analyze}
+          onRetake={retake}
+          onBack={retake}
+        />
+      )}
+    </View>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// camera chrome
+// ---------------------------------------------------------------------------
+function GlassCircle({
+  children,
+  onPress,
+  label,
+  active,
+  accent,
+}: {
+  children: React.ReactNode;
+  onPress: () => void;
+  label: string;
+  active?: boolean;
+  accent?: string;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      hitSlop={6}
+      style={[styles.glassCircle, active && accent ? { backgroundColor: `${accent}66`, borderColor: accent } : null]}
+    >
+      {children}
+    </Pressable>
+  );
+}
+
+/** Dimmed surround, glowing rounded corners and a sweeping scan beam. */
+function FrameOverlay({ p, frame, active }: { p: GlassPalette; frame: ReturnType<typeof useFrame>; active: boolean }) {
+  const sweep = useSharedValue(0);
+  const glow = useSharedValue(0);
+  useEffect(() => {
+    if (!active) return;
+    sweep.value = withRepeat(withTiming(1, { duration: 2400, easing: Easing.inOut(Easing.quad) }), -1, true);
+    glow.value = withRepeat(withTiming(1, { duration: 1500, easing: Easing.inOut(Easing.sin) }), -1, true);
+    return () => {
+      cancelAnimation(sweep);
+      cancelAnimation(glow);
+    };
+  }, [active]);
+  const beam = useAnimatedStyle(() => ({ transform: [{ translateY: interpolate(sweep.value, [0, 1], [0, frame.h - 6]) }] }));
+  const cornerGlow = useAnimatedStyle(() => ({ opacity: interpolate(glow.value, [0, 1], [0.75, 1]) }));
+  const accent = p.accentGradient[1];
+  const shade = 'rgba(3,6,18,0.5)';
+  const corner = 34;
+
+  return (
+    <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+      <View style={{ position: 'absolute', left: 0, right: 0, top: 0, height: frame.top, backgroundColor: shade }} />
+      <View style={{ position: 'absolute', left: 0, right: 0, top: frame.top + frame.h, bottom: 0, backgroundColor: shade }} />
+      <View style={{ position: 'absolute', left: 0, width: frame.left, top: frame.top, height: frame.h, backgroundColor: shade }} />
+      <View style={{ position: 'absolute', right: 0, width: frame.left, top: frame.top, height: frame.h, backgroundColor: shade }} />
+
+      <Animated.View style={[{ position: 'absolute', left: frame.left, top: frame.top, width: frame.w, height: frame.h }, cornerGlow]}>
+        {(['tl', 'tr', 'bl', 'br'] as const).map((k) => (
+          <View
+            key={k}
+            style={[
+              styles.corner,
+              {
+                width: corner,
+                height: corner,
+                borderColor: accent,
+                shadowColor: accent,
+                ...(k[0] === 't' ? { top: -3, borderTopWidth: 5 } : { bottom: -3, borderBottomWidth: 5 }),
+                ...(k[1] === 'l' ? { left: -3, borderLeftWidth: 5 } : { right: -3, borderRightWidth: 5 }),
+                ...(k === 'tl' ? { borderTopLeftRadius: 22 } : k === 'tr' ? { borderTopRightRadius: 22 } : k === 'bl' ? { borderBottomLeftRadius: 22 } : { borderBottomRightRadius: 22 }),
+              },
+            ]}
+          />
+        ))}
+        <View style={[StyleSheet.absoluteFill, { borderRadius: 20, borderWidth: 1, borderColor: `${accent}55` }]} />
+        {active && (
+          <Animated.View style={[styles.beamWrap, beam]}>
+            <LinearGradient
+              colors={['rgba(0,0,0,0)', `${accent}`, 'rgba(255,255,255,0.95)', `${accent}`, 'rgba(0,0,0,0)']}
+              start={{ x: 0, y: 0.5 }}
+              end={{ x: 1, y: 0.5 }}
+              style={styles.beam}
+            />
+            <LinearGradient colors={[`${accent}00`, `${accent}40`]} style={styles.beamTrail} />
+          </Animated.View>
+        )}
       </Animated.View>
     </View>
   );
 }
 
-const S = StyleSheet.create({
-  root: { flex: 1, backgroundColor: '#0f172a' },
+function ZoomPicker({ p, value, onChange }: { p: GlassPalette; value: number; onChange: (i: number) => void }) {
+  return (
+    <View style={styles.zoom}>
+      {ZOOMS.map((z, i) => {
+        const on = i === value;
+        return (
+          <Pressable key={z.label} onPress={() => onChange(i)} style={styles.zoomItem} accessibilityRole="button" accessibilityState={{ selected: on }}>
+            {on && <LinearGradient colors={p.accentGradient} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={[StyleSheet.absoluteFill, { borderRadius: 18 }]} />}
+            <Text style={[styles.zoomText, on && { color: '#FFFFFF', fontWeight: '800' }]}>{z.label}</Text>
+          </Pressable>
+        );
+      })}
+    </View>
+  );
+}
 
-  // Camera
-  cameraWrap: { flex: 1, backgroundColor: '#0f172a' },
-  camera: { flex: 1 },
+function SideAction({ children, label, onPress, disabled }: { children: React.ReactNode; label: string; onPress: () => void; disabled?: boolean }) {
+  return (
+    <Pressable onPress={onPress} disabled={disabled} style={[styles.side, disabled && { opacity: 0.5 }]} accessibilityRole="button" accessibilityLabel={label}>
+      <View style={styles.sideCircle}>{children}</View>
+      <Text style={styles.sideText} numberOfLines={1}>{label}</Text>
+    </Pressable>
+  );
+}
 
-  // Header
-  header: {
-    position: 'absolute',
-    top: 0, left: 0, right: 0,
-    zIndex: 20,
-  },
-  headerBtn: {
-    width: 40, height: 40,
-    borderRadius: 20,
-    alignItems: 'center', justifyContent: 'center',
-    backgroundColor: 'rgba(255,255,255,0.12)',
-  },
+function Shutter({ p, busy, disabled, onPress }: { p: GlassPalette; busy: boolean; disabled: boolean; onPress: () => void }) {
+  const pulse = useSharedValue(0);
+  const press = useSharedValue(1);
+  useEffect(() => {
+    pulse.value = withRepeat(withTiming(1, { duration: 1800, easing: Easing.out(Easing.quad) }), -1, false);
+    return () => cancelAnimation(pulse);
+  }, []);
+  const ring = useAnimatedStyle(() => ({ opacity: interpolate(pulse.value, [0, 1], [0.55, 0]), transform: [{ scale: interpolate(pulse.value, [0, 1], [1, 1.35]) }] }));
+  const body = useAnimatedStyle(() => ({ transform: [{ scale: press.value }] }));
+  return (
+    <View style={styles.shutterSlot}>
+      <Animated.View pointerEvents="none" style={[styles.shutterPulse, { borderColor: p.accentGradient[1] }, ring]} />
+      <Animated.View style={body}>
+        <Pressable
+          onPress={onPress}
+          disabled={disabled}
+          onPressIn={() => (press.value = withTiming(0.92, { duration: 90 }))}
+          onPressOut={() => (press.value = withTiming(1, { duration: 160 }))}
+          style={[styles.shutterRing, { borderColor: `${p.accentGradient[1]}AA` }, disabled && { opacity: 0.6 }]}
+          accessibilityRole="button"
+          accessibilityLabel="Take photo"
+        >
+          <LinearGradient colors={p.accentGradient} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.shutter}>
+            {busy ? <ActivityIndicator color="#FFFFFF" /> : <Camera size={30} color="#FFFFFF" />}
+          </LinearGradient>
+        </Pressable>
+      </Animated.View>
+    </View>
+  );
+}
 
-  // Scan overlay
-  scanOverlay: {
-    ...StyleSheet.absoluteFill,
-    flexDirection: 'column',
-  },
-  overlayTop: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.55)',
-  },
-  overlayMiddle: {
-    flexDirection: 'row',
-  },
-  overlaySide: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.55)',
-  },
-  scanFrame: {
-    width: SCAN_FRAME_WIDTH,
-    height: SCAN_FRAME_HEIGHT,
-    position: 'relative',
-    borderWidth: 1,
-    borderRadius: 4,
-  },
-  overlayBottom: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.55)',
-    alignItems: 'center',
-    paddingTop: 16,
-  },
+// ---------------------------------------------------------------------------
+// confirm
+// ---------------------------------------------------------------------------
+function ConfirmStage({
+  p,
+  image,
+  topInset,
+  bottomInset,
+  title,
+  retakeLabel,
+  analyzeLabel,
+  onRetake,
+  onAnalyze,
+}: {
+  p: GlassPalette;
+  image: CapturedReceiptImage;
+  topInset: number;
+  bottomInset: number;
+  title: string;
+  retakeLabel: string;
+  analyzeLabel: string;
+  onRetake: () => void;
+  onAnalyze: () => void;
+}) {
+  const { width, height } = useWindowDimensions();
+  const ratio = image.width && image.height ? image.height / image.width : 1.36;
+  const maxH = height - topInset - bottomInset - 230;
+  const w = Math.min(width * 0.78, maxH / ratio);
+  return (
+    <Animated.View entering={FadeIn.duration(220)} style={[StyleSheet.absoluteFill, styles.confirm]}>
+      <LinearGradient colors={['rgba(5,8,20,0.88)', 'rgba(5,8,20,0.96)']} style={StyleSheet.absoluteFill} />
+      <Text style={[styles.confirmTitle, { marginTop: topInset + 24 }]}>{title}</Text>
+      <Animated.View entering={FadeInDown.duration(350)} style={[styles.confirmImageWrap, { width: w, height: w * ratio, borderColor: `${p.accentGradient[1]}88`, shadowColor: p.accentGradient[1] }]}>
+        <Image source={{ uri: image.uri }} style={StyleSheet.absoluteFill} resizeMode="cover" />
+      </Animated.View>
+      <View style={[styles.confirmButtons, { paddingBottom: bottomInset + 20 }]}>
+        <Pressable onPress={onRetake} style={styles.retake}>
+          <RotateCcw size={18} color="#FFFFFF" />
+          <Text style={styles.retakeText}>{retakeLabel}</Text>
+        </Pressable>
+        <Pressable onPress={onAnalyze} style={styles.analyzeWrap}>
+          <LinearGradient colors={p.accentGradient} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.analyze}>
+            <Sparkles size={18} color="#FFFFFF" />
+            <Text style={styles.analyzeText}>{analyzeLabel}</Text>
+          </LinearGradient>
+        </Pressable>
+      </View>
+    </Animated.View>
+  );
+}
 
-  // Corners
-  corner: {
-    position: 'absolute',
-    width: 28,
-    height: 28,
-    borderWidth: 4,
-  },
-  cornerTL: {
-    top: -2, left: -2,
-    borderRightWidth: 0, borderBottomWidth: 0,
-    borderTopLeftRadius: 14,
-  },
-  cornerTR: {
-    top: -2, right: -2,
-    borderLeftWidth: 0, borderBottomWidth: 0,
-    borderTopRightRadius: 14,
-  },
-  cornerBL: {
-    bottom: -2, left: -2,
-    borderRightWidth: 0, borderTopWidth: 0,
-    borderBottomLeftRadius: 14,
-  },
-  cornerBR: {
-    bottom: -2, right: -2,
-    borderLeftWidth: 0, borderTopWidth: 0,
-    borderBottomRightRadius: 14,
-  },
+// ---------------------------------------------------------------------------
+// analysing
+// ---------------------------------------------------------------------------
+const STEP_KEYS = [
+  { key: 'detect', fallback: 'Detecting document', at: 0 },
+  { key: 'extract', fallback: 'Extracting text', at: 22 },
+  { key: 'categorize', fallback: 'Categorizing items', at: 55 },
+  { key: 'prepare', fallback: 'Preparing summary', at: 85 },
+];
 
-  // Scan line
-  scanLine: {
-    position: 'absolute',
-    left: 8, right: 8,
-    height: 2,
-    borderRadius: 1,
-    opacity: 0.8,
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.6,
-    shadowRadius: 8,
-  },
+function AnalyzingStage({
+  p,
+  image,
+  topInset,
+  bottomInset,
+  done,
+  error,
+  onFinished,
+  onRetry,
+  onRetake,
+  onBack,
+}: {
+  p: GlassPalette;
+  image: CapturedReceiptImage;
+  topInset: number;
+  bottomInset: number;
+  done: boolean;
+  error: string | null;
+  onFinished: () => void;
+  onRetry: () => void;
+  onRetake: () => void;
+  onBack: () => void;
+}) {
+  const { t } = useTranslation();
+  const { width } = useWindowDimensions();
+  const [progress, setProgress] = useState(0);
 
-  // Grid lines
-  gridLineH: {
-    position: 'absolute',
-    left: 0, right: 0,
-    height: 1,
-  },
-  gridLineV: {
-    position: 'absolute',
-    top: 0, bottom: 0,
-    width: 1,
-  },
+  // Indeterminate work shown honestly: progress eases toward 92% while the AI
+  // works and only completes when the server has actually answered.
+  useEffect(() => {
+    if (error) return;
+    const timer = setInterval(() => {
+      setProgress((prev) => {
+        const target = done ? 100 : 92;
+        const next = prev + (target - prev) * (done ? 0.35 : 0.035);
+        return target - next < 0.4 ? target : next;
+      });
+    }, 80);
+    return () => clearInterval(timer);
+  }, [done, error]);
 
-  // Hint badge
-  scanHintBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
-  },
-  scanHintText: {
-    color: 'white',
-    fontSize: 13,
-    fontWeight: '600',
-  },
+  useEffect(() => {
+    if (done && progress >= 100) {
+      const timer = setTimeout(onFinished, 380);
+      return () => clearTimeout(timer);
+    }
+  }, [done, progress, onFinished]);
 
-  // Permission
-  permIconWrap: {
-    width: 100, height: 100,
-    borderRadius: 50,
-    borderWidth: 3,
-    alignItems: 'center', justifyContent: 'center',
-    backgroundColor: 'rgba(255,255,255,0.05)',
-  },
-  permButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    paddingHorizontal: 24,
-    paddingVertical: 14,
-    borderRadius: 14,
-  },
+  // retry restarts the visible progress
+  const lastError = useRef(error);
+  useEffect(() => {
+    if (lastError.current && !error) setProgress(0);
+    lastError.current = error;
+  }, [error]);
 
-  // Processing
-  processingOverlay: {
-    ...StyleSheet.absoluteFill,
-    backgroundColor: 'rgba(15,23,42,0.92)',
-    alignItems: 'center', justifyContent: 'center',
-  },
-  processingCard: {
-    backgroundColor: 'rgba(30,41,59,0.95)',
-    padding: 36,
-    borderRadius: 28,
-    alignItems: 'center',
-    borderWidth: 1,
-    minWidth: 240,
-  },
-  processingProgress: {
-    width: 180,
-    height: 4,
-    borderRadius: 2,
-    marginTop: 20,
-    overflow: 'hidden',
-  },
-  processingProgressBar: {
-    width: '60%',
-    height: '100%',
-    borderRadius: 2,
-  },
+  // ---- hero motion ----
+  const float = useSharedValue(0);
+  const spin = useSharedValue(0);
+  const scan = useSharedValue(0);
+  useEffect(() => {
+    float.value = withRepeat(withTiming(1, { duration: 2600, easing: Easing.inOut(Easing.sin) }), -1, true);
+    spin.value = withRepeat(withTiming(1, { duration: 3200, easing: Easing.linear }), -1, false);
+    scan.value = withRepeat(withSequence(withTiming(1, { duration: 1500, easing: Easing.inOut(Easing.quad) }), withTiming(0, { duration: 1500, easing: Easing.inOut(Easing.quad) })), -1, false);
+    return () => {
+      cancelAnimation(float);
+      cancelAnimation(spin);
+      cancelAnimation(scan);
+    };
+  }, []);
 
-  // Side controls (zoom)
-  sideControls: {
-    position: 'absolute',
-    right: 16,
-    top: '35%',
-    zIndex: 15,
-    alignItems: 'center',
-    gap: 8,
-  },
-  sideBtn: {
-    width: 44, height: 44,
-    borderRadius: 22,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    alignItems: 'center', justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.15)',
-  },
-  zoomBadge: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 10,
-    minWidth: 40,
-    alignItems: 'center',
-  },
+  const heroW = Math.min(width * 0.5, 230);
+  const ratio = image.width && image.height ? Math.min(1.6, Math.max(1.1, image.height / image.width)) : 1.36;
+  const heroH = heroW * ratio;
 
-  // Bottom panel
-  bottomPanel: {
-    position: 'absolute',
-    bottom: 0, left: 0, right: 0,
-    zIndex: 20,
-  },
+  const paper = useAnimatedStyle(() => ({
+    transform: [
+      { perspective: 800 },
+      { translateY: interpolate(float.value, [0, 1], [-8, 8]) },
+      { rotateZ: `${interpolate(float.value, [0, 1], [-9, -5])}deg` },
+      { rotateY: `${interpolate(float.value, [0, 1], [-10, 6])}deg` },
+    ],
+  }));
+  const beam = useAnimatedStyle(() => ({ transform: [{ translateY: interpolate(scan.value, [0, 1], [0, heroH - 4]) }] }));
+  const orbit = useAnimatedStyle(() => ({ transform: [{ rotate: `${spin.value * 360}deg` }, { scaleY: 0.32 }] }));
+  const magnifier = useAnimatedStyle(() => ({
+    transform: [{ translateY: interpolate(float.value, [0, 1], [6, -10]) }, { rotate: `${interpolate(float.value, [0, 1], [-8, 8])}deg` }],
+  }));
+  const chipA = useAnimatedStyle(() => ({ transform: [{ translateY: interpolate(float.value, [0, 1], [-6, 6]) }] }));
+  const chipB = useAnimatedStyle(() => ({ transform: [{ translateY: interpolate(float.value, [0, 1], [6, -6]) }] }));
 
-  // Action buttons
-  galleryBtn: {
-    width: 72,
-    height: 52,
-    borderRadius: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: 'rgba(229,231,235,0.88)',
-    shadowColor: '#E5E7EB',
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.9,
-    shadowRadius: 18,
-    elevation: 4,
-  },
-  disabledButton: {
-    opacity: 0.5,
-  },
-  cancelBtn: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    height: 52,
-    borderRadius: 16,
-    backgroundColor: 'rgba(255,255,255,0.08)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.15)',
-  },
-  scanBtn: {
-    flex: 2,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    height: 52,
-    borderRadius: 16,
-  },
-  errorBtn: {
-    height: 36,
-    borderRadius: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
+  const accent = p.accentGradient[1];
+  const pct = Math.round(progress);
+  const stepIndex = STEP_KEYS.reduce((acc, s, i) => (progress >= s.at ? i : acc), 0);
 
-  preview: {
-    width: 32, height: 32,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.2)',
-  },
+  return (
+    <Animated.View entering={FadeIn.duration(250)} style={StyleSheet.absoluteFill}>
+      <LinearGradient colors={['#0A0F24', '#0D0A2A', '#05070F']} style={StyleSheet.absoluteFill} />
+      <LinearGradient colors={[`${accent}00`, `${accent}22`]} start={{ x: 0, y: 0.4 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill} />
 
-  // Photo confirmation overlay
-  confirmOverlay: {
-    ...StyleSheet.absoluteFill,
-    zIndex: 30,
-    backgroundColor: '#0f172a',
-  },
-  confirmImage: {
-    flex: 1,
-    width: '100%',
-  },
-  confirmGradient: {
-    position: 'absolute',
-    bottom: 0, left: 0, right: 0,
-    height: 240,
-  },
-  confirmActions: {
-    position: 'absolute',
-    bottom: 0, left: 0, right: 0,
-  },
+      {/* header */}
+      <View style={[styles.topBar, { paddingTop: topInset + 8 }]}>
+        <GlassCircle onPress={onBack} label="Back">
+          <ArrowLeft size={22} color="#FFFFFF" />
+        </GlassCircle>
+        <View style={styles.titleWrap}>
+          <Text style={styles.title}>{error ? t('scanReceipt.analysis.failedTitle', 'Scan failed') : t('scanReceipt.analysis.title', 'Scanning...')}</Text>
+          <Text style={styles.subtitle}>{t('scanReceipt.analysis.subtitle', 'Extracting receipt details')}</Text>
+        </View>
+        <View style={{ width: 52 }} />
+      </View>
+
+      {/* hero */}
+      <View style={[styles.heroArea, { height: heroH + 90 }]}>
+        <Animated.View pointerEvents="none" style={[styles.orbit, { width: heroW * 1.9, height: heroW * 1.9 }, orbit]}>
+          <Svg width={heroW * 1.9} height={heroW * 1.9}>
+            <Defs>
+              <SvgLinearGradient id="orbit" x1="0" y1="0" x2="1" y2="1">
+                <Stop offset="0%" stopColor={p.accentGradient[0]} stopOpacity={0.1} />
+                <Stop offset="50%" stopColor={accent} stopOpacity={1} />
+                <Stop offset="100%" stopColor={p.accentGradient[0]} stopOpacity={0.1} />
+              </SvgLinearGradient>
+            </Defs>
+            <Ellipse cx={heroW * 0.95} cy={heroW * 0.95} rx={heroW * 0.9} ry={heroW * 0.9} stroke="url(#orbit)" strokeWidth={5} fill="none" />
+          </Svg>
+        </Animated.View>
+
+        <Animated.View style={[styles.paper, { width: heroW, height: heroH, shadowColor: accent }, paper]}>
+          <Image source={{ uri: image.uri }} style={StyleSheet.absoluteFill} resizeMode="cover" />
+          <LinearGradient colors={[`${accent}55`, 'rgba(255,255,255,0)', `${p.accentGradient[0]}55`]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill} />
+          {!error && (
+            <Animated.View style={[styles.paperBeam, beam]}>
+              <LinearGradient colors={['rgba(0,0,0,0)', accent, '#FFFFFF', accent, 'rgba(0,0,0,0)']} start={{ x: 0, y: 0.5 }} end={{ x: 1, y: 0.5 }} style={{ flex: 1 }} />
+            </Animated.View>
+          )}
+        </Animated.View>
+
+        <Animated.View style={[styles.chip, { left: width * 0.06, top: heroH * 0.35 }, chipA]}>
+          <FileText size={26} color={accent} />
+        </Animated.View>
+        <Animated.View style={[styles.chip, { right: width * 0.08, top: heroH * 0.72 }, chipB]}>
+          <BarChart3 size={26} color={accent} />
+        </Animated.View>
+        <Animated.View style={[styles.magnifier, { right: width * 0.12, top: heroH * 0.12 }, magnifier]}>
+          <Search size={46} color={accent} strokeWidth={2.6} />
+        </Animated.View>
+      </View>
+
+      {/* status */}
+      <View style={[styles.statusArea, { paddingBottom: bottomInset + 24 }]}>
+        <View style={[styles.statusCard, { borderColor: `${accent}44` }]}>
+          {error ? (
+            <View style={[styles.errorBadge]}>
+              <X size={26} color="#F87171" />
+            </View>
+          ) : (
+            <ProgressRing progress={progress} color={accent} colorB={p.accentGradient[0]} />
+          )}
+          <View style={{ flex: 1 }}>
+            <Text style={styles.statusTitle} numberOfLines={1}>
+              {error ? t('scanReceipt.analysis.failed', "Couldn't read the receipt") : t('scanReceipt.analysis.status', 'Analyzing receipt...')}
+            </Text>
+            <Text style={styles.statusSub} numberOfLines={2}>
+              {error ?? t('scanReceipt.analysis.statusSub', 'Reading text and identifying items')}
+            </Text>
+          </View>
+          {!error && <Text style={[styles.statusPct, { color: accent }]}>{pct}%</Text>}
+        </View>
+
+        {error ? (
+          <View style={styles.actionsRow}>
+            <Pressable onPress={onRetake} style={styles.retake}>
+              <Camera size={18} color="#FFFFFF" />
+              <Text style={styles.retakeText}>{t('scanReceipt.retake', 'Retake')}</Text>
+            </Pressable>
+            <Pressable onPress={onRetry} style={styles.analyzeWrap}>
+              <LinearGradient colors={p.accentGradient} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.analyze}>
+                <RotateCcw size={18} color="#FFFFFF" />
+                <Text style={styles.analyzeText}>{t('scanReceipt.analysis.tryAgain', 'Try again')}</Text>
+              </LinearGradient>
+            </Pressable>
+          </View>
+        ) : (
+          <View style={styles.steps}>
+            {STEP_KEYS.map((s, i) => {
+              const state = i < stepIndex || (done && progress >= 100) ? 'done' : i === stepIndex ? 'active' : 'todo';
+              return (
+                <StepRow
+                  key={s.key}
+                  label={t(`scanReceipt.analysis.steps.${s.key}`, s.fallback)}
+                  state={state}
+                  color={accent}
+                />
+              );
+            })}
+          </View>
+        )}
+      </View>
+    </Animated.View>
+  );
+}
+
+function ProgressRing({ progress, color, colorB }: { progress: number; color: string; colorB: string }) {
+  const size = 58;
+  const r = 24;
+  const c = 2 * Math.PI * r;
+  const v = useSharedValue(0);
+  const spin = useSharedValue(0);
+  useEffect(() => {
+    v.value = withTiming(progress / 100, { duration: 200 });
+  }, [progress]);
+  useEffect(() => {
+    spin.value = withRepeat(withTiming(1, { duration: 1400, easing: Easing.linear }), -1, false);
+    return () => cancelAnimation(spin);
+  }, []);
+  const props = useAnimatedProps(() => ({ strokeDashoffset: c * (1 - Math.max(0.08, v.value)) }));
+  const rot = useAnimatedStyle(() => ({ transform: [{ rotate: `${spin.value * 360}deg` }] }));
+  return (
+    <Animated.View style={[{ width: size, height: size }, rot]}>
+      <Svg width={size} height={size}>
+        <Defs>
+          <SvgLinearGradient id="ring" x1="0" y1="0" x2="1" y2="1">
+            <Stop offset="0%" stopColor={colorB} />
+            <Stop offset="100%" stopColor={color} />
+          </SvgLinearGradient>
+        </Defs>
+        <Circle cx={size / 2} cy={size / 2} r={r} stroke="rgba(255,255,255,0.12)" strokeWidth={5} fill="none" />
+        <AnimatedCircle
+          cx={size / 2}
+          cy={size / 2}
+          r={r}
+          stroke="url(#ring)"
+          strokeWidth={5}
+          strokeLinecap="round"
+          fill="none"
+          strokeDasharray={c}
+          animatedProps={props}
+          transform={`rotate(-90 ${size / 2} ${size / 2})`}
+        />
+      </Svg>
+    </Animated.View>
+  );
+}
+
+function StepRow({ label, state, color }: { label: string; state: 'done' | 'active' | 'todo'; color: string }) {
+  const pulse = useSharedValue(0);
+  useEffect(() => {
+    if (state !== 'active') {
+      cancelAnimation(pulse);
+      pulse.value = 0;
+      return;
+    }
+    pulse.value = withRepeat(withTiming(1, { duration: 900, easing: Easing.inOut(Easing.sin) }), -1, true);
+    return () => cancelAnimation(pulse);
+  }, [state]);
+  const dot = useAnimatedStyle(() => ({ transform: [{ scale: interpolate(pulse.value, [0, 1], [0.8, 1.15]) }] }));
+  return (
+    <View style={styles.step}>
+      <View
+        style={[
+          styles.stepBullet,
+          state === 'done' && { backgroundColor: color, borderColor: color },
+          state === 'active' && { borderColor: color },
+        ]}
+      >
+        {state === 'done' && (
+          <Animated.View entering={FadeIn.duration(200)}>
+            <Check size={14} color="#FFFFFF" strokeWidth={3} />
+          </Animated.View>
+        )}
+        {state === 'active' && <Animated.View style={[styles.stepDot, { backgroundColor: color }, dot]} />}
+      </View>
+      <Text style={[styles.stepText, state === 'todo' && { color: 'rgba(255,255,255,0.45)' }, state === 'active' && { color: '#FFFFFF', fontWeight: '600' }]}>
+        {label}
+      </Text>
+    </View>
+  );
+}
+
+const glassDark = 'rgba(12,16,34,0.62)';
+const glassBorder = 'rgba(255,255,255,0.18)';
+
+const styles = StyleSheet.create({
+  root: { flex: 1, backgroundColor: '#05070F' },
+  topBar: { position: 'absolute', left: 0, right: 0, top: 0, paddingHorizontal: 18, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', zIndex: 5 },
+  glassCircle: { width: 52, height: 52, borderRadius: 26, backgroundColor: glassDark, borderWidth: 1, borderColor: glassBorder, alignItems: 'center', justifyContent: 'center' },
+  titleWrap: { alignItems: 'center', flex: 1 },
+  title: { color: '#FFFFFF', fontSize: 22, fontWeight: '800', letterSpacing: -0.3 },
+  subtitle: { color: 'rgba(255,255,255,0.8)', fontSize: 13, marginTop: 2 },
+  hintWrap: { position: 'absolute', alignSelf: 'center', alignItems: 'center', zIndex: 4 },
+  hint: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 12, paddingHorizontal: 16, borderRadius: 18, borderWidth: 1, backgroundColor: 'rgba(12,16,34,0.78)' },
+  hintIcon: { width: 34, height: 34, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
+  hintText: { color: '#FFFFFF', fontSize: 14, fontWeight: '500', maxWidth: 190 },
+  hintArrow: { width: 0, height: 0, borderLeftWidth: 9, borderRightWidth: 9, borderTopWidth: 9, borderLeftColor: 'transparent', borderRightColor: 'transparent' },
+  corner: { position: 'absolute', shadowOpacity: 0.9, shadowRadius: 10, shadowOffset: { width: 0, height: 0 }, elevation: 6 },
+  beamWrap: { position: 'absolute', left: -10, right: -10, top: 0, height: 60, marginTop: -54 },
+  beam: { position: 'absolute', left: 0, right: 0, bottom: 0, height: 4, borderRadius: 2 },
+  beamTrail: { position: 'absolute', left: 10, right: 10, bottom: 4, height: 50 },
+  permCard: { position: 'absolute', left: 32, right: 32, padding: 22, borderRadius: 24, borderWidth: 1, borderColor: glassBorder, backgroundColor: 'rgba(12,16,34,0.85)', alignItems: 'center', gap: 10 },
+  permIcon: { width: 64, height: 64, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
+  permTitle: { color: '#FFFFFF', fontSize: 18, fontWeight: '700', textAlign: 'center' },
+  permText: { color: 'rgba(255,255,255,0.75)', fontSize: 14, textAlign: 'center', lineHeight: 20 },
+  permBtnWrap: { borderRadius: 16, overflow: 'hidden', marginTop: 6, alignSelf: 'stretch' },
+  permBtn: { height: 50, alignItems: 'center', justifyContent: 'center' },
+  permBtnText: { color: '#FFFFFF', fontSize: 16, fontWeight: '700' },
+  bottom: { position: 'absolute', left: 0, right: 0, bottom: 0, alignItems: 'center', gap: 14 },
+  errorToast: { flexDirection: 'row', alignItems: 'center', gap: 10, marginHorizontal: 20, paddingVertical: 10, paddingHorizontal: 14, borderRadius: 14, backgroundColor: 'rgba(220,38,38,0.85)' },
+  errorText: { color: '#FFFFFF', fontSize: 13, flexShrink: 1 },
+  nameRow: { width: '100%', alignItems: 'center' },
+  namePill: { flexDirection: 'row', alignItems: 'center', gap: 8, height: 38, paddingHorizontal: 14, borderRadius: 19, backgroundColor: glassDark, borderWidth: 1, borderColor: glassBorder, maxWidth: '80%' },
+  nameInput: { color: '#FFFFFF', fontSize: 14, minWidth: 140, paddingVertical: 0 },
+  zoom: { flexDirection: 'row', padding: 4, borderRadius: 22, backgroundColor: glassDark, borderWidth: 1, borderColor: glassBorder },
+  zoomItem: { width: 54, height: 36, alignItems: 'center', justifyContent: 'center', borderRadius: 18 },
+  zoomText: { color: 'rgba(255,255,255,0.85)', fontSize: 14, fontWeight: '600' },
+  controls: { width: '100%', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-around', paddingHorizontal: 18, marginTop: 4 },
+  side: { alignItems: 'center', gap: 6, width: 80 },
+  sideCircle: { width: 58, height: 58, borderRadius: 29, backgroundColor: glassDark, borderWidth: 1, borderColor: glassBorder, alignItems: 'center', justifyContent: 'center' },
+  sideText: { color: '#FFFFFF', fontSize: 13, fontWeight: '600' },
+  shutterSlot: { width: 110, height: 110, alignItems: 'center', justifyContent: 'center' },
+  shutterPulse: { position: 'absolute', width: 96, height: 96, borderRadius: 48, borderWidth: 3 },
+  shutterRing: { width: 96, height: 96, borderRadius: 48, borderWidth: 4, padding: 6 },
+  shutter: { flex: 1, borderRadius: 40, alignItems: 'center', justifyContent: 'center' },
+  confirm: { alignItems: 'center' },
+  confirmTitle: { color: '#FFFFFF', fontSize: 20, fontWeight: '700' },
+  confirmImageWrap: { marginTop: 20, borderRadius: 22, borderWidth: 2, overflow: 'hidden', shadowOpacity: 0.6, shadowRadius: 24, shadowOffset: { width: 0, height: 0 }, elevation: 10, backgroundColor: '#111827' },
+  confirmButtons: { position: 'absolute', left: 20, right: 20, bottom: 0, flexDirection: 'row', gap: 12 },
+  actionsRow: { flexDirection: 'row', gap: 12 },
+  retake: { flex: 1, height: 56, borderRadius: 18, borderWidth: 1, borderColor: glassBorder, backgroundColor: glassDark, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
+  retakeText: { color: '#FFFFFF', fontSize: 15, fontWeight: '600' },
+  analyzeWrap: { flex: 1.4, borderRadius: 18, overflow: 'hidden' },
+  analyze: { height: 56, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
+  analyzeText: { color: '#FFFFFF', fontSize: 16, fontWeight: '800' },
+  heroArea: { marginTop: 130, alignItems: 'center', justifyContent: 'center' },
+  orbit: { position: 'absolute', alignItems: 'center', justifyContent: 'center' },
+  paper: { borderRadius: 14, overflow: 'hidden', backgroundColor: '#E5E7EB', shadowOpacity: 0.7, shadowRadius: 26, shadowOffset: { width: 0, height: 0 }, elevation: 14 },
+  paperBeam: { position: 'absolute', left: -6, right: -6, top: 0, height: 4 },
+  chip: { position: 'absolute', width: 64, height: 64, borderRadius: 32, backgroundColor: glassDark, borderWidth: 1, borderColor: glassBorder, alignItems: 'center', justifyContent: 'center' },
+  magnifier: { position: 'absolute' },
+  statusArea: { flex: 1, justifyContent: 'flex-end', paddingHorizontal: 20 },
+  statusCard: { flexDirection: 'row', alignItems: 'center', gap: 14, padding: 16, borderRadius: 22, borderWidth: 1, backgroundColor: glassDark, marginBottom: 18 },
+  statusTitle: { color: '#FFFFFF', fontSize: 17, fontWeight: '700' },
+  statusSub: { color: 'rgba(255,255,255,0.7)', fontSize: 13, marginTop: 3 },
+  statusPct: { fontSize: 22, fontWeight: '800' },
+  errorBadge: { width: 58, height: 58, borderRadius: 29, backgroundColor: 'rgba(239,68,68,0.18)', alignItems: 'center', justifyContent: 'center' },
+  steps: { gap: 16, paddingHorizontal: 8, paddingBottom: 6 },
+  step: { flexDirection: 'row', alignItems: 'center', gap: 14 },
+  stepBullet: { width: 26, height: 26, borderRadius: 13, borderWidth: 2, borderColor: 'rgba(255,255,255,0.25)', alignItems: 'center', justifyContent: 'center' },
+  stepDot: { width: 12, height: 12, borderRadius: 6 },
+  stepText: { color: 'rgba(255,255,255,0.75)', fontSize: 16 },
 });
