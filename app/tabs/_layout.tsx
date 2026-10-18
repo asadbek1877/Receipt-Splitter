@@ -16,6 +16,7 @@ import UserAvatar from '@/shared/ui/UserAvatar';
 import { useFriendsStore } from '@/features/friends/model/friends.store';
 import { borderRadius } from '@/shared/ui/JapaneseTheme';
 import { useThemeColors } from '@/shared/lib/stores/theme-store';
+import GlassTabBar from '@/shared/ui/glass/GlassTabBar';
 
 // --- Reusable Badge Component ---
 function DotBadge({ value, colors }: { value?: number; colors: ReturnType<typeof useThemeColors> }) {
@@ -162,6 +163,8 @@ export default function TabLayout() {
 
   return (
     <Tabs
+      // one shared floating glass tab bar for Home / History / Analytics / Profile
+      tabBar={(props) => <GlassTabBar {...(props as any)} />}
       screenOptions={{
         header: (props) => <GlobalTabsHeader {...props} languageKey={languageKey} />,
         tabBarStyle: { display: 'none' },
@@ -217,7 +220,7 @@ export default function TabLayout() {
       <Tabs.Screen name="sessions/participants" options={{ href: null, title: participantsTitle }} />
       <Tabs.Screen name="sessions/items-split" options={{ href: null, title: itemsSplitTitle }} />
       <Tabs.Screen name="sessions/finish" options={{ href: null, title: finishTitle }} />
-      <Tabs.Screen name="sessions/history/index" options={{ href: null, title: historyTitle }} />
+      <Tabs.Screen name="sessions/history/index" options={{ href: null, title: historyTitle, headerShown: false }} />
       <Tabs.Screen name="sessions/history/[historyId]" options={{ href: null, title: historyDetailsTitle }} />
 
       <Tabs.Screen name="analytics/index" options={{ href: null, title: t('analytics.title', 'Analytics') }} />

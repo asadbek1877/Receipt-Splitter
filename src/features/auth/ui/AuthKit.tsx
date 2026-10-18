@@ -244,8 +244,8 @@ export function useLoop(duration: number, delay = 0) {
 
 // ---------------------------------------------------------------------------
 // Liquid Glass (functional layer only: back button, fields, social, footer).
-//  - real backdrop blur on iOS and Android (Android blurs the BlurTargetView
-//    that holds the background, see AuthScreen)
+//  - live backdrop blur on iOS only; on Android a per-frame blur of the animated
+//    background stuttered, so there glass is fill + sheen + rim (see GlassKit LIVE_BLUR)
 //  - translucent fill + diagonal specular sheen + bottom caustic glow
 //  - light rim that is bright on top and fades down the sides
 //  - blur mounts only after the screen transition finishes, so navigation
@@ -294,7 +294,7 @@ export function GlassLayers({
 
   return (
     <View pointerEvents="none" style={StyleSheet.absoluteFill}>
-      {ready && (
+      {Platform.OS === 'ios' && ready && (
         <Animated.View entering={FadeIn.duration(220)} style={StyleSheet.absoluteFill}>
           <BlurView
             intensity={intensity}

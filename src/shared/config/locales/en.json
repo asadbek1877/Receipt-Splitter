@@ -577,5 +577,17 @@
       "sendFailed": "Something went wrong while sending the receipt",
       "galleryFailed": "Something went wrong while uploading the receipt image"
     }
+  },
+  "historyScreen": {
+    "eyebrow": "Your bills",
+    "subtitle": "Every bill you have split, in one place",
+    "total": "Total split",
+    "average": "Average",
+    "all": "All",
+    "mine": "Created by me",
+    "empty": "No bills yet",
+    "yours": "Yours",
+    "finalized": "Settled",
+    "inProgress": "In progress"
   }
 }

@@ -13,6 +13,7 @@ import { refreshSplitterStoreFromBackend } from '@/features/receipt/api/receipts
 import { useSessionsHistoryStore } from '@/features/sessions/model/history.store';
 import type { SessionHistoryEntry } from '@/features/sessions/api/history.api';
 import { useSplitterStore } from '@/shared/store/useSplitterStore';
+import { TAB_BAR_SPACE } from '@/shared/ui/glass/GlassTabBar';
 
 const screenWidth = Dimensions.get('window').width;
 type Period = 'day' | 'week' | 'month' | 'all';
@@ -210,7 +211,7 @@ export default function AnalyticsPage() {
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.bg }}>
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ padding: 16, paddingBottom: 36 }}>
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ padding: 16, paddingBottom: TAB_BAR_SPACE + 40 }}>
         <YStack gap="$3">
           <YStack bg={colors.cardSoft} br={16} p="$4" gap="$2" borderWidth={1} borderColor={colors.cardBorder}>
             <XStack ai="center" gap="$2">

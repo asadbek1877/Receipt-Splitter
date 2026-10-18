@@ -66,6 +66,7 @@ import {
   type GlassPalette,
   type Tile,
 } from '@/shared/ui/glass/GlassKit';
+import { TAB_BAR_SPACE } from '@/shared/ui/glass/GlassTabBar';
 import { useFriendsStore } from '@/features/friends/model/friends.store';
 import { changePassword, resetAvatar, updateAvatar, updateEmail, updateUsername, uploadAvatar } from '@/features/auth/api';
 
@@ -279,7 +280,7 @@ export default function ProfileScreen() {
       <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
         <ScrollView
           ref={scrollRef}
-          contentContainerStyle={{ paddingBottom: insets.bottom + 32 }}
+          contentContainerStyle={{ paddingBottom: insets.bottom + TAB_BAR_SPACE + 16 }}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >

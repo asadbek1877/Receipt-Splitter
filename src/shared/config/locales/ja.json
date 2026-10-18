@@ -577,5 +577,17 @@
       "sendFailed": "Something went wrong while sending the receipt",
       "galleryFailed": "Something went wrong while uploading the receipt image"
     }
+  },
+  "historyScreen": {
+    "eyebrow": "あなたの伝票",
+    "subtitle": "割り勘したすべての伝票",
+    "total": "合計",
+    "average": "平均",
+    "all": "すべて",
+    "mine": "自分が作成",
+    "empty": "まだ伝票はありません",
+    "yours": "自分",
+    "finalized": "精算済み",
+    "inProgress": "進行中"
   }
 }

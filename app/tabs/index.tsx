@@ -1,6 +1,6 @@
 // app/tabs/index.tsx — Home: balance, quick actions, this month, recent activity
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import { RefreshControl, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
@@ -13,13 +13,11 @@ import {
   Clock3,
   Eye,
   EyeOff,
-  Home as HomeIcon,
   Moon,
   Receipt,
   ScanLine,
   Settings,
   Sun,
-  User as UserIcon,
   UserPlus,
   Users2,
   Wallet,
@@ -37,7 +35,6 @@ import Animated, {
   withDelay,
   withRepeat,
   withSequence,
-  withSpring,
   withTiming,
 } from 'react-native-reanimated';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -59,6 +56,7 @@ import {
   type GlassPalette,
   type Tile,
 } from '@/shared/ui/glass/GlassKit';
+import { TAB_BAR_SPACE } from '@/shared/ui/glass/GlassTabBar';
 
 const HOME_HISTORY_LIMIT = 30;
 const DEFAULT_CURRENCY = 'UZS';
@@ -241,7 +239,7 @@ export default function HomePage() {
   return (
     <GlassScreen p={p}>
       <ScrollView
-        contentContainerStyle={{ paddingTop: insets.top + 6, paddingBottom: insets.bottom + 120 }}
+        contentContainerStyle={{ paddingTop: insets.top + 6, paddingBottom: insets.bottom + TAB_BAR_SPACE + 16 }}
         showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={p.accentGradient[1]} colors={[p.accentGradient[1]]} />
@@ -419,20 +417,6 @@ export default function HomePage() {
         </View>
       </ScrollView>
 
-      <TabBar
-        p={p}
-        bottom={insets.bottom}
-        labels={{
-          home: t('navigation.tabs.home', 'Home'),
-          history: t('home.nav.history', 'History'),
-          stats: t('analytics.title', 'Analytics'),
-          profile: t('profile.title', 'Profile'),
-        }}
-        onNavigate={(tab) =>
-          router.push(tab === 'history' ? '/tabs/sessions/history' : tab === 'stats' ? '/tabs/analytics' : '/tabs/profile')
-        }
-        onScan={go('/tabs/scan-receipt')}
-      />
     </GlassScreen>
   );
 }
@@ -773,122 +757,6 @@ function HeroCards({ p }: { p: P }) {
   );
 }
 
-/**
- * Apple-style floating tab bar: a Liquid Glass capsule of tabs with a glass
- * "lens" that glides (and stretches) to the tapped tab, plus a separate round
- * glass button for the primary action — tabs navigate, the button acts.
- */
-type TabKey = 'home' | 'history' | 'stats' | 'profile';
-const TAB_ORDER: TabKey[] = ['home', 'history', 'stats', 'profile'];
-
-function TabBar({
-  p,
-  bottom,
-  labels,
-  onNavigate,
-  onScan,
-}: {
-  p: P;
-  bottom: number;
-  labels: Record<TabKey, string>;
-  onNavigate: (tab: TabKey) => void;
-  onScan: () => void;
-}) {
-  const active = useAmbientActive();
-  const [barWidth, setBarWidth] = useState(0);
-  const [current, setCurrent] = useState<TabKey>('home');
-  const index = useSharedValue(0);
-  const stretch = useSharedValue(0);
-  const glow = useSharedValue(0);
-
-  // Back on Home: the lens returns to the Home tab.
-  useEffect(() => {
-    if (active) {
-      setCurrent('home');
-      index.value = withSpring(0, { damping: 18, stiffness: 180 });
-    }
-  }, [active]);
-
-  useEffect(() => {
-    if (!active) return;
-    glow.value = withRepeat(withTiming(1, { duration: 2200, easing: Easing.inOut(Easing.sin) }), -1, true);
-    return () => cancelAnimation(glow);
-  }, [active]);
-
-  const slot = barWidth > 0 ? (barWidth - 12) / TAB_ORDER.length : 0;
-
-  const lensStyle = useAnimatedStyle(() => ({
-    width: slot,
-    transform: [
-      { translateX: 6 + index.value * slot },
-      { scaleX: 1 + stretch.value * 0.28 },
-      { scaleY: 1 - stretch.value * 0.1 },
-    ],
-  }));
-  const fabGlow = useAnimatedStyle(() => ({
-    opacity: interpolate(glow.value, [0, 1], [0.25, 0.6]),
-    transform: [{ scale: interpolate(glow.value, [0, 1], [1, 1.12]) }],
-  }));
-
-  const press = (tab: TabKey) => {
-    const i = TAB_ORDER.indexOf(tab);
-    setCurrent(tab);
-    // liquid move: stretch while travelling, settle with a spring
-    stretch.value = withSequence(withTiming(1, { duration: 120 }), withSpring(0, { damping: 12, stiffness: 220 }));
-    index.value = withSpring(i, { damping: 16, stiffness: 200, mass: 0.8 });
-    if (tab !== 'home') setTimeout(() => onNavigate(tab), 190);
-  };
-
-  const icons: Record<TabKey, React.ComponentType<{ size?: number; color?: string }>> = {
-    home: HomeIcon,
-    history: Clock3,
-    stats: BarChart3,
-    profile: UserIcon,
-  };
-
-  return (
-    <View pointerEvents="box-none" style={[styles.tabWrap, { bottom: Math.max(bottom, 12) + 4 }]}>
-      <View style={[styles.tabBar, { borderColor: p.cardBorder }]} onLayout={(e) => setBarWidth(e.nativeEvent.layout.width)}>
-        <Glass p={p} fill={p.card} radius={34} />
-        {slot > 0 && (
-          <Animated.View pointerEvents="none" style={[styles.lens, { borderColor: `${p.accentGradient[1]}55` }, lensStyle]}>
-            <Glass p={p} fill={`${p.accentGradient[1]}22`} radius={26} />
-          </Animated.View>
-        )}
-        {TAB_ORDER.map((tab) => {
-          const Icon = icons[tab];
-          const selected = current === tab;
-          return (
-            <Pressable
-              key={tab}
-              onPress={() => press(tab)}
-              style={styles.tabItem}
-              accessibilityRole="tab"
-              accessibilityState={{ selected }}
-              accessibilityLabel={labels[tab]}
-            >
-              <Icon size={22} color={selected ? p.accentGradient[1] : p.text} />
-              <Text style={[styles.tabLabel, { color: selected ? p.accentGradient[1] : p.sub }]} numberOfLines={1}>
-                {labels[tab]}
-              </Text>
-            </Pressable>
-          );
-        })}
-      </View>
-
-      <View style={styles.fabSlot}>
-        <Animated.View pointerEvents="none" style={[styles.fabGlow, { backgroundColor: p.accentGradient[1] }, fabGlow]} />
-        <PressScale onPress={onScan} style={[styles.fab, { borderColor: p.cardBorder }]}>
-          <Glass p={p} fill={p.card} radius={34} />
-          <LinearGradient colors={p.accentGradient} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.fabInner}>
-            <ScanLine size={24} color="#FFFFFF" />
-          </LinearGradient>
-        </PressScale>
-      </View>
-    </View>
-  );
-}
-
 const styles = StyleSheet.create({
   topBar: { height: 60, paddingHorizontal: 18, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   brand: { flexDirection: 'row', alignItems: 'center', gap: 8 },
@@ -958,13 +826,4 @@ const styles = StyleSheet.create({
   emptyText: { fontSize: 14 },
   settingsLink: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: 18, paddingVertical: 8 },
   settingsText: { fontSize: 14 },
-  tabWrap: { position: 'absolute', left: 14, right: 14, flexDirection: 'row', alignItems: 'center', gap: 10 },
-  tabBar: { flex: 1, height: 68, borderRadius: 34, borderWidth: 1, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 6, overflow: 'hidden' },
-  lens: { position: 'absolute', left: 0, top: 6, bottom: 6, borderRadius: 26, borderWidth: 1, overflow: 'hidden' },
-  tabItem: { flex: 1, height: '100%', alignItems: 'center', justifyContent: 'center', gap: 3 },
-  tabLabel: { fontSize: 11, fontWeight: '600' },
-  fabSlot: { width: 68, height: 68, alignItems: 'center', justifyContent: 'center' },
-  fabGlow: { position: 'absolute', width: 64, height: 64, borderRadius: 32 },
-  fab: { width: 68, height: 68, borderRadius: 34, borderWidth: 1, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
-  fabInner: { width: 52, height: 52, borderRadius: 26, alignItems: 'center', justifyContent: 'center' },
 });

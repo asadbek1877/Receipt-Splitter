@@ -577,5 +577,17 @@
       "sendFailed": "Chekni yuborishda xatolik yuz berdi",
       "galleryFailed": "Galereyadan chek rasmini yuklashda xatolik yuz berdi"
     }
+  },
+  "historyScreen": {
+    "eyebrow": "Cheklaringiz",
+    "subtitle": "Bo'lingan barcha cheklar bir joyda",
+    "total": "Jami bo'lingan",
+    "average": "O'rtacha",
+    "all": "Hammasi",
+    "mine": "Men yaratgan",
+    "empty": "Hali cheklar yo'q",
+    "yours": "Sizniki",
+    "finalized": "Yakunlangan",
+    "inProgress": "Jarayonda"
   }
 }

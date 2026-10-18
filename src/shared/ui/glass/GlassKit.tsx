@@ -10,6 +10,7 @@
 import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
 import {
   AccessibilityInfo,
+  Platform,
   ActivityIndicator,
   Image,
   Pressable,
@@ -51,6 +52,8 @@ export const GLASS_PALETTES = {
     orbOpacity: 0.55,
     /** whole-background blur (expo-blur intensity) */
     bgBlur: 35,
+    /** extra frost under glass where there is no live blur (Android) */
+    glassFallback: 'rgba(255,255,255,0.38)',
     glassTint: 'light' as 'light' | 'dark',
     glassHighlight: ['rgba(255,255,255,0.8)', 'rgba(255,255,255,0)'] as Pair,
     glassCaustic: 'rgba(255,255,255,0.5)',
@@ -96,6 +99,8 @@ export const GLASS_PALETTES = {
     orbOpacity: 0.32,
     /** whole-background blur (expo-blur intensity) */
     bgBlur: 30,
+    /** extra frost under glass where there is no live blur (Android) */
+    glassFallback: 'rgba(30,41,82,0.45)',
     glassTint: 'dark' as 'light' | 'dark',
     glassHighlight: ['rgba(255,255,255,0.16)', 'rgba(255,255,255,0)'] as Pair,
     glassCaustic: 'rgba(167,139,250,0.12)',
@@ -139,6 +144,15 @@ export type GlassPalette = (typeof GLASS_PALETTES)['light'];
 type Palette = GlassPalette;
 
 /** Palette for the current theme. */
+/**
+ * Live backdrop blur only where the OS composites it cheaply (iOS).
+ * On Android every blur view re-renders its backdrop each frame the animated
+ * background moves, which is what made scrolling and theme switches stutter.
+ * There, glass is drawn with a denser translucent fill + sheen + rim instead,
+ * over a background whose shapes are already soft (pre-blurred).
+ */
+export const LIVE_BLUR = Platform.OS === 'ios';
+
 export function useGlassPalette() {
   const theme = useAppStore((st) => st.theme);
   const isDark = theme === 'dark';
@@ -181,22 +195,14 @@ export function GlassScreen({ p, children }: { p: GlassPalette; children: React.
 }
 
 
-/** Softens the whole animated background (≈30–35%) once the screen has settled. */
+/**
+ * Softens the whole animated background. The orbs are drawn pre-blurred
+ * (radial gradients), so a light veil in the page colour is enough — no
+ * full-screen blur view, which was the most expensive layer on Android.
+ */
 function BackdropBlur({ p }: { p: GlassPalette }) {
-  const { target, ready, reduce } = useContext(GlassContext);
-  if (reduce || !ready) return null;
-  return (
-    <Animated.View entering={FadeIn.duration(450)} pointerEvents="none" style={StyleSheet.absoluteFill}>
-      <BlurView
-        intensity={p.bgBlur}
-        tint="default"
-        blurMethod="dimezisBlurViewSdk31Plus"
-        blurReductionFactor={3}
-        blurTarget={target ?? undefined}
-        style={StyleSheet.absoluteFill}
-      />
-    </Animated.View>
-  );
+  const veil = Math.min(0.45, p.bgBlur / 100);
+  return <View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: p.bg, opacity: veil }]} />;
 }
 
 // ---------------------------------------------------------------------------
@@ -207,8 +213,14 @@ function BackdropBlur({ p }: { p: GlassPalette }) {
 // over the screen (UI thread), switch the theme behind it, wait two frames for
 // the re-render to land, then fade the veil out.
 // ---------------------------------------------------------------------------
-type ThemeFadeState = { color: string | null; visible: boolean; busy: boolean };
-const useThemeFadeStore = create<ThemeFadeState>(() => ({ color: null, visible: false, busy: false }));
+type ThemeFadeState = { color: string | null; visible: boolean; busy: boolean; pending: 'light' | 'dark' | null };
+const useThemeFadeStore = create<ThemeFadeState>(() => ({ color: null, visible: false, busy: false, pending: null }));
+
+function finishThemeFade() {
+  if (!useThemeFadeStore.getState().visible) return;
+  useThemeFadeStore.setState({ visible: false, pending: null });
+  setTimeout(() => useThemeFadeStore.setState({ busy: false, color: null }), VEIL_OUT_MS);
+}
 
 const VEIL_IN_MS = 160;
 const VEIL_OUT_MS = 340;
@@ -219,23 +231,26 @@ export function useSmoothThemeToggle() {
   return () => {
     if (useThemeFadeStore.getState().busy) return;
     const next = theme === 'dark' ? 'light' : 'dark';
-    useThemeFadeStore.setState({ color: GLASS_PALETTES[next].bg, visible: true, busy: true });
-    setTimeout(() => {
-      setTheme(next);
-      requestAnimationFrame(() =>
-        requestAnimationFrame(() => {
-          useThemeFadeStore.setState({ visible: false });
-          setTimeout(() => useThemeFadeStore.setState({ busy: false, color: null }), VEIL_OUT_MS);
-        }),
-      );
-    }, VEIL_IN_MS + 10);
+    useThemeFadeStore.setState({ color: GLASS_PALETTES[next].bg, visible: true, busy: true, pending: next });
+    // switch once the veil covers the screen; ThemeFadeOverlay lifts it after the re-render lands
+    setTimeout(() => setTheme(next), VEIL_IN_MS + 10);
+    // safety net: never leave the veil up
+    setTimeout(finishThemeFade, 2500);
   };
 }
 
 function ThemeFadeOverlay() {
   const color = useThemeFadeStore((st) => st.color);
   const visible = useThemeFadeStore((st) => st.visible);
+  const theme = useAppStore((st) => st.theme);
   const opacity = useSharedValue(0);
+
+  // This effect runs after the new theme has been committed: lift the veil next frame.
+  useEffect(() => {
+    if (useThemeFadeStore.getState().pending !== theme) return;
+    const frame = requestAnimationFrame(finishThemeFade);
+    return () => cancelAnimationFrame(frame);
+  }, [theme]);
   useEffect(() => {
     opacity.value = withTiming(visible ? 1 : 0, {
       duration: visible ? VEIL_IN_MS : VEIL_OUT_MS,
@@ -462,7 +477,7 @@ export function Glass({ p, fill, radius }: { p: Palette; fill: string; radius: n
   }
   return (
     <View pointerEvents="none" style={StyleSheet.absoluteFill}>
-      {ready && (
+      {LIVE_BLUR && ready && (
         <Animated.View entering={FadeIn.duration(260)} style={StyleSheet.absoluteFill}>
           <BlurView
             intensity={50}
@@ -474,6 +489,7 @@ export function Glass({ p, fill, radius }: { p: Palette; fill: string; radius: n
           />
         </Animated.View>
       )}
+      {!LIVE_BLUR && <View style={[StyleSheet.absoluteFill, { backgroundColor: p.glassFallback }]} />}
       <View style={[StyleSheet.absoluteFill, { backgroundColor: fill }]} />
       <LinearGradient colors={p.glassHighlight} start={{ x: 0, y: 0 }} end={{ x: 0.7, y: 0.9 }} style={StyleSheet.absoluteFill} />
       <LinearGradient
@@ -523,16 +539,24 @@ export function AmbientOrbs({ p }: { p: Palette }) {
   const s3 = useAnimatedStyle(() => ({
     transform: [{ translateX: interpolate(a.value, [0, 1], [0, -30]) }, { scale: interpolate(b.value, [0, 1], [0.9, 1.1]) }],
   }));
-  const orb = (size: number, color: string) => (
+  // soft-edged ("pre-blurred") orbs: no blur view needed behind them
+  const orb = (size: number, color: string, id: string) => (
     <Svg width={size} height={size}>
-      <Circle cx={size / 2} cy={size / 2} r={size / 2} fill={color} opacity={p.orbOpacity} />
+      <Defs>
+        <RadialGradient id={id} cx="50%" cy="50%" r="50%">
+          <Stop offset="0%" stopColor={color} stopOpacity={p.orbOpacity} />
+          <Stop offset="55%" stopColor={color} stopOpacity={p.orbOpacity * 0.75} />
+          <Stop offset="100%" stopColor={color} stopOpacity={0} />
+        </RadialGradient>
+      </Defs>
+      <Circle cx={size / 2} cy={size / 2} r={size / 2} fill={`url(#${id})`} />
     </Svg>
   );
   return (
     <View pointerEvents="none" style={StyleSheet.absoluteFill}>
-      <Animated.View style={[{ position: 'absolute', left: -80, top: height * 0.38 }, s1]}>{orb(260, p.orbs[0])}</Animated.View>
-      <Animated.View style={[{ position: 'absolute', left: width - 170, top: height * 0.58 }, s2]}>{orb(240, p.orbs[1])}</Animated.View>
-      <Animated.View style={[{ position: 'absolute', left: width * 0.2, top: height * 0.82 }, s3]}>{orb(220, p.orbs[2])}</Animated.View>
+      <Animated.View style={[{ position: 'absolute', left: -80, top: height * 0.38 }, s1]}>{orb(320, p.orbs[0], 'orbA')}</Animated.View>
+      <Animated.View style={[{ position: 'absolute', left: width - 170, top: height * 0.58 }, s2]}>{orb(300, p.orbs[1], 'orbB')}</Animated.View>
+      <Animated.View style={[{ position: 'absolute', left: width * 0.2, top: height * 0.82 }, s3]}>{orb(280, p.orbs[2], 'orbC')}</Animated.View>
     </View>
   );
 }
