@@ -192,6 +192,8 @@ export default function TabLayout() {
         options={{
           href: null,
           title: profileTitle,
+          // the profile screen draws its own header (see app/tabs/profile.tsx)
+          headerShown: false,
         }}
       />
 

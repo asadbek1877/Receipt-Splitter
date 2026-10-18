@@ -224,6 +224,10 @@
       "editEmail": "Emailni tahrirlash",
       "changePassword": "Parolni o'zgartirish",
       "passwordHint": "Xavfsizlikni yangilang"
+    },
+    "sections": {
+      "account": "Hisob",
+      "information": "Ma'lumot"
     }
   },
   "navigation": {

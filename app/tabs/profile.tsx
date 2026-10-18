@@ -1,69 +1,162 @@
-﻿// app/tabs/profile.tsx — Profile (inspired by image 4 - clean centered avatar + menu list)
+﻿// app/tabs/profile.tsx — profile & account settings
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Alert, KeyboardAvoidingView, Platform, ScrollView, Pressable, TextInputProps } from 'react-native';
+import {
+  ActivityIndicator,
+  Alert,
+  Image,
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+  useWindowDimensions,
+} from 'react-native';
 import { useRouter } from 'expo-router';
 import * as Clipboard from 'expo-clipboard';
 import * as ImagePicker from 'expo-image-picker';
-import { YStack, XStack, Text, Spinner, View } from 'tamagui';
-import { LogOut, Upload, RotateCcw, User as UserIcon, Mail, Lock, Edit3, ChevronRight, Camera, Copy, Shield, Info, Bell } from '@tamagui/lucide-icons';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import {
+  Bell,
+  Camera,
+  ChevronLeft,
+  ChevronRight,
+  Copy,
+  Eye,
+  EyeOff,
+  Info,
+  Lock,
+  LogOut,
+  Mail,
+  RotateCcw,
+  Upload,
+  User as UserIcon,
+} from '@tamagui/lucide-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
-import Animated, { FadeInDown, FadeIn } from 'react-native-reanimated';
+import Animated, {
+  Easing,
+  FadeIn,
+  FadeInDown,
+  FadeOut,
+  LinearTransition,
+  interpolate,
+  useAnimatedStyle,
+  useSharedValue,
+  withRepeat,
+  withTiming,
+} from 'react-native-reanimated';
 import { LinearGradient } from 'expo-linear-gradient';
+import Svg, { Defs, LinearGradient as SvgLinearGradient, Polygon, Stop } from 'react-native-svg';
 
-import UserAvatar from '@/shared/ui/UserAvatar';
-import Input from '@/shared/ui/Input';
-import PasswordInput from '@/shared/ui/PasswordInput';
 import { useAppStore } from '@/shared/lib/stores/app-store';
+import { useFriendsStore } from '@/features/friends/model/friends.store';
 import { changePassword, resetAvatar, updateAvatar, updateEmail, updateUsername, uploadAvatar } from '@/features/auth/api';
 
 const PICKER_OPTIONS: ImagePicker.ImagePickerOptions = {
-  mediaTypes: ["images"],
+  mediaTypes: ['images'],
   allowsEditing: true,
   aspect: [1, 1],
   quality: 0.9,
 };
 
-const getColors = (isDark: boolean) => ({
-  bg: isDark ? '#0D0D0D' : '#F5F5F5',
-  card: isDark ? '#1A1A1A' : '#FFFFFF',
-  cardBorder: isDark ? '#2A2A2A' : '#EBEBEB',
-  text: isDark ? '#FFFFFF' : '#1A1A1A',
-  textSecondary: isDark ? '#8A8A8A' : '#6B6B6B',
-  textMuted: isDark ? '#555555' : '#999999',
-  accent: '#2ECC71',
-  accentLight: isDark ? 'rgba(46,204,113,0.15)' : 'rgba(46,204,113,0.08)',
-  purple: isDark ? '#A78BFA' : '#7C3AED',
-  purpleLight: isDark ? 'rgba(167,139,250,0.15)' : 'rgba(124,58,237,0.08)',
-  blue: '#3B82F6',
-  blueLight: isDark ? 'rgba(59,130,246,0.15)' : 'rgba(59,130,246,0.08)',
-  orange: '#F59E0B',
-  orangeLight: isDark ? 'rgba(245,158,11,0.15)' : 'rgba(245,158,11,0.08)',
-  red: '#EF4444',
-  redLight: isDark ? 'rgba(239,68,68,0.15)' : 'rgba(239,68,68,0.08)',
-  pink: isDark ? '#F472B6' : '#EC4899',
-  pinkLight: isDark ? 'rgba(244,114,182,0.15)' : 'rgba(236,72,153,0.08)',
-  chipBg: isDark ? '#252525' : '#F0F0F0',
-  divider: isDark ? '#222222' : '#EEEEEE',
-  inputBg: isDark ? '#111111' : '#F5F5F5',
-  shadow: isDark ? 'rgba(0,0,0,0.4)' : 'rgba(0,0,0,0.06)',
-  headerGradient: isDark
-    ? ['#1A1A2E', '#2D1B3D'] as const
-    : ['#7C3AED', '#9333EA'] as const,
-  cameraBg: isDark ? '#A78BFA' : '#7C3AED',
-});
+type Pair = readonly [string, string];
+type Tile = { bg: string; fg: string };
 
+// Light = green (matches the mock); dark = blue → violet (matches the auth screens).
+const PALETTES = {
+  light: {
+    bg: '#F8FAFC',
+    heroBg: ['#FFFFFF', '#F8FAFC'] as Pair,
+    beam: ['#BBF7D0', '#ECFDF5'] as Pair,
+    beamOpacity: 0.7,
+    shine: 'rgba(255,255,255,0.9)',
+    text: '#0F172A',
+    sub: '#334155',
+    muted: '#64748B',
+    label: '#475569',
+    accent: '#16A34A',
+    accentGradient: ['#34D27B', '#16A34A'] as Pair,
+    avatarRing: 'transparent',
+    card: '#FFFFFF',
+    cardBorder: '#EEF1F4',
+    divider: '#EEF1F4',
+    chevron: '#64748B',
+    inputBg: '#F3F5F8',
+    inputBorder: '#E5E7EB',
+    cameraBg: '#FFFFFF',
+    cameraIcon: '#0F172A',
+    logoutBg: '#FDECEC',
+    logoutBorder: '#F8C9C9',
+    logoutText: '#DC2626',
+    tiles: {
+      user: { bg: '#E8F8EF', fg: '#22C55E' },
+      mail: { bg: '#FEF3E2', fg: '#F59E0B' },
+      lock: { bg: '#FDECEC', fg: '#EF4444' },
+      upload: { bg: '#E8F8EF', fg: '#22C55E' },
+      reset: { bg: '#FDEAF3', fg: '#EC4899' },
+      info: { bg: '#F1ECFE', fg: '#8B5CF6' },
+    } as Record<string, Tile>,
+  },
+  dark: {
+    bg: '#0A0F1E',
+    heroBg: ['#0B1022', '#0A0F1E'] as Pair,
+    beam: ['#4F8BFF', '#A855F7'] as Pair,
+    beamOpacity: 0.55,
+    shine: 'rgba(168,85,247,0.95)',
+    text: '#FFFFFF',
+    sub: '#CBD5E1',
+    muted: '#94A3B8',
+    label: '#94A3B8',
+    accent: '#8B9CFF',
+    accentGradient: ['#4F8BFF', '#A855F7'] as Pair,
+    avatarRing: '#8B5CF6',
+    card: 'rgba(255,255,255,0.035)',
+    cardBorder: 'rgba(255,255,255,0.08)',
+    divider: 'rgba(255,255,255,0.07)',
+    chevron: '#CBD5E1',
+    inputBg: 'rgba(255,255,255,0.05)',
+    inputBorder: 'rgba(255,255,255,0.10)',
+    cameraBg: '#111827',
+    cameraIcon: '#E2E8F0',
+    logoutBg: 'rgba(127,29,29,0.35)',
+    logoutBorder: 'rgba(239,68,68,0.55)',
+    logoutText: '#F87171',
+    tiles: {
+      user: { bg: 'rgba(79,139,255,0.16)', fg: '#60A5FA' },
+      mail: { bg: 'rgba(245,158,11,0.18)', fg: '#FBBF24' },
+      lock: { bg: 'rgba(239,68,68,0.18)', fg: '#F87171' },
+      upload: { bg: 'rgba(79,139,255,0.16)', fg: '#60A5FA' },
+      reset: { bg: 'rgba(236,72,153,0.18)', fg: '#F472B6' },
+      info: { bg: 'rgba(139,92,246,0.20)', fg: '#A78BFA' },
+    } as Record<string, Tile>,
+  },
+};
+
+type Palette = (typeof PALETTES)['light'];
 type EditSection = 'none' | 'username' | 'email' | 'password';
+
+const initialsOf = (name: string) => {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
+  return name.trim().slice(0, 2).toUpperCase() || '?';
+};
 
 export default function ProfileScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const { user, logout, setUser, theme } = useAppStore();
   const isDark = theme === 'dark';
-  const colors = getColors(isDark);
+  const p: Palette = isDark ? PALETTES.dark : PALETTES.light;
   const { t } = useTranslation();
+  const scrollRef = useRef<ScrollView>(null);
+  const requestsCount = useFriendsStore((s) => s.requestsRaw?.incoming?.length ?? 0);
 
   const displayName = user?.username || t('profile.labels.guest', 'Guest');
+  const initials = initialsOf(displayName);
   const userId = user?.uniqueId ?? '';
+  const shortId = userId ? `#${userId.slice(0, 4)}${userId.length > 4 ? '...' : ''}` : '—';
 
   // Avatar
   const [previewUri, setPreviewUri] = useState<string | null>(user?.avatarUrl ?? null);
@@ -74,17 +167,14 @@ export default function ProfileScreen() {
   // Editing
   const [activeEdit, setActiveEdit] = useState<EditSection>('none');
 
-  // Username
   const [usernameDraft, setUsernameDraft] = useState(user?.username ?? '');
   const [usernameError, setUsernameError] = useState<string | null>(null);
   const [isSavingUsername, setIsSavingUsername] = useState(false);
 
-  // Email
   const [emailDraft, setEmailDraft] = useState(user?.email ?? '');
   const [emailError, setEmailError] = useState<string | null>(null);
   const [isSavingEmail, setIsSavingEmail] = useState(false);
 
-  // Password
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -95,7 +185,25 @@ export default function ProfileScreen() {
   useEffect(() => { setUsernameDraft(user?.username ?? ''); }, [user?.username]);
   useEffect(() => { setEmailDraft(user?.email ?? ''); }, [user?.email]);
 
-  // Avatar handlers
+  const closeEditors = () => {
+    setActiveEdit('none');
+    setUsernameDraft(user?.username ?? '');
+    setEmailDraft(user?.email ?? '');
+    setCurrentPassword('');
+    setNewPassword('');
+    setConfirmPassword('');
+    setUsernameError(null);
+    setEmailError(null);
+    setPasswordError(null);
+  };
+  const toggleEdit = (section: EditSection) => {
+    if (activeEdit === section) closeEditors();
+    else {
+      closeEditors();
+      setActiveEdit(section);
+    }
+  };
+
   const ensureMediaPermission = useCallback(async () => {
     if (mediaPermission?.granted) return true;
     const response = await requestMediaPermission();
@@ -105,6 +213,7 @@ export default function ProfileScreen() {
   }, [mediaPermission?.granted, requestMediaPermission, t]);
 
   const handlePickFromLibrary = useCallback(async () => {
+    if (isSavingAvatar) return;
     const allowed = await ensureMediaPermission();
     if (!allowed) return;
     const result = await ImagePicker.launchImageLibraryAsync(PICKER_OPTIONS);
@@ -137,10 +246,10 @@ export default function ProfileScreen() {
         setUser({ ...user!, avatarUrl: localUri });
       } finally { setIsSavingAvatar(false); }
     }
-  }, [ensureMediaPermission, user, setUser]);
+  }, [ensureMediaPermission, user, setUser, isSavingAvatar]);
 
   const handleResetAvatar = useCallback(async () => {
-    if (!user) return;
+    if (!user || isResettingAvatar) return;
     try {
       setIsResettingAvatar(true);
       try {
@@ -152,9 +261,8 @@ export default function ProfileScreen() {
         setPreviewUri(null);
       }
     } finally { setIsResettingAvatar(false); }
-  }, [user, setUser]);
+  }, [user, setUser, isResettingAvatar]);
 
-  // Username handler
   const handleSaveUsername = useCallback(async () => {
     if (!user) return;
     const trimmed = usernameDraft.trim();
@@ -169,9 +277,8 @@ export default function ProfileScreen() {
     } catch (e) {
       Alert.alert(t('common.error'), e instanceof Error ? e.message : t('profile.alerts.usernameUpdateFailed'));
     } finally { setIsSavingUsername(false); }
-  }, [user, usernameDraft, setUser]);
+  }, [user, usernameDraft, setUser, t]);
 
-  // Email handler
   const handleSaveEmail = useCallback(async () => {
     if (!user) return;
     const trimmed = emailDraft.trim();
@@ -188,9 +295,8 @@ export default function ProfileScreen() {
     } catch (e) {
       Alert.alert(t('common.error'), e instanceof Error ? e.message : t('profile.alerts.emailUpdateFailed'));
     } finally { setIsSavingEmail(false); }
-  }, [user, emailDraft, currentPassword, setUser]);
+  }, [user, emailDraft, currentPassword, setUser, t]);
 
-  // Password handler
   const handleChangePassword = useCallback(async () => {
     if (!user) return;
     if (!currentPassword.trim()) { setPasswordError(t('profile.validation.passwordCurrent')); return; }
@@ -200,18 +306,20 @@ export default function ProfileScreen() {
     try {
       setIsChangingPassword(true);
       await changePassword({ currentPassword, newPassword });
-      setCurrentPassword(''); setNewPassword(''); setConfirmPassword('');
-      setActiveEdit('none');
+      closeEditors();
       Alert.alert(t('common.success'), t('profile.alerts.passwordChanged'));
     } catch (e) {
       Alert.alert(t('common.error'), e instanceof Error ? e.message : t('profile.alerts.passwordChangeFailed'));
     } finally { setIsChangingPassword(false); }
-  }, [user, currentPassword, newPassword, confirmPassword]);
+  }, [user, currentPassword, newPassword, confirmPassword, t]);
 
   const handleCopy = useCallback(async (value: string) => {
     if (!value) return;
     await Clipboard.setStringAsync(value);
-    Alert.alert(t('profile.copy.successTitle', 'Copied'), t('profile.copy.successMessage', 'Copied to clipboard'));
+    Alert.alert(
+      t('profile.copy.successTitle', 'Copied'),
+      t('profile.copy.successMessage', { field: t('profile.info.userId', 'User ID'), defaultValue: 'Copied to clipboard' }),
+    );
   }, [t]);
 
   const handleLogout = useCallback(() => {
@@ -224,265 +332,607 @@ export default function ProfileScreen() {
     ]);
   }, [logout, router, t]);
 
-  // Menu item component (like Image 4 list style)
-  const MenuItem = ({ icon, iconBg, label, subtitle, onPress, danger, rightElement }: {
-    icon: React.ReactNode; iconBg: string; label: string; subtitle?: string;
-    onPress?: () => void; danger?: boolean; rightElement?: React.ReactNode;
-  }) => (
-    <Pressable onPress={onPress}>
-      <XStack ai="center" py="$3" gap="$3">
-        <View w={42} h={42} br={13} ai="center" jc="center" style={{ backgroundColor: iconBg }}>
-          {icon}
-        </View>
-        <YStack f={1}>
-          <Text fontSize={15} fontWeight="500" style={{ color: danger ? colors.red : colors.text }}>{label}</Text>
-          {subtitle && <Text fontSize={12} style={{ color: colors.textSecondary }}>{subtitle}</Text>}
-        </YStack>
-        {rightElement || <ChevronRight size={18} color={colors.textMuted} />}
-      </XStack>
-    </Pressable>
-  );
-
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: colors.bg }}>
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-        <ScrollView style={{ flex: 1, backgroundColor: colors.bg }}
-          contentContainerStyle={{ flexGrow: 1, paddingBottom: 40 }}
-          keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+    <View style={[styles.flex, { backgroundColor: p.bg }]}>
+      <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+        <ScrollView
+          ref={scrollRef}
+          contentContainerStyle={{ paddingBottom: insets.bottom + 32 }}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
+          {/* ---------- HERO ---------- */}
+          <View style={{ paddingTop: insets.top }}>
+            <LinearGradient colors={p.heroBg} style={StyleSheet.absoluteFill} />
+            <HeroBeams p={p} />
 
-          {/* --- HEADER: Centered Avatar + Name (like Image 4) --- */}
-          <Animated.View entering={FadeIn.duration(400)}>
-            <LinearGradient colors={colors.headerGradient}
-              style={{ paddingTop: 24, paddingBottom: 40, alignItems: 'center', borderBottomLeftRadius: 36, borderBottomRightRadius: 36 }}>
+            {/* top bar */}
+            <View style={styles.topBar}>
+              <Pressable onPress={() => router.replace('/tabs')} hitSlop={10} style={styles.backRow} accessibilityRole="button">
+                <ChevronLeft size={22} color={p.accent} />
+                <Text style={[styles.backText, { color: p.accent }]}>{t('navigation.mainMenu', 'Main menu')}</Text>
+              </Pressable>
+              <View style={styles.topActions}>
+                <Pressable
+                  onPress={() => router.push('/tabs/friends/requests')}
+                  hitSlop={10}
+                  accessibilityRole="button"
+                  accessibilityLabel="Notifications"
+                >
+                  <Bell size={24} color={p.text} />
+                  {requestsCount > 0 && (
+                    <View style={[styles.badge, { backgroundColor: p.accentGradient[1] }]}>
+                      <Text style={styles.badgeText}>{requestsCount}</Text>
+                    </View>
+                  )}
+                </Pressable>
+                <Pressable onPress={() => scrollRef.current?.scrollTo({ y: 0, animated: true })} hitSlop={6}>
+                  <AvatarCircle p={p} uri={previewUri} initials={initials} size={46} fontSize={17} ring={isDark} />
+                </Pressable>
+              </View>
+            </View>
 
-              {/* Avatar with camera overlay */}
-              <Pressable onPress={handlePickFromLibrary} disabled={isSavingAvatar}>
-                <View style={{ position: 'relative' }}>
-                  <View style={{
-                    width: 100, height: 100, borderRadius: 50,
-                    borderWidth: 3, borderColor: 'rgba(255,255,255,0.4)',
-                    overflow: 'hidden', backgroundColor: 'rgba(255,255,255,0.15)',
-                  }}>
-                    {isSavingAvatar ? (
-                      <View w="100%" h="100%" ai="center" jc="center">
-                        <Spinner size="large" color="#FFFFFF" />
-                      </View>
-                    ) : (
-                      <UserAvatar
-                        uri={previewUri ?? undefined}
-                        label={displayName.slice(0, 1).toUpperCase()}
-                        size={94}
-                        textSize={34}
-                      />
-                    )}
-                  </View>
-                  {/* Camera badge */}
-                  <View style={{
-                    position: 'absolute', bottom: 0, right: 0,
-                    width: 30, height: 30, borderRadius: 15,
-                    backgroundColor: colors.cameraBg, alignItems: 'center', justifyContent: 'center',
-                    borderWidth: 2, borderColor: '#FFFFFF',
-                  }}>
-                    <Camera size={14} color="#FFFFFF" />
-                  </View>
+            {/* identity */}
+            <Animated.View entering={FadeIn.duration(450)} style={styles.identity}>
+              <View style={styles.identityText}>
+                <Text style={[styles.eyebrow, { color: p.label }]}>{t('profile.title', 'Profile').toUpperCase()}</Text>
+                <Text style={[styles.name, { color: p.text }]} numberOfLines={1} adjustsFontSizeToFit>
+                  {displayName}
+                </Text>
+                <Pressable onPress={() => handleCopy(userId)} style={styles.idRow} hitSlop={6} disabled={!userId}>
+                  <Text style={[styles.idText, { color: p.sub }]}>ID: {shortId}</Text>
+                  {userId ? <Copy size={15} color={p.sub} /> : null}
+                </Pressable>
+                {user?.email ? <Text style={[styles.email, { color: p.sub }]} numberOfLines={1}>{user.email}</Text> : null}
+              </View>
+
+              <Pressable onPress={handlePickFromLibrary} disabled={isSavingAvatar} accessibilityRole="button" accessibilityLabel="Change avatar">
+                <AvatarCircle
+                  p={p}
+                  uri={previewUri}
+                  initials={initials}
+                  size={124}
+                  fontSize={40}
+                  ring={isDark}
+                  loading={isSavingAvatar}
+                />
+                <View style={[styles.camera, { backgroundColor: p.cameraBg, borderColor: isDark ? 'rgba(255,255,255,0.12)' : '#EEF1F4' }]}>
+                  <Camera size={20} color={p.cameraIcon} />
                 </View>
               </Pressable>
+            </Animated.View>
+          </View>
 
-              {/* Name & ID */}
-              <Text fontSize={22} fontWeight="700" style={{ color: '#FFFFFF' }} mt="$3">
-                {displayName}
-              </Text>
-              {userId ? (
-                <Pressable onPress={() => handleCopy(userId)}>
-                  <XStack ai="center" gap="$1" mt="$1">
-                    <Text fontSize={13} style={{ color: 'rgba(255,255,255,0.7)' }}>
-                      ID: {userId.slice(0, 12)}...
-                    </Text>
-                    <Copy size={12} color="rgba(255,255,255,0.5)" />
-                  </XStack>
-                </Pressable>
-              ) : null}
-              {user?.email ? (
-                <Text fontSize={13} style={{ color: 'rgba(255,255,255,0.6)' }} mt="$0.5">
-                  {user.email}
-                </Text>
-              ) : null}
-            </LinearGradient>
-          </Animated.View>
-
-          <YStack p="$4" gap="$3" mt={-16}>
-            {/* --- PROFILE MENU CARD --- */}
-            <Animated.View entering={FadeInDown.delay(100).springify()}>
-              <YStack style={{ backgroundColor: colors.card, borderRadius: 20, padding: 16, borderWidth: 1, borderColor: colors.cardBorder }}>
-                <MenuItem
-                  icon={<UserIcon size={18} color={colors.blue} />}
-                  iconBg={colors.blueLight}
-                  label={t('profile.menu.editUsername', 'Edit Username')}
-                  subtitle={user?.username || '—'}
-                  onPress={() => setActiveEdit(activeEdit === 'username' ? 'none' : 'username')}
-                />
-
-                {/* Expanded username editor */}
-                {activeEdit === 'username' && (
-                  <Animated.View entering={FadeInDown.duration(200)}>
-                    <YStack gap="$2" pl={54} pr="$1" pb="$2">
-                      <Input value={usernameDraft} onChangeText={setUsernameDraft}
-                        placeholder={t('profile.info.usernamePlaceholder', 'New username')}
-                        error={usernameError || undefined}
-                        textInputProps={{ autoCapitalize: 'none', autoCorrect: false }} />
-                      <XStack gap="$2">
-                        <Pressable style={{ flex: 1 }} onPress={handleSaveUsername} disabled={isSavingUsername}>
-                          <View py="$2.5" br={12} ai="center" style={{ backgroundColor: colors.accent }}>
-                            <Text fontSize={13} fontWeight="600" style={{ color: '#FFF' }}>
-                              {isSavingUsername ? t('common.saving') : t('common.save', 'Save')}
-                            </Text>
-                          </View>
-                        </Pressable>
-                        <Pressable onPress={() => { setActiveEdit('none'); setUsernameDraft(user?.username ?? ''); setUsernameError(null); }}>
-                          <View py="$2.5" px="$4" br={12} ai="center" style={{ backgroundColor: colors.chipBg }}>
-                            <Text fontSize={13} fontWeight="600" style={{ color: colors.textSecondary }}>{t('common.cancel', 'Cancel')}</Text>
-                          </View>
-                        </Pressable>
-                      </XStack>
-                    </YStack>
-                  </Animated.View>
-                )}
-
-                <View h={1} style={{ backgroundColor: colors.divider }} />
-
-                <MenuItem
-                  icon={<Mail size={18} color={colors.orange} />}
-                  iconBg={colors.orangeLight}
-                  label={t('profile.menu.editEmail', 'Edit Email')}
-                  subtitle={user?.email || '—'}
-                  onPress={() => setActiveEdit(activeEdit === 'email' ? 'none' : 'email')}
-                />
-
-                {/* Expanded email editor */}
-                {activeEdit === 'email' && (
-                  <Animated.View entering={FadeInDown.duration(200)}>
-                    <YStack gap="$2" pl={54} pr="$1" pb="$2">
-                      <Input value={emailDraft} onChangeText={setEmailDraft}
-                        placeholder={t('profile.info.emailPlaceholder', 'New email')}
-                        error={emailError || undefined}
-                        textInputProps={{ keyboardType: 'email-address', autoCapitalize: 'none', autoCorrect: false }} />
-                      <PasswordInput value={currentPassword} onChangeText={setCurrentPassword}
-                        placeholder={t('profile.password.currentPlaceholder', 'Current password')} />
-                      <XStack gap="$2">
-                        <Pressable style={{ flex: 1 }} onPress={handleSaveEmail} disabled={isSavingEmail}>
-                          <View py="$2.5" br={12} ai="center" style={{ backgroundColor: colors.accent }}>
-                            <Text fontSize={13} fontWeight="600" style={{ color: '#FFF' }}>
-                              {isSavingEmail ? 'Saving...' : t('common.save', 'Save')}
-                            </Text>
-                          </View>
-                        </Pressable>
-                        <Pressable onPress={() => { setActiveEdit('none'); setEmailDraft(user?.email ?? ''); setEmailError(null); setCurrentPassword(''); }}>
-                          <View py="$2.5" px="$4" br={12} ai="center" style={{ backgroundColor: colors.chipBg }}>
-                            <Text fontSize={13} fontWeight="600" style={{ color: colors.textSecondary }}>{t('common.cancel', 'Cancel')}</Text>
-                          </View>
-                        </Pressable>
-                      </XStack>
-                    </YStack>
-                  </Animated.View>
-                )}
-
-                <View h={1} style={{ backgroundColor: colors.divider }} />
-
-                <MenuItem
-                  icon={<Lock size={18} color={colors.red} />}
-                  iconBg={colors.redLight}
-                  label={t('profile.menu.changePassword', 'Change Password')}
-                  subtitle={t('profile.menu.passwordHint', 'Update your security')}
-                  onPress={() => setActiveEdit(activeEdit === 'password' ? 'none' : 'password')}
-                />
-
-                {/* Expanded password editor */}
-                {activeEdit === 'password' && (
-                  <Animated.View entering={FadeInDown.duration(200)}>
-                    <YStack gap="$3" pl={54} pr="$1" pb="$2">
-                      <PasswordInput value={currentPassword} onChangeText={setCurrentPassword}
-                        placeholder={t('profile.password.currentPlaceholder', 'Current password')} />
-                      <PasswordInput value={newPassword} onChangeText={setNewPassword}
-                        placeholder={t('profile.password.newPlaceholder', 'New password')} />
-                      <Text fontSize={11} style={{ color: colors.textMuted }}>{t('profile.password.min6')}</Text>
-                      <PasswordInput value={confirmPassword} onChangeText={setConfirmPassword}
-                        placeholder={t('profile.password.confirmPlaceholder', 'Confirm')}
-                        error={passwordError || undefined} />
-                      <XStack gap="$2">
-                        <Pressable style={{ flex: 1 }} onPress={handleChangePassword} disabled={isChangingPassword}>
-                          <View py="$2.5" br={12} ai="center" style={{ backgroundColor: colors.purple }}>
-                            <Text fontSize={13} fontWeight="600" style={{ color: '#FFF' }}>
-                              {isChangingPassword ? t('common.updating') : t('profile.password.submit', 'Change')}
-                            </Text>
-                          </View>
-                        </Pressable>
-                        <Pressable onPress={() => { setActiveEdit('none'); setCurrentPassword(''); setNewPassword(''); setConfirmPassword(''); setPasswordError(null); }}>
-                          <View py="$2.5" px="$4" br={12} ai="center" style={{ backgroundColor: colors.chipBg }}>
-                            <Text fontSize={13} fontWeight="600" style={{ color: colors.textSecondary }}>{t('common.cancel', 'Cancel')}</Text>
-                          </View>
-                        </Pressable>
-                      </XStack>
-                    </YStack>
-                  </Animated.View>
-                )}
-              </YStack>
+          <View style={styles.body}>
+            {/* ---------- ACCOUNT ---------- */}
+            <SectionLabel p={p} text={t('profile.sections.account', 'Account')} delay={60} />
+            <Animated.View
+              entering={FadeInDown.duration(420).delay(80)}
+              layout={LinearTransition.duration(240)}
+              style={[styles.card, { backgroundColor: p.card, borderColor: p.cardBorder }]}
+            >
+              <Row
+                p={p}
+                tile={p.tiles.user}
+                icon={UserIcon}
+                title={t('profile.menu.editUsername', 'Edit Username')}
+                subtitle={user?.username || '—'}
+                expanded={activeEdit === 'username'}
+                onPress={() => toggleEdit('username')}
+              />
+              {activeEdit === 'username' && (
+                <EditPanel p={p}>
+                  <ProfileInput p={p} value={usernameDraft} onChangeText={(v) => { setUsernameDraft(v); setUsernameError(null); }}
+                    placeholder={t('profile.info.usernamePlaceholder', 'New username')} />
+                  <PanelError text={usernameError} />
+                  <PanelActions p={p} saving={isSavingUsername} saveLabel={t('common.save', 'Save')}
+                    savingLabel={t('common.saving', 'Saving...')} cancelLabel={t('common.cancel', 'Cancel')}
+                    onSave={handleSaveUsername} onCancel={closeEditors} />
+                </EditPanel>
+              )}
+              <Divider p={p} />
+              <Row
+                p={p}
+                tile={p.tiles.mail}
+                icon={Mail}
+                title={t('profile.menu.editEmail', 'Edit Email')}
+                subtitle={user?.email || '—'}
+                expanded={activeEdit === 'email'}
+                onPress={() => toggleEdit('email')}
+              />
+              {activeEdit === 'email' && (
+                <EditPanel p={p}>
+                  <ProfileInput p={p} value={emailDraft} onChangeText={(v) => { setEmailDraft(v); setEmailError(null); }}
+                    placeholder={t('profile.info.emailPlaceholder', 'New email')} keyboardType="email-address" />
+                  <ProfileInput p={p} value={currentPassword} onChangeText={(v) => { setCurrentPassword(v); setEmailError(null); }}
+                    placeholder={t('profile.password.currentPlaceholder', 'Current password')} secure />
+                  <PanelError text={emailError} />
+                  <PanelActions p={p} saving={isSavingEmail} saveLabel={t('common.save', 'Save')}
+                    savingLabel={t('common.saving', 'Saving...')} cancelLabel={t('common.cancel', 'Cancel')}
+                    onSave={handleSaveEmail} onCancel={closeEditors} />
+                </EditPanel>
+              )}
+              <Divider p={p} />
+              <Row
+                p={p}
+                tile={p.tiles.lock}
+                icon={Lock}
+                title={t('profile.menu.changePassword', 'Change Password')}
+                subtitle={t('profile.menu.passwordHint', 'Update your security')}
+                expanded={activeEdit === 'password'}
+                onPress={() => toggleEdit('password')}
+              />
+              {activeEdit === 'password' && (
+                <EditPanel p={p}>
+                  <ProfileInput p={p} value={currentPassword} onChangeText={(v) => { setCurrentPassword(v); setPasswordError(null); }}
+                    placeholder={t('profile.password.currentPlaceholder', 'Current password')} secure />
+                  <ProfileInput p={p} value={newPassword} onChangeText={(v) => { setNewPassword(v); setPasswordError(null); }}
+                    placeholder={t('profile.password.newPlaceholder', 'New password')} secure />
+                  <ProfileInput p={p} value={confirmPassword} onChangeText={(v) => { setConfirmPassword(v); setPasswordError(null); }}
+                    placeholder={t('profile.password.confirmPlaceholder', 'Confirm new password')} secure />
+                  <Text style={[styles.hint, { color: p.muted }]}>{t('profile.password.min6', 'Min 6 characters')}</Text>
+                  <PanelError text={passwordError} />
+                  <PanelActions p={p} saving={isChangingPassword} saveLabel={t('profile.password.submit', 'Change password')}
+                    savingLabel={t('profile.password.updating', 'Updating...')} cancelLabel={t('common.cancel', 'Cancel')}
+                    onSave={handleChangePassword} onCancel={closeEditors} />
+                </EditPanel>
+              )}
             </Animated.View>
 
-            {/* --- AVATAR MANAGEMENT CARD --- */}
-            <Animated.View entering={FadeInDown.delay(150).springify()}>
-              <YStack style={{ backgroundColor: colors.card, borderRadius: 20, padding: 16, borderWidth: 1, borderColor: colors.cardBorder }}>
-                <MenuItem
-                  icon={<Upload size={18} color={colors.accent} />}
-                  iconBg={colors.accentLight}
-                  label={t('profile.avatar.upload', 'Upload Avatar')}
-                  subtitle={t('profile.avatar.hint', 'Pick from photo library')}
-                  onPress={handlePickFromLibrary}
-                />
-                <View h={1} style={{ backgroundColor: colors.divider }} />
-                <MenuItem
-                  icon={<RotateCcw size={18} color={colors.pink} />}
-                  iconBg={colors.pinkLight}
-                  label={t('profile.avatar.reset', 'Reset Avatar')}
-                  subtitle={t('profile.avatar.resetHint', 'Use default avatar')}
-                  onPress={handleResetAvatar}
-                  rightElement={isResettingAvatar ? <Spinner size="small" color={colors.pink} /> : undefined}
-                />
-              </YStack>
+            {/* ---------- AVATAR ---------- */}
+            <SectionLabel p={p} text={t('profile.avatar.title', 'Avatar')} delay={120} />
+            <Animated.View
+              entering={FadeInDown.duration(420).delay(140)}
+              style={[styles.card, { backgroundColor: p.card, borderColor: p.cardBorder }]}
+            >
+              <Row
+                p={p}
+                tile={p.tiles.upload}
+                icon={Upload}
+                title={isSavingAvatar ? t('profile.avatar.uploading', 'Uploading...') : t('profile.avatar.upload', 'Upload from phone')}
+                subtitle={t('profile.avatar.hint', 'Pick from photo library')}
+                onPress={handlePickFromLibrary}
+                busy={isSavingAvatar}
+              />
+              <Divider p={p} />
+              <Row
+                p={p}
+                tile={p.tiles.reset}
+                icon={RotateCcw}
+                title={isResettingAvatar ? t('profile.avatar.resetting', 'Resetting...') : t('profile.avatar.reset', 'Reset avatar')}
+                subtitle={t('profile.avatar.resetHint', 'Use default avatar')}
+                onPress={handleResetAvatar}
+                busy={isResettingAvatar}
+              />
             </Animated.View>
 
-            {/* --- INFO CARD --- */}
-            <Animated.View entering={FadeInDown.delay(200).springify()}>
-              <YStack style={{ backgroundColor: colors.card, borderRadius: 20, padding: 16, borderWidth: 1, borderColor: colors.cardBorder }}>
-                <MenuItem
-                  icon={<Info size={18} color={colors.purple} />}
-                  iconBg={colors.purpleLight}
-                  label={t('profile.info.userId', 'User ID')}
-                  subtitle={userId || 'N/A'}
-                  onPress={() => userId && handleCopy(userId)}
-                  rightElement={<Copy size={16} color={colors.textMuted} />}
-                />
-              </YStack>
+            {/* ---------- INFORMATION ---------- */}
+            <SectionLabel p={p} text={t('profile.sections.information', 'Information')} delay={180} />
+            <Animated.View
+              entering={FadeInDown.duration(420).delay(200)}
+              style={[styles.card, { backgroundColor: p.card, borderColor: p.cardBorder }]}
+            >
+              <Row
+                p={p}
+                tile={p.tiles.info}
+                icon={Info}
+                title={t('profile.info.userId', 'User ID')}
+                subtitle={userId ? `#${userId}` : t('profile.labels.notAvailable', 'N/A')}
+                onPress={() => handleCopy(userId)}
+                right={<Copy size={22} color={p.chevron} />}
+              />
             </Animated.View>
 
-            {/* --- LOGOUT --- */}
-            <Animated.View entering={FadeInDown.delay(250).springify()}>
-              <Pressable onPress={handleLogout}>
-                <YStack style={{
-                  backgroundColor: colors.redLight, borderRadius: 20, padding: 16,
-                  borderWidth: 1, borderColor: isDark ? 'rgba(239,68,68,0.2)' : 'rgba(239,68,68,0.15)',
-                }}>
-                  <XStack ai="center" gap="$3" jc="center">
-                    <LogOut size={20} color={colors.red} />
-                    <Text fontSize={16} fontWeight="600" style={{ color: colors.red }}>
-                      {t('profile.logout', 'Log out')}
-                    </Text>
-                  </XStack>
-                </YStack>
-              </Pressable>
+            {/* ---------- LOG OUT ---------- */}
+            <Animated.View entering={FadeInDown.duration(420).delay(260)}>
+              <PressScale
+                onPress={handleLogout}
+                style={[styles.logout, { backgroundColor: p.logoutBg, borderColor: p.logoutBorder }]}
+              >
+                <LogOut size={24} color={p.logoutText} />
+                <Text style={[styles.logoutText, { color: p.logoutText }]}>{t('profile.logout', 'Log out')}</Text>
+              </PressScale>
             </Animated.View>
-          </YStack>
+          </View>
         </ScrollView>
       </KeyboardAvoidingView>
-    </SafeAreaView>
+    </View>
   );
 }
+
+// ---------------------------------------------------------------------------
+// Hero background: diagonal light beams with a slow shine sweeping across
+// ---------------------------------------------------------------------------
+function HeroBeams({ p }: { p: Palette }) {
+  const { width } = useWindowDimensions();
+  const sweep = useSharedValue(0);
+  const drift = useSharedValue(0);
+
+  useEffect(() => {
+    sweep.value = withRepeat(withTiming(1, { duration: 5200, easing: Easing.inOut(Easing.quad) }), -1, false);
+    drift.value = withRepeat(withTiming(1, { duration: 7000, easing: Easing.inOut(Easing.sin) }), -1, true);
+  }, []);
+
+  const shineStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(sweep.value, [0, 0.15, 0.7, 1], [0, 1, 1, 0]),
+    transform: [{ translateX: interpolate(sweep.value, [0, 1], [-width * 0.4, width * 0.5]) }],
+  }));
+  const beamStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: interpolate(drift.value, [0, 1], [0, 14]) }],
+  }));
+
+  const w = width;
+  const h = 320;
+  return (
+    <View pointerEvents="none" style={[StyleSheet.absoluteFill, { overflow: 'hidden' }]}>
+      <Animated.View style={[StyleSheet.absoluteFill, beamStyle]}>
+        <Svg width={w} height={h}>
+          <Defs>
+            <SvgLinearGradient id="beamA" x1="0" y1="1" x2="1" y2="0">
+              <Stop offset="0%" stopColor={p.beam[0]} stopOpacity={0} />
+              <Stop offset="55%" stopColor={p.beam[0]} stopOpacity={p.beamOpacity} />
+              <Stop offset="100%" stopColor={p.beam[1]} stopOpacity={p.beamOpacity * 0.6} />
+            </SvgLinearGradient>
+            <SvgLinearGradient id="beamB" x1="0" y1="1" x2="1" y2="0">
+              <Stop offset="0%" stopColor={p.beam[1]} stopOpacity={0} />
+              <Stop offset="100%" stopColor={p.beam[1]} stopOpacity={p.beamOpacity * 0.8} />
+            </SvgLinearGradient>
+          </Defs>
+          <Polygon points={`${w * 0.42},${h} ${w * 0.62},${h} ${w * 1.05},${h * 0.05} ${w * 0.86},${h * 0.05}`} fill="url(#beamA)" />
+          <Polygon points={`${w * 0.7},${h} ${w * 0.8},${h} ${w * 1.1},${h * 0.35} ${w * 1.0},${h * 0.35}`} fill="url(#beamB)" />
+          <Polygon points={`${w * 0.25},${h} ${w * 0.3},${h} ${w * 0.78},${h * -0.1} ${w * 0.73},${h * -0.1}`} fill="url(#beamB)" opacity={0.5} />
+        </Svg>
+      </Animated.View>
+      {/* travelling shine line */}
+      <Animated.View style={[StyleSheet.absoluteFill, shineStyle]}>
+        <Svg width={w} height={h}>
+          <Polygon points={`${w * 0.5},${h * 0.9} ${w * 0.515},${h * 0.9} ${w * 0.83},${h * 0.1} ${w * 0.815},${h * 0.1}`} fill={p.shine} />
+        </Svg>
+      </Animated.View>
+    </View>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Building blocks
+// ---------------------------------------------------------------------------
+function AvatarCircle({
+  p,
+  uri,
+  initials,
+  size,
+  fontSize,
+  ring,
+  loading,
+}: {
+  p: Palette;
+  uri: string | null;
+  initials: string;
+  size: number;
+  fontSize: number;
+  ring?: boolean;
+  loading?: boolean;
+}) {
+  const [failed, setFailed] = useState(false);
+  useEffect(() => setFailed(false), [uri]);
+  const showImage = !!uri && uri.trim() !== '' && !failed;
+  const ringWidth = ring ? Math.max(2, size * 0.025) : 0;
+
+  return (
+    <View
+      style={{
+        width: size,
+        height: size,
+        borderRadius: size / 2,
+        padding: ringWidth,
+        borderWidth: ringWidth,
+        borderColor: p.avatarRing,
+        shadowColor: p.accentGradient[1],
+        shadowOpacity: ring ? 0.6 : 0.25,
+        shadowRadius: size * 0.12,
+        shadowOffset: { width: 0, height: 4 },
+        elevation: ring ? 10 : 4,
+      }}
+    >
+      <View style={{ flex: 1, borderRadius: size / 2, overflow: 'hidden' }}>
+        <LinearGradient colors={p.accentGradient} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.center}>
+          {showImage ? (
+            <Image source={{ uri: uri! }} style={StyleSheet.absoluteFill} onError={() => setFailed(true)} />
+          ) : (
+            <Text style={{ color: '#FFFFFF', fontSize, fontWeight: '700', letterSpacing: 0.5 }}>{initials}</Text>
+          )}
+          {loading && (
+            <View style={[StyleSheet.absoluteFill, styles.center, { backgroundColor: 'rgba(0,0,0,0.35)' }]}>
+              <ActivityIndicator color="#FFFFFF" />
+            </View>
+          )}
+        </LinearGradient>
+      </View>
+    </View>
+  );
+}
+
+function SectionLabel({ p, text, delay }: { p: Palette; text: string; delay: number }) {
+  return (
+    <Animated.Text entering={FadeIn.duration(400).delay(delay)} style={[styles.section, { color: p.label }]}>
+      {text.toUpperCase()}
+    </Animated.Text>
+  );
+}
+
+function Divider({ p }: { p: Palette }) {
+  return <View style={[styles.divider, { backgroundColor: p.divider }]} />;
+}
+
+/** Pressable that gently scales down while pressed. */
+function PressScale({
+  onPress,
+  style,
+  children,
+  disabled,
+}: {
+  onPress: () => void;
+  style?: any;
+  children: React.ReactNode;
+  disabled?: boolean;
+}) {
+  const scale = useSharedValue(1);
+  const animated = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
+  return (
+    <Animated.View style={animated}>
+      <Pressable
+        onPress={onPress}
+        disabled={disabled}
+        onPressIn={() => (scale.value = withTiming(0.97, { duration: 90 }))}
+        onPressOut={() => (scale.value = withTiming(1, { duration: 160 }))}
+        style={style}
+      >
+        {children}
+      </Pressable>
+    </Animated.View>
+  );
+}
+
+function Row({
+  p,
+  tile,
+  icon: Icon,
+  title,
+  subtitle,
+  onPress,
+  expanded,
+  busy,
+  right,
+}: {
+  p: Palette;
+  tile: Tile;
+  icon: React.ComponentType<{ size?: number; color?: string }>;
+  title: string;
+  subtitle?: string;
+  onPress: () => void;
+  expanded?: boolean;
+  busy?: boolean;
+  right?: React.ReactNode;
+}) {
+  const rotate = useSharedValue(expanded ? 1 : 0);
+  useEffect(() => {
+    rotate.value = withTiming(expanded ? 1 : 0, { duration: 220, easing: Easing.out(Easing.quad) });
+  }, [expanded]);
+  const chevronStyle = useAnimatedStyle(() => ({ transform: [{ rotate: `${rotate.value * 90}deg` }] }));
+
+  return (
+    <PressScale onPress={onPress} disabled={busy} style={styles.row}>
+      <View style={[styles.tile, { backgroundColor: tile.bg }]}>
+        <Icon size={24} color={tile.fg} />
+      </View>
+      <View style={styles.rowText}>
+        <Text style={[styles.rowTitle, { color: p.text }]}>{title}</Text>
+        {subtitle ? <Text style={[styles.rowSub, { color: p.muted }]}>{subtitle}</Text> : null}
+      </View>
+      {busy ? (
+        <ActivityIndicator color={tile.fg} />
+      ) : right ? (
+        right
+      ) : (
+        <Animated.View style={chevronStyle}>
+          <ChevronRight size={22} color={p.chevron} />
+        </Animated.View>
+      )}
+    </PressScale>
+  );
+}
+
+function EditPanel({ p, children }: { p: Palette; children: React.ReactNode }) {
+  return (
+    <Animated.View
+      entering={FadeInDown.duration(220)}
+      exiting={FadeOut.duration(140)}
+      style={[styles.panel, { borderColor: p.divider }]}
+    >
+      {children}
+    </Animated.View>
+  );
+}
+
+function ProfileInput({
+  p,
+  value,
+  onChangeText,
+  placeholder,
+  secure,
+  keyboardType = 'default',
+}: {
+  p: Palette;
+  value: string;
+  onChangeText: (v: string) => void;
+  placeholder: string;
+  secure?: boolean;
+  keyboardType?: 'default' | 'email-address';
+}) {
+  const ref = useRef<TextInput>(null);
+  const [focused, setFocused] = useState(false);
+  const [visible, setVisible] = useState(false);
+  return (
+    <Pressable
+      onPress={() => ref.current?.focus()}
+      style={[styles.input, { backgroundColor: p.inputBg, borderColor: focused ? p.accentGradient[1] : p.inputBorder }]}
+    >
+      <TextInput
+        ref={ref}
+        value={value}
+        onChangeText={onChangeText}
+        placeholder={placeholder}
+        placeholderTextColor={p.muted}
+        secureTextEntry={secure && !visible}
+        keyboardType={keyboardType}
+        autoCapitalize="none"
+        autoCorrect={false}
+        selectionColor={p.accentGradient[1]}
+        cursorColor={p.accentGradient[1]}
+        underlineColorAndroid="transparent"
+        onFocus={() => setFocused(true)}
+        onBlur={() => setFocused(false)}
+        style={[styles.inputText, { color: p.text }]}
+      />
+      {secure && (
+        <Pressable onPress={() => setVisible((v) => !v)} hitSlop={10}>
+          {visible ? <EyeOff size={18} color={p.muted} /> : <Eye size={18} color={p.muted} />}
+        </Pressable>
+      )}
+    </Pressable>
+  );
+}
+
+function PanelError({ text }: { text: string | null }) {
+  if (!text) return null;
+  return <Text style={styles.error}>{text}</Text>;
+}
+
+function PanelActions({
+  p,
+  saving,
+  saveLabel,
+  savingLabel,
+  cancelLabel,
+  onSave,
+  onCancel,
+}: {
+  p: Palette;
+  saving: boolean;
+  saveLabel: string;
+  savingLabel: string;
+  cancelLabel: string;
+  onSave: () => void;
+  onCancel: () => void;
+}) {
+  return (
+    <View style={styles.actions}>
+      <View style={styles.flex}>
+        <PressScale onPress={onSave} disabled={saving} style={styles.saveWrap}>
+          <LinearGradient colors={p.accentGradient} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.save}>
+            {saving ? <ActivityIndicator color="#FFFFFF" size="small" /> : null}
+            <Text style={styles.saveText}>{saving ? savingLabel : saveLabel}</Text>
+          </LinearGradient>
+        </PressScale>
+      </View>
+      <PressScale onPress={onCancel} style={[styles.cancel, { borderColor: p.inputBorder }]}>
+        <Text style={[styles.cancelText, { color: p.muted }]}>{cancelLabel}</Text>
+      </PressScale>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  flex: { flex: 1 },
+  center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  topBar: {
+    height: 64,
+    paddingHorizontal: 18,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  backRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  backText: { fontSize: 17, fontWeight: '500' },
+  topActions: { flexDirection: 'row', alignItems: 'center', gap: 22 },
+  badge: {
+    position: 'absolute',
+    top: -6,
+    right: -8,
+    minWidth: 18,
+    height: 18,
+    borderRadius: 9,
+    paddingHorizontal: 4,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  badgeText: { color: '#FFFFFF', fontSize: 10, fontWeight: '700' },
+  identity: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 24,
+    paddingTop: 14,
+    paddingBottom: 30,
+  },
+  identityText: { flex: 1, paddingRight: 12 },
+  eyebrow: { fontSize: 12, fontWeight: '600', letterSpacing: 3.5 },
+  name: { fontSize: 34, fontWeight: '800', letterSpacing: -0.6, marginTop: 6 },
+  idRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 8, alignSelf: 'flex-start' },
+  idText: { fontSize: 16 },
+  email: { fontSize: 16, marginTop: 6 },
+  camera: {
+    position: 'absolute',
+    right: -4,
+    bottom: 2,
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOpacity: 0.12,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 4,
+  },
+  body: { paddingHorizontal: 18 },
+  section: { fontSize: 12, fontWeight: '600', letterSpacing: 3.5, marginTop: 10, marginBottom: 10, marginLeft: 6 },
+  card: { borderRadius: 18, borderWidth: 1, paddingHorizontal: 18, marginBottom: 18, overflow: 'hidden' },
+  row: { flexDirection: 'row', alignItems: 'center', paddingVertical: 14, gap: 16 },
+  tile: { width: 50, height: 50, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
+  rowText: { flex: 1 },
+  rowTitle: { fontSize: 17, fontWeight: '500' },
+  rowSub: { fontSize: 14, marginTop: 3, lineHeight: 19 },
+  divider: { height: 1, marginLeft: 66 },
+  panel: { gap: 10, paddingBottom: 16, paddingLeft: 66 },
+  input: {
+    height: 48,
+    borderRadius: 12,
+    borderWidth: 1,
+    paddingHorizontal: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  inputText: { flex: 1, fontSize: 15, paddingVertical: 0, height: '100%' },
+  hint: { fontSize: 12 },
+  error: { color: '#EF4444', fontSize: 12 },
+  actions: { flexDirection: 'row', gap: 10, marginTop: 4 },
+  saveWrap: { borderRadius: 12, overflow: 'hidden' },
+  save: { height: 44, borderRadius: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
+  saveText: { color: '#FFFFFF', fontSize: 15, fontWeight: '700' },
+  cancel: { height: 44, paddingHorizontal: 18, borderRadius: 12, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
+  cancelText: { fontSize: 15, fontWeight: '600' },
+  logout: {
+    height: 62,
+    borderRadius: 16,
+    borderWidth: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 14,
+    marginTop: 4,
+  },
+  logoutText: { fontSize: 19, fontWeight: '600' },
+});
