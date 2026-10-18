@@ -1,6 +1,7 @@
 ﻿// app/tabs/profile.tsx — profile & account settings
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import {
+  AccessibilityInfo,
   ActivityIndicator,
   Alert,
   Image,
@@ -50,6 +51,7 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 import { LinearGradient } from 'expo-linear-gradient';
+import { BlurTargetView, BlurView } from 'expo-blur';
 import Svg, { Circle, Defs, LinearGradient as SvgLinearGradient, Path, Polygon, RadialGradient, Rect, Stop } from 'react-native-svg';
 
 import { useAppStore } from '@/shared/lib/stores/app-store';
@@ -71,6 +73,16 @@ const PALETTES = {
   light: {
     bg: '#F8FAFC',
     heroBg: ['#FFFFFF', '#F8FAFC'] as Pair,
+    pageBg: ['#F1FBF5', '#F8FAFC'] as Pair,
+    orbs: ['#86EFAC', '#BBF7D0', '#FDE68A'],
+    orbOpacity: 0.5,
+    glassTint: 'light' as 'light' | 'dark',
+    glassHighlight: ['rgba(255,255,255,0.8)', 'rgba(255,255,255,0)'] as Pair,
+    glassCaustic: 'rgba(255,255,255,0.5)',
+    glassRim: 'rgba(255,255,255,1)',
+    glassRimSoft: 'rgba(255,255,255,0.55)',
+    glassOpaque: '#FFFFFF',
+    particleReceipt: '#FFFFFF',
     beam: ['#BBF7D0', '#ECFDF5'] as Pair,
     beamOpacity: 0.7,
     shine: 'rgba(255,255,255,0.9)',
@@ -81,15 +93,15 @@ const PALETTES = {
     accent: '#16A34A',
     accentGradient: ['#34D27B', '#16A34A'] as Pair,
     avatarRing: 'transparent',
-    card: '#FFFFFF',
-    cardBorder: '#EEF1F4',
+    card: 'rgba(255,255,255,0.55)',
+    cardBorder: 'rgba(15,23,42,0.07)',
     divider: '#EEF1F4',
     chevron: '#64748B',
     inputBg: '#F3F5F8',
     inputBorder: '#E5E7EB',
     cameraBg: '#FFFFFF',
     cameraIcon: '#0F172A',
-    logoutBg: '#FDECEC',
+    logoutBg: 'rgba(253,226,226,0.6)',
     logoutBorder: '#F8C9C9',
     logoutText: '#DC2626',
     tiles: {
@@ -104,6 +116,16 @@ const PALETTES = {
   dark: {
     bg: '#0A0F1E',
     heroBg: ['#0B1022', '#0A0F1E'] as Pair,
+    pageBg: ['#0A0F1E', '#0E1430'] as Pair,
+    orbs: ['#3B82F6', '#8B5CF6', '#6366F1'],
+    orbOpacity: 0.32,
+    glassTint: 'dark' as 'light' | 'dark',
+    glassHighlight: ['rgba(255,255,255,0.16)', 'rgba(255,255,255,0)'] as Pair,
+    glassCaustic: 'rgba(167,139,250,0.12)',
+    glassRim: 'rgba(255,255,255,0.32)',
+    glassRimSoft: 'rgba(255,255,255,0.10)',
+    glassOpaque: '#141A2E',
+    particleReceipt: '#1B2240',
     beam: ['#4F8BFF', '#A855F7'] as Pair,
     beamOpacity: 0.55,
     shine: 'rgba(168,85,247,0.95)',
@@ -114,15 +136,15 @@ const PALETTES = {
     accent: '#8B9CFF',
     accentGradient: ['#4F8BFF', '#A855F7'] as Pair,
     avatarRing: '#8B5CF6',
-    card: 'rgba(255,255,255,0.035)',
-    cardBorder: 'rgba(255,255,255,0.08)',
+    card: 'rgba(255,255,255,0.05)',
+    cardBorder: 'rgba(255,255,255,0.09)',
     divider: 'rgba(255,255,255,0.07)',
     chevron: '#CBD5E1',
     inputBg: 'rgba(255,255,255,0.05)',
     inputBorder: 'rgba(255,255,255,0.10)',
     cameraBg: '#111827',
     cameraIcon: '#E2E8F0',
-    logoutBg: 'rgba(127,29,29,0.35)',
+    logoutBg: 'rgba(127,29,29,0.30)',
     logoutBorder: 'rgba(239,68,68,0.55)',
     logoutText: '#F87171',
     tiles: {
@@ -153,6 +175,7 @@ export default function ProfileScreen() {
   const p: Palette = isDark ? PALETTES.dark : PALETTES.light;
   const { t } = useTranslation();
   const scrollRef = useRef<ScrollView>(null);
+  const bgRef = useRef<View>(null);
   const requestsCount = useFriendsStore((s) => s.requestsRaw?.incoming?.length ?? 0);
 
   const displayName = user?.username || t('profile.labels.guest', 'Guest');
@@ -335,7 +358,16 @@ export default function ProfileScreen() {
   }, [logout, router, t]);
 
   return (
+    <GlassProvider target={bgRef}>
     <View style={[styles.flex, { backgroundColor: p.bg }]}>
+      {/* Fixed, animated background. Everything the glass cards blur lives here. */}
+      <BlurTargetView ref={bgRef} style={StyleSheet.absoluteFill}>
+        <LinearGradient colors={p.pageBg} style={StyleSheet.absoluteFill} />
+        <HeroBeams p={p} />
+        <AmbientOrbs p={p} />
+        <HeroParticles p={p} />
+      </BlurTargetView>
+
       <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
         <ScrollView
           ref={scrollRef}
@@ -345,9 +377,6 @@ export default function ProfileScreen() {
         >
           {/* ---------- HERO ---------- */}
           <View style={{ paddingTop: insets.top }}>
-            <LinearGradient colors={p.heroBg} style={StyleSheet.absoluteFill} />
-            <HeroBeams p={p} />
-            <HeroParticles p={p} />
 
             {/* top bar */}
             <View style={styles.topBar}>
@@ -399,7 +428,8 @@ export default function ProfileScreen() {
                   ring={isDark}
                   loading={isSavingAvatar}
                 />
-                <View style={[styles.camera, { backgroundColor: p.cameraBg, borderColor: isDark ? 'rgba(255,255,255,0.12)' : '#EEF1F4' }]}>
+                <View style={[styles.camera, { borderColor: isDark ? 'rgba(255,255,255,0.14)' : 'rgba(15,23,42,0.08)' }]}>
+                  <Glass p={p} fill={isDark ? 'rgba(17,24,39,0.55)' : 'rgba(255,255,255,0.7)'} radius={23} />
                   <Camera size={20} color={p.cameraIcon} />
                 </View>
               </Pressable>
@@ -412,8 +442,9 @@ export default function ProfileScreen() {
             <Animated.View
               entering={FadeInDown.duration(420).delay(80)}
               layout={LinearTransition.duration(240)}
-              style={[styles.card, { backgroundColor: p.card, borderColor: p.cardBorder }]}
+              style={[styles.card, { borderColor: p.cardBorder }]}
             >
+              <Glass p={p} fill={p.card} radius={18} />
               <Row
                 p={p}
                 tile={p.tiles.user}
@@ -486,8 +517,9 @@ export default function ProfileScreen() {
             <SectionLabel p={p} text={t('profile.avatar.title', 'Avatar')} delay={120} />
             <Animated.View
               entering={FadeInDown.duration(420).delay(140)}
-              style={[styles.card, { backgroundColor: p.card, borderColor: p.cardBorder }]}
+              style={[styles.card, { borderColor: p.cardBorder }]}
             >
+              <Glass p={p} fill={p.card} radius={18} />
               <Row
                 p={p}
                 tile={p.tiles.upload}
@@ -513,8 +545,9 @@ export default function ProfileScreen() {
             <SectionLabel p={p} text={t('profile.sections.information', 'Information')} delay={180} />
             <Animated.View
               entering={FadeInDown.duration(420).delay(200)}
-              style={[styles.card, { backgroundColor: p.card, borderColor: p.cardBorder }]}
+              style={[styles.card, { borderColor: p.cardBorder }]}
             >
+              <Glass p={p} fill={p.card} radius={18} />
               <Row
                 p={p}
                 tile={p.tiles.info}
@@ -530,8 +563,9 @@ export default function ProfileScreen() {
             <Animated.View entering={FadeInDown.duration(420).delay(260)}>
               <PressScale
                 onPress={handleLogout}
-                style={[styles.logout, { backgroundColor: p.logoutBg, borderColor: p.logoutBorder }]}
+                style={[styles.logout, { borderColor: p.logoutBorder }]}
               >
+                <Glass p={p} fill={p.logoutBg} radius={16} />
                 <LogOut size={24} color={p.logoutText} />
                 <Text style={[styles.logoutText, { color: p.logoutText }]}>{t('profile.logout', 'Log out')}</Text>
               </PressScale>
@@ -540,6 +574,7 @@ export default function ProfileScreen() {
         </ScrollView>
       </KeyboardAvoidingView>
     </View>
+    </GlassProvider>
   );
 }
 
@@ -605,6 +640,10 @@ type ParticleKind = 'coin' | 'receipt' | 'spark';
 type ParticleSpec = { kind: ParticleKind; x: number; size: number; duration: number; delay: number; sway: number };
 
 const PARTICLES: ParticleSpec[] = [
+  { kind: 'coin', x: 0.82, size: 18, duration: 14000, delay: 2500, sway: 16 },
+  { kind: 'receipt', x: 0.9, size: 18, duration: 16000, delay: 8000, sway: 14 },
+  { kind: 'spark', x: 0.76, size: 11, duration: 12000, delay: 5500, sway: 10 },
+  { kind: 'coin', x: 0.04, size: 15, duration: 15000, delay: 10000, sway: 12 },
   { kind: 'coin', x: 0.08, size: 22, duration: 9000, delay: 0, sway: 14 },
   { kind: 'receipt', x: 0.3, size: 20, duration: 11000, delay: 1800, sway: 18 },
   { kind: 'spark', x: 0.52, size: 12, duration: 7500, delay: 900, sway: 10 },
@@ -638,7 +677,7 @@ function ParticleGlyph({ kind, size, p }: { kind: ParticleKind; size: number; p:
   if (kind === 'receipt') {
     return (
       <Svg width={size} height={size * 1.25} viewBox="0 0 20 25">
-        <Path d="M2 1h16v21l-2.7-1.8-2.6 1.8-2.7-1.8-2.6 1.8-2.7-1.8L2 22z" fill={p.card} stroke={a} strokeWidth={1.3} />
+        <Path d="M2 1h16v21l-2.7-1.8-2.6 1.8-2.7-1.8-2.6 1.8-2.7-1.8L2 22z" fill={p.particleReceipt} stroke={a} strokeWidth={1.3} />
         <Rect x={5} y={6} width={10} height={1.6} rx={0.8} fill={a} opacity={0.8} />
         <Rect x={5} y={10} width={7} height={1.6} rx={0.8} fill={a} opacity={0.6} />
         <Rect x={5} y={14} width={9} height={1.6} rx={0.8} fill={b} opacity={0.6} />
@@ -678,8 +717,7 @@ function Particle({ spec, p, width, height }: { spec: ParticleSpec; p: Palette; 
 }
 
 function HeroParticles({ p }: { p: Palette }) {
-  const { width } = useWindowDimensions();
-  const height = 300;
+  const { width, height } = useWindowDimensions();
   const breathe = useSharedValue(0);
   useEffect(() => {
     breathe.value = withRepeat(withTiming(1, { duration: 4200, easing: Easing.inOut(Easing.sin) }), -1, true);
@@ -709,6 +747,111 @@ function HeroParticles({ p }: { p: Palette }) {
       {PARTICLES.map((spec, i) => (
         <Particle key={i} spec={spec} p={p} width={width} height={height} />
       ))}
+    </View>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Liquid Glass for the cards: real backdrop blur of the fixed background
+// (Android blurs the BlurTargetView), translucent fill, specular sheen and a
+// rim light. Blur mounts after the screen settles; Reduce Transparency → opaque.
+// ---------------------------------------------------------------------------
+type GlassState = { target: React.RefObject<View | null> | null; ready: boolean; reduce: boolean };
+const GlassContext = createContext<GlassState>({ target: null, ready: false, reduce: false });
+
+function GlassProvider({ target, children }: { target: React.RefObject<View | null>; children: React.ReactNode }) {
+  const [ready, setReady] = useState(false);
+  const [reduce, setReduce] = useState(false);
+  useEffect(() => {
+    const timer = setTimeout(() => setReady(true), 400);
+    let mounted = true;
+    AccessibilityInfo.isReduceTransparencyEnabled().then((v) => mounted && setReduce(v)).catch(() => {});
+    const sub = AccessibilityInfo.addEventListener('reduceTransparencyChanged', setReduce);
+    return () => {
+      mounted = false;
+      clearTimeout(timer);
+      sub.remove();
+    };
+  }, []);
+  return <GlassContext.Provider value={{ target, ready, reduce }}>{children}</GlassContext.Provider>;
+}
+
+function Glass({ p, fill, radius }: { p: Palette; fill: string; radius: number }) {
+  const { target, ready, reduce } = useContext(GlassContext);
+  if (reduce) {
+    return <View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: p.glassOpaque }]} />;
+  }
+  return (
+    <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+      {ready && (
+        <Animated.View entering={FadeIn.duration(260)} style={StyleSheet.absoluteFill}>
+          <BlurView
+            intensity={50}
+            tint={p.glassTint}
+            blurMethod="dimezisBlurViewSdk31Plus"
+            blurReductionFactor={3}
+            blurTarget={target ?? undefined}
+            style={StyleSheet.absoluteFill}
+          />
+        </Animated.View>
+      )}
+      <View style={[StyleSheet.absoluteFill, { backgroundColor: fill }]} />
+      <LinearGradient colors={p.glassHighlight} start={{ x: 0, y: 0 }} end={{ x: 0.7, y: 0.9 }} style={StyleSheet.absoluteFill} />
+      <LinearGradient
+        colors={['rgba(255,255,255,0)', p.glassCaustic]}
+        start={{ x: 0.5, y: 0.55 }}
+        end={{ x: 0.5, y: 1 }}
+        style={StyleSheet.absoluteFill}
+      />
+      <View
+        style={[
+          StyleSheet.absoluteFill,
+          {
+            borderRadius: Math.max(0, radius - 1),
+            borderWidth: 1,
+            borderTopColor: p.glassRim,
+            borderLeftColor: p.glassRimSoft,
+            borderRightColor: p.glassRimSoft,
+            borderBottomColor: 'transparent',
+          },
+        ]}
+      />
+    </View>
+  );
+}
+
+/** Large soft colour fields drifting down the page, so the glass has something to refract. */
+function AmbientOrbs({ p }: { p: Palette }) {
+  const { width, height } = useWindowDimensions();
+  const a = useSharedValue(0);
+  const b = useSharedValue(0);
+  useEffect(() => {
+    a.value = withRepeat(withTiming(1, { duration: 10000, easing: Easing.inOut(Easing.sin) }), -1, true);
+    b.value = withDelay(1500, withRepeat(withTiming(1, { duration: 13000, easing: Easing.inOut(Easing.sin) }), -1, true));
+    return () => {
+      cancelAnimation(a);
+      cancelAnimation(b);
+    };
+  }, []);
+  const s1 = useAnimatedStyle(() => ({
+    transform: [{ translateX: interpolate(a.value, [0, 1], [-30, 40]) }, { translateY: interpolate(b.value, [0, 1], [0, 60]) }],
+  }));
+  const s2 = useAnimatedStyle(() => ({
+    transform: [{ translateX: interpolate(b.value, [0, 1], [30, -50]) }, { translateY: interpolate(a.value, [0, 1], [30, -40]) }],
+  }));
+  const s3 = useAnimatedStyle(() => ({
+    transform: [{ translateX: interpolate(a.value, [0, 1], [0, -30]) }, { scale: interpolate(b.value, [0, 1], [0.9, 1.1]) }],
+  }));
+  const orb = (size: number, color: string) => (
+    <Svg width={size} height={size}>
+      <Circle cx={size / 2} cy={size / 2} r={size / 2} fill={color} opacity={p.orbOpacity} />
+    </Svg>
+  );
+  return (
+    <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+      <Animated.View style={[{ position: 'absolute', left: -80, top: height * 0.38 }, s1]}>{orb(260, p.orbs[0])}</Animated.View>
+      <Animated.View style={[{ position: 'absolute', left: width - 170, top: height * 0.58 }, s2]}>{orb(240, p.orbs[1])}</Animated.View>
+      <Animated.View style={[{ position: 'absolute', left: width * 0.2, top: height * 0.82 }, s3]}>{orb(220, p.orbs[2])}</Animated.View>
     </View>
   );
 }
@@ -1002,6 +1145,7 @@ const styles = StyleSheet.create({
   idText: { fontSize: 16 },
   email: { fontSize: 16, marginTop: 6 },
   camera: {
+    overflow: 'hidden',
     position: 'absolute',
     right: -4,
     bottom: 2,
@@ -1045,6 +1189,7 @@ const styles = StyleSheet.create({
   cancel: { height: 44, paddingHorizontal: 18, borderRadius: 12, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
   cancelText: { fontSize: 15, fontWeight: '600' },
   logout: {
+    overflow: 'hidden',
     height: 62,
     borderRadius: 16,
     borderWidth: 1,
