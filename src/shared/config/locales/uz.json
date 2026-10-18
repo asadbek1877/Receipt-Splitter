@@ -629,5 +629,45 @@
     "yours": "Sizniki",
     "finalized": "Yakunlangan",
     "inProgress": "Jarayonda"
+  },
+  "scanner": {
+    "found": "{{format}} topildi",
+    "view": "Ko'rish",
+    "copy": "Nusxalash",
+    "copied": "Nusxalandi",
+    "done": "Tayyor",
+    "cannotOpen": "Havolani ochib bo'lmadi",
+    "photoHasCode": "Bu suratda QR / shtrix-kod bor",
+    "tapToRead": "O'qish uchun bosing",
+    "fiscal": {
+      "title": "Fiskal chek QR kodi",
+      "terminal": "Terminal",
+      "number": "Chek raqami",
+      "date": "Xarid vaqti",
+      "sign": "Fiskal belgi",
+      "open": "Rasmiy chekni ochish",
+      "note": "Bu kod do'konning rasmiy chekiga havola. Mahsulotlar kodning ichida emas, soliq portali ularni faqat o'z saytiga beradi. Mahsulotlarni ko'rish uchun uni oching yoki bu yerda bo'lish uchun qog'oz chekni suratga oling."
+    },
+    "url": {
+      "title": "Veb havola",
+      "address": "Manzil",
+      "open": "Havolani ochish",
+      "warn": "Faqat ishonchli manbadagi havolalarni oching.",
+      "warnInsecure": "Bu havola shifrlanmagan (http). Manbaga ishonsangizgina oching."
+    },
+    "product": {
+      "title": "Mahsulot shtrix-kodi",
+      "code": "Kod",
+      "brand": "Brend",
+      "quantity": "Hajmi",
+      "region": "Kod berilgan davlat",
+      "badChecksum": "Nazorat raqami mos kelmadi. Kod noto'g'ri o'qilgan yoki shikastlangan bo'lishi mumkin — qayta skanerlang.",
+      "notFound": "Bu mahsulot ochiq bazada yo'q (mahalliy mahsulotlar ko'pincha yo'q). Kodning o'zi to'g'ri.",
+      "offline": "Mahsulotni qidirib bo'lmadi. Internetni tekshiring."
+    },
+    "text": {
+      "title": "Kod mazmuni",
+      "content": "Mazmuni"
+    }
   }
 }

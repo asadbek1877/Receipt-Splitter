@@ -13,7 +13,7 @@ import {
   useWindowDimensions,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
-import { CameraView, useCameraPermissions } from 'expo-camera';
+import { CameraView, scanFromURLAsync, useCameraPermissions } from 'expo-camera';
 import { useFocusEffect, useIsFocused, useRouter } from 'expo-router';
 import { manipulateAsync, SaveFormat } from 'expo-image-manipulator';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -25,6 +25,7 @@ import {
   Check,
   FileText,
   Image as ImageIcon,
+  QrCode,
   PencilLine,
   RotateCcw,
   Search,
@@ -54,6 +55,8 @@ import { useReceiptSessionStore, type CapturedReceiptImage } from '@/features/re
 import { useAppStore } from '@/shared/lib/stores/app-store';
 import { DEFAULT_LANGUAGE } from '@/shared/config/languages';
 import { useGlassPalette, type GlassPalette } from '@/shared/ui/glass/GlassKit';
+import CodeSheet from '@/features/scanner/CodeSheet';
+import { CODE_TYPES, classifyCode, formatName, type RawCode } from '@/features/scanner/codes';
 
 const AnimatedCircle = Animated.createAnimatedComponent(Circle);
 
@@ -75,6 +78,19 @@ function useFrame() {
   const w = Math.min(width * 0.76, 420);
   const h = w * 1.36;
   return { width, height, w, h, left: (width - w) / 2, top: (height - h) / 2.25 };
+}
+
+/** Codes found in a saved photo (on-device, no network). */
+async function readCodesFromPhoto(uri: string): Promise<RawCode[]> {
+  try {
+    const results = await scanFromURLAsync(uri, [...CODE_TYPES]);
+    const seen = new Set<string>();
+    return results
+      .filter((r) => r?.data && !seen.has(r.data) && seen.add(r.data))
+      .map((r) => ({ type: r.type, data: r.data }));
+  } catch {
+    return [];
+  }
 }
 
 type Stage = 'camera' | 'confirm' | 'analyzing';
@@ -109,6 +125,33 @@ export default function ScanReceiptScreen() {
   const [analysisError, setAnalysisError] = useState<string | null>(null);
   const [zoom, setZoom] = useState(0);
   const [flash, setFlash] = useState(false);
+  // QR / barcodes: seen live by the camera, or found in the captured photo
+  const [liveCode, setLiveCode] = useState<RawCode | null>(null);
+  const [sheetCode, setSheetCode] = useState<RawCode | null>(null);
+  const [photoCodes, setPhotoCodes] = useState<RawCode[]>([]);
+  const liveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastDismissed = useRef<{ data: string; at: number } | null>(null);
+
+  const onBarcode = useCallback((r: { type: string; data: string }) => {
+    if (!r?.data) return;
+    const d = lastDismissed.current;
+    if (d && d.data === r.data && Date.now() - d.at < 4000) return;
+    setLiveCode((prev) => (prev && prev.data === r.data ? prev : { type: r.type, data: r.data }));
+    if (liveTimer.current) clearTimeout(liveTimer.current);
+    liveTimer.current = setTimeout(() => setLiveCode(null), 2500); // gone from view → chip goes away
+  }, []);
+  useEffect(() => () => {
+    if (liveTimer.current) clearTimeout(liveTimer.current);
+  }, []);
+
+  const openCode = useCallback((c: RawCode) => {
+    setSheetCode(c);
+    setLiveCode(null);
+  }, []);
+  const closeCode = useCallback(() => {
+    if (sheetCode) lastDismissed.current = { data: sheetCode.data, at: Date.now() };
+    setSheetCode(null);
+  }, [sheetCode]);
 
   useEffect(() => {
     if (isFocused && !perm?.granted && perm?.canAskAgain !== false) requestPerm();
@@ -151,8 +194,11 @@ export default function ScanReceiptScreen() {
       const out = await manipulateAsync(picture.uri, actions, { compress: 0.5, format: SaveFormat.JPEG, base64: true });
       if (!out?.base64) throw new Error(t('scanReceipt.errors.prepareFailed'));
 
-      setPending({ uri: out.uri ?? picture.uri, base64: out.base64, mimeType: 'image/jpeg', width: out.width, height: out.height });
+      const photoUri = out.uri ?? picture.uri;
+      setPending({ uri: photoUri, base64: out.base64, mimeType: 'image/jpeg', width: out.width, height: out.height });
+      setPhotoCodes([]);
       setStage('confirm');
+      readCodesFromPhoto(photoUri).then(setPhotoCodes);
     } catch (e) {
       setError(e instanceof Error ? e.message : t('scanReceipt.errors.captureGeneric'));
     } finally {
@@ -188,8 +234,15 @@ export default function ScanReceiptScreen() {
         base64: true,
       });
       if (!out?.base64) throw new Error(t('scanReceipt.errors.prepareFailed'));
-      setPending({ uri: out.uri ?? asset.uri, base64: out.base64, mimeType: 'image/jpeg', width: out.width, height: out.height });
+      const photoUri = out.uri ?? asset.uri;
+      setPending({ uri: photoUri, base64: out.base64, mimeType: 'image/jpeg', width: out.width, height: out.height });
+      setPhotoCodes([]);
       setStage('confirm');
+      // the original (full-size) pick scans more reliably than the resized copy
+      void (async () => {
+        const found = await readCodesFromPhoto(asset.uri);
+        setPhotoCodes(found.length ? found : await readCodesFromPhoto(photoUri));
+      })();
     } catch (e) {
       setError(e instanceof Error ? e.message : t('scanReceipt.errors.galleryFailed'));
     } finally {
@@ -222,6 +275,7 @@ export default function ScanReceiptScreen() {
 
   const retake = useCallback(() => {
     setPending(null);
+    setPhotoCodes([]);
     setAnalysisError(null);
     setStage('camera');
   }, []);
@@ -236,7 +290,15 @@ export default function ScanReceiptScreen() {
   return (
     <View style={styles.root}>
       {isFocused && perm?.granted && stage !== 'analyzing' ? (
-        <CameraView ref={cameraRef} style={StyleSheet.absoluteFill} facing="back" zoom={ZOOMS[zoom].value} enableTorch={flash} />
+        <CameraView
+          ref={cameraRef}
+          style={StyleSheet.absoluteFill}
+          facing="back"
+          zoom={ZOOMS[zoom].value}
+          enableTorch={flash}
+          barcodeScannerSettings={{ barcodeTypes: [...CODE_TYPES] }}
+          onBarcodeScanned={stage === 'camera' && !sheetCode ? onBarcode : undefined}
+        />
       ) : (
         <LinearGradient colors={['#0B1022', '#05070F']} style={StyleSheet.absoluteFill} />
       )}
@@ -259,8 +321,23 @@ export default function ScanReceiptScreen() {
             </GlassCircle>
           </View>
 
+          {/* a QR / barcode is in view */}
+          {liveCode && !sheetCode && (
+            <Animated.View entering={FadeInDown.duration(220)} exiting={FadeOut.duration(160)} style={[styles.codeChipWrap, { top: frame.top + frame.h + 14 }]}>
+              <Pressable onPress={() => openCode(liveCode)} style={[styles.codeChip, { borderColor: p.accentGradient[1] }]} accessibilityRole="button">
+                <View style={[styles.codeChipIcon, { backgroundColor: `${p.accentGradient[1]}44` }]}>
+                  <QrCode size={18} color="#FFFFFF" />
+                </View>
+                <Text style={styles.codeChipText} numberOfLines={1}>
+                  {t('scanner.found', { format: formatName(liveCode.type), defaultValue: `${formatName(liveCode.type)} found` })}
+                </Text>
+                <Text style={[styles.codeChipAction, { color: p.accentGradient[0] }]}>{t('scanner.view', 'View')}</Text>
+              </Pressable>
+            </Animated.View>
+          )}
+
           {/* hint */}
-          {perm?.granted && (
+          {perm?.granted && !liveCode && (
             <Animated.View entering={FadeInDown.duration(400).delay(150)} style={[styles.hintWrap, { top: Math.max(insets.top + 76, frame.top - 74) }]}>
               <View style={[styles.hint, { borderColor: `${p.accentGradient[1]}88` }]}>
                 <View style={[styles.hintIcon, { backgroundColor: `${p.accentGradient[1]}33` }]}>
@@ -341,6 +418,8 @@ export default function ScanReceiptScreen() {
           title={t('scanReceipt.confirmReceipt', 'Is this your receipt?')}
           retakeLabel={t('scanReceipt.retake', 'Retake')}
           analyzeLabel={t('scanReceipt.scanWithAi', 'Scan with AI')}
+          codes={photoCodes}
+          onOpenCode={openCode}
           onRetake={retake}
           onAnalyze={analyze}
         />
@@ -355,10 +434,15 @@ export default function ScanReceiptScreen() {
           done={analysisDone}
           error={analysisError}
           onFinished={onAnalysisFinished}
+          codes={photoCodes}
+          onOpenCode={openCode}
           onRetry={analyze}
           onRetake={retake}
           onBack={retake}
         />
+      )}
+      {sheetCode && (
+        <CodeSheet code={sheetCode} bottomInset={insets.bottom} accent={p.accentGradient[1]} accentB={p.accentGradient[0]} onClose={closeCode} />
       )}
     </View>
   );
@@ -521,11 +605,15 @@ function ConfirmStage({
   title,
   retakeLabel,
   analyzeLabel,
+  codes,
+  onOpenCode,
   onRetake,
   onAnalyze,
 }: {
   p: GlassPalette;
   image: CapturedReceiptImage;
+  codes: RawCode[];
+  onOpenCode: (c: RawCode) => void;
   topInset: number;
   bottomInset: number;
   title: string;
@@ -545,6 +633,7 @@ function ConfirmStage({
       <Animated.View entering={FadeInDown.duration(350)} style={[styles.confirmImageWrap, { width: w, height: w * ratio, borderColor: `${p.accentGradient[1]}88`, shadowColor: p.accentGradient[1] }]}>
         <Image source={{ uri: image.uri }} style={StyleSheet.absoluteFill} resizeMode="cover" />
       </Animated.View>
+      <CodesBanner p={p} codes={codes} onOpen={onOpenCode} bottom={bottomInset + 92} />
       <View style={[styles.confirmButtons, { paddingBottom: bottomInset + 20 }]}>
         <Pressable onPress={onRetake} style={styles.retake}>
           <RotateCcw size={18} color="#FFFFFF" />
@@ -578,6 +667,8 @@ function AnalyzingStage({
   bottomInset,
   done,
   error,
+  codes,
+  onOpenCode,
   onFinished,
   onRetry,
   onRetake,
@@ -585,6 +676,8 @@ function AnalyzingStage({
 }: {
   p: GlassPalette;
   image: CapturedReceiptImage;
+  codes: RawCode[];
+  onOpenCode: (c: RawCode) => void;
   topInset: number;
   bottomInset: number;
   done: boolean;
@@ -739,6 +832,15 @@ function AnalyzingStage({
           {!error && <Text style={[styles.statusPct, { color: accent }]}>{pct}%</Text>}
         </View>
 
+        {error && codes.length > 0 ? (
+          <Pressable onPress={() => onOpenCode(codes[0])} style={[styles.codeFound, { borderColor: accent }]} accessibilityRole="button">
+            <QrCode size={20} color={accent} />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.codeFoundTitle}>{t('scanner.photoHasCode', 'This photo has a QR / barcode')}</Text>
+              <Text style={styles.codeFoundSub} numberOfLines={1}>{t('scanner.tapToRead', 'Tap to read it')}</Text>
+            </View>
+          </Pressable>
+        ) : null}
         {error ? (
           <View style={styles.actionsRow}>
             <Pressable onPress={onRetake} style={styles.retake}>
@@ -768,6 +870,36 @@ function AnalyzingStage({
           </View>
         )}
       </View>
+    </Animated.View>
+  );
+}
+
+/** "QR / barcode found in this photo" banner shown on the confirm step. */
+function CodesBanner({ p, codes, onOpen, bottom }: { p: GlassPalette; codes: RawCode[]; onOpen: (c: RawCode) => void; bottom: number }) {
+  const { t } = useTranslation();
+  if (!codes.length) return null;
+  const first = codes[0];
+  const info = classifyCode(first);
+  const label =
+    info.kind === 'fiscal'
+      ? t('scanner.fiscal.title', 'Fiscal receipt QR')
+      : info.kind === 'url'
+        ? info.host || t('scanner.url.title', 'Web link')
+        : info.kind === 'product'
+          ? `${info.format} · ${info.code}`
+          : formatName(first.type);
+  return (
+    <Animated.View entering={FadeInDown.duration(260)} style={[styles.banner, { bottom }]}>
+      <Pressable onPress={() => onOpen(first)} style={[styles.bannerInner, { borderColor: `${p.accentGradient[1]}99` }]} accessibilityRole="button">
+        <View style={[styles.codeChipIcon, { backgroundColor: `${p.accentGradient[1]}44` }]}>
+          <QrCode size={18} color="#FFFFFF" />
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.codeChipText} numberOfLines={1}>{t('scanner.photoHasCode', 'This photo has a QR / barcode')}</Text>
+          <Text style={styles.bannerSub} numberOfLines={1}>{label}{codes.length > 1 ? `  +${codes.length - 1}` : ''}</Text>
+        </View>
+        <Text style={[styles.codeChipAction, { color: p.accentGradient[0] }]}>{t('scanner.view', 'View')}</Text>
+      </Pressable>
     </Animated.View>
   );
 }
@@ -896,6 +1028,17 @@ const styles = StyleSheet.create({
   confirmTitle: { color: '#FFFFFF', fontSize: 20, fontWeight: '700' },
   confirmImageWrap: { marginTop: 20, borderRadius: 22, borderWidth: 2, overflow: 'hidden', shadowOpacity: 0.6, shadowRadius: 24, shadowOffset: { width: 0, height: 0 }, elevation: 10, backgroundColor: '#111827' },
   confirmButtons: { position: 'absolute', left: 20, right: 20, bottom: 0, flexDirection: 'row', gap: 12 },
+  codeChipWrap: { position: 'absolute', left: 0, right: 0, alignItems: 'center', zIndex: 6 },
+  codeChip: { flexDirection: 'row', alignItems: 'center', gap: 10, height: 48, paddingLeft: 8, paddingRight: 16, borderRadius: 24, borderWidth: 1.5, backgroundColor: 'rgba(12,16,34,0.88)', maxWidth: '90%' },
+  codeChipIcon: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
+  codeChipText: { color: '#FFFFFF', fontSize: 14, fontWeight: '700', flexShrink: 1 },
+  codeChipAction: { fontSize: 14, fontWeight: '800' },
+  banner: { position: 'absolute', left: 20, right: 20 },
+  bannerInner: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 12, borderRadius: 18, borderWidth: 1.5, backgroundColor: 'rgba(12,16,34,0.9)' },
+  bannerSub: { color: 'rgba(255,255,255,0.7)', fontSize: 12, marginTop: 2 },
+  codeFound: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14, borderRadius: 18, borderWidth: 1.5, backgroundColor: glassDark, marginBottom: 12 },
+  codeFoundTitle: { color: '#FFFFFF', fontSize: 15, fontWeight: '700' },
+  codeFoundSub: { color: 'rgba(255,255,255,0.7)', fontSize: 12, marginTop: 2 },
   actionsRow: { flexDirection: 'row', gap: 12 },
   retake: { flex: 1, height: 56, borderRadius: 18, borderWidth: 1, borderColor: glassBorder, backgroundColor: glassDark, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
   retakeText: { color: '#FFFFFF', fontSize: 15, fontWeight: '600' },

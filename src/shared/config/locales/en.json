@@ -629,5 +629,45 @@
     "yours": "Yours",
     "finalized": "Settled",
     "inProgress": "In progress"
+  },
+  "scanner": {
+    "found": "{{format}} found",
+    "view": "View",
+    "copy": "Copy",
+    "copied": "Copied",
+    "done": "Done",
+    "cannotOpen": "Couldn't open the link",
+    "photoHasCode": "This photo has a QR / barcode",
+    "tapToRead": "Tap to read it",
+    "fiscal": {
+      "title": "Fiscal receipt QR",
+      "terminal": "Terminal",
+      "number": "Receipt no.",
+      "date": "Purchase time",
+      "sign": "Fiscal sign",
+      "open": "Open official receipt",
+      "note": "This code is a link to the shop's official receipt. The items are not stored in the code, and the tax portal only shares them with its own site. Open it to see the items, or photograph the printed receipt to split it here."
+    },
+    "url": {
+      "title": "Web link",
+      "address": "Address",
+      "open": "Open link",
+      "warn": "Only open links from sources you trust.",
+      "warnInsecure": "This link is not encrypted (http). Only open it if you trust the source."
+    },
+    "product": {
+      "title": "Product barcode",
+      "code": "Code",
+      "brand": "Brand",
+      "quantity": "Size",
+      "region": "Code issued in",
+      "badChecksum": "The check digit does not match. The code may be misread or damaged — scan again.",
+      "notFound": "This product is not in the public database (local goods often are not). The code itself is valid.",
+      "offline": "Couldn't look the product up. Check your connection."
+    },
+    "text": {
+      "title": "Code content",
+      "content": "Content"
+    }
   }
 }
