@@ -1182,7 +1182,8 @@ export function AuthScreen({
 }: {
   active: AuthVariant;
   layers: AuthLayer[];
-  onBack: () => void;
+  /** Omit to hide the back button (nothing to go back to). */
+  onBack?: () => void;
 }) {
   const theme = useAppStore((s) => s.theme);
   const isDark = theme === 'dark';
@@ -1239,6 +1240,7 @@ export function AuthScreen({
                     </View>
 
                     <View style={styles.headerRow}>
+                      {onBack && (
                       <Pressable
                         onPress={onBack}
                         accessibilityRole="button"
@@ -1249,6 +1251,7 @@ export function AuthScreen({
                         <GlassLayers p={p} fill={p.backBg} radius={21} />
                         <ChevronLeft size={20} color={p.text} />
                       </Pressable>
+                      )}
                     </View>
 
                     {/* Layers: the active one is in the flow, the others overlay it invisibly */}

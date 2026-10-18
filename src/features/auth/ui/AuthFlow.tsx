@@ -27,10 +27,9 @@ export default function AuthFlow({ initial }: { initial: AuthVariant }) {
     setMode(next);
   };
 
-  const leave = () => {
-    if (router.canGoBack()) router.back();
-    else router.replace('/onboarding');
-  };
+  // There is no welcome screen: when logged out, login is the first screen of the app.
+  const canLeave = router.canGoBack();
+  const leave = () => router.back();
 
   /** Back: forgot steps first, then to the form the screen opened with, then out. */
   const goBack = () => {
@@ -42,9 +41,8 @@ export default function AuthFlow({ initial }: { initial: AuthVariant }) {
     return false;
   };
 
-  const onBackButton = () => {
-    if (!goBack()) leave();
-  };
+  const canStepBack = mode !== initial || (mode === 'forgot' && forgot.step !== 'email');
+  const onBackButton = canStepBack || canLeave ? () => { if (!goBack()) leave(); } : undefined;
 
   // Android hardware back follows the same rules while there is somewhere to go in-screen.
   useEffect(() => {

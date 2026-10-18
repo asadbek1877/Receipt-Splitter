@@ -1,4 +1,4 @@
-// app/index.tsx - Entry point: redirects to tabs or onboarding
+// app/index.tsx - Entry point: redirects to tabs (logged in) or login
 import React from 'react';
 import { Redirect } from 'expo-router';
 
