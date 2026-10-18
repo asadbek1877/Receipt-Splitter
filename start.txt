@@ -8,6 +8,6 @@ npm start
 Terminal 2 (Frontend)
 
 cd "d:\Trail\Trail - final\Work2\splitter-frontend"
-npx expo start -c
+npx expo start 
 
 -----------------------------------
